@@ -303,18 +303,19 @@ button { font: inherit; color: inherit; }
 .row.complete .pct { color: var(--leaf); font-weight: 650; }
 
 /*
- * The worm: children ripple bottom-to-top rather than shaking at once.
- * Row order is reversed into --worm-i by the component.
+ * The worm: children ripple one after another rather than shaking at once.
+ * --worm-i is each row's distance from the item that was just completed, so
+ * the wave radiates out from where you ticked. A small symmetric wiggle.
  */
 @keyframes worm {
   0% { transform: translateX(0); }
-  25% { transform: translateX(6px); }
-  65% { transform: translateX(-9px); }
+  33% { transform: translateX(2px); }
+  66% { transform: translateX(-2px); }
   100% { transform: translateX(0); }
 }
 .row.worm {
-  animation: worm 0.42s ease-in-out;
-  animation-delay: calc(var(--worm-i, 0) * 45ms);
+  animation: worm 0.4s ease-in-out;
+  animation-delay: calc(var(--worm-i, 0) * 100ms);
 }
 
 @media (prefers-reduced-motion: reduce) {

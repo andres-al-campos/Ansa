@@ -4,6 +4,7 @@ import {
   byId,
   childrenOf,
   indent,
+  isAncestor,
   isLeaf,
   leavesUnder,
   lineageOf,
@@ -88,16 +89,23 @@ export default function Outliner({ initial }: { initial: Tree }) {
     const { tree: next, completed } = setDone(tree, id, !node.done)
     setTree(next)
 
-    // Ripple the children of whatever just completed, bottom-to-top.
+    // Ripple the children of whatever just completed. The wave radiates out
+    // from the item you actually ticked (its --worm-i is 0), so completing the
+    // last child ripples upward, and completing a middle one ripples both ways.
     if (completed.length > 0) {
       const map = new Map<NodeId, number>()
       for (const parentId of completed) {
         const kids = childrenOf(next, parentId)
-        kids.forEach((k, i) => map.set(k.id, kids.length - 1 - i))
+        // The ticked node lives in exactly one of these child branches.
+        const origin = kids.findIndex((k) => k.id === id || isAncestor(next, k.id, id))
+        const from = origin < 0 ? kids.length - 1 : origin
+        kids.forEach((k, i) => map.set(k.id, Math.abs(i - from)))
       }
       setWorm(map)
       window.clearTimeout(wormTimer.current)
-      wormTimer.current = window.setTimeout(() => setWorm(new Map()), 900)
+      // Let the furthest row finish: its delay is maxDist*100ms + 400ms of run.
+      const maxDist = Math.max(0, ...map.values())
+      wormTimer.current = window.setTimeout(() => setWorm(new Map()), maxDist * 100 + 500)
     }
   }
 
