@@ -7,9 +7,11 @@ import {
   isLeaf,
   leavesUnder,
   lineageOf,
+  moveNode,
   outdent,
   progressOf,
   removeNode,
+  roots,
   setDone,
   type Tree,
 } from './tree'
@@ -225,5 +227,56 @@ describe('indent / outdent', () => {
     t = outdent(t, 'g2') // back beside g1 under gather
     expect(t.find((n) => n.id === 'g2')!.parentId).toBe('gather')
     expect(childrenOf(t, 'gather').map((n) => n.id)).toEqual(['g1', 'g2', 'g3'])
+  })
+})
+
+describe('moveNode', () => {
+  it('reorders within a parent, and orders stay dense 0..n-1', () => {
+    // g1 -> end of gather.
+    const t = moveNode(fixture(), 'g1', 'gather', 3)
+    expect(childrenOf(t, 'gather').map((n) => n.id)).toEqual(['g2', 'g3', 'g1'])
+    expect(childrenOf(t, 'gather').map((n) => n.order)).toEqual([0, 1, 2])
+  })
+
+  it('moves across parents, closing the source gap and renumbering both', () => {
+    // Send f1 into gather at the front.
+    const t = moveNode(fixture(), 'f1', 'gather', 0)
+    expect(childrenOf(t, 'gather').map((n) => n.id)).toEqual(['f1', 'g1', 'g2', 'g3'])
+    expect(childrenOf(t, 'gather').map((n) => n.order)).toEqual([0, 1, 2, 3])
+    expect(childrenOf(t, 'flat').map((n) => n.id)).toEqual(['f2'])
+    expect(childrenOf(t, 'flat').map((n) => n.order)).toEqual([0])
+  })
+
+  it('nests a node under a leaf, making it a parent', () => {
+    // Drop g2 onto p1a (a leaf); p1a now has a child.
+    const t = moveNode(fixture(), 'g2', 'p1a', 0)
+    expect(t.find((n) => n.id === 'g2')!.parentId).toBe('p1a')
+    expect(childrenOf(t, 'p1a').map((n) => n.id)).toEqual(['g2'])
+    expect(isLeaf(t, 'p1a')).toBe(false)
+  })
+
+  it('can promote a node to a new root', () => {
+    const t = moveNode(fixture(), 'p2b', null, 1)
+    expect(t.find((n) => n.id === 'p2b')!.parentId).toBe(null)
+    expect(roots(t).map((n) => n.id)).toEqual(['taxes', 'p2b', 'flat'])
+  })
+
+  it('refuses to drop a node into its own descendant (would cycle)', () => {
+    const t = fixture()
+    // forms into p2b1, which sits under forms — must be a no-op.
+    expect(moveNode(t, 'forms', 'p2b1', 0)).toEqual(t)
+    // and into itself.
+    expect(moveNode(t, 'forms', 'forms', 0)).toEqual(t)
+  })
+
+  it('clamps an out-of-range index', () => {
+    const t = moveNode(fixture(), 'f1', 'gather', 99)
+    expect(childrenOf(t, 'gather').map((n) => n.id)).toEqual(['g1', 'g2', 'g3', 'f1'])
+  })
+
+  it('same-parent move to the same slot is a no-op in effect', () => {
+    const t = fixture()
+    // g2 is at index 1 among gather's children; moving it to index 1 keeps order.
+    expect(childrenOf(moveNode(t, 'g2', 'gather', 1), 'gather').map((n) => n.id)).toEqual(['g1', 'g2', 'g3'])
   })
 })

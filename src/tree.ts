@@ -206,6 +206,43 @@ export function isAncestor(tree: Tree, maybeAncestor: NodeId, id: NodeId): boole
 }
 
 /**
+ * Move a node to a new parent, inserted at `index` among that parent's
+ * children, and renumber both affected sibling lists to a dense 0..n-1
+ * sequence. This is the one primitive drag needs, and every other structural
+ * move (indent, outdent) is a special case of it.
+ *
+ * Rejected as a no-op when the target would form a cycle — dropping a node
+ * into itself or one of its own descendants. `index` is clamped to the valid
+ * range, and measured against the destination list *without* the moved node,
+ * so a same-parent reorder counts slots as you'd expect.
+ */
+export function moveNode(tree: Tree, id: NodeId, newParentId: NodeId | null, index: number): Tree {
+  const node = byId(tree, id)
+  if (!node) return tree
+  if (newParentId === id) return tree
+  if (newParentId !== null && isAncestor(tree, id, newParentId)) return tree
+
+  const dest = childrenOf(tree, newParentId).filter((n) => n.id !== id)
+  const at = Math.max(0, Math.min(index, dest.length))
+  const ordered = [...dest.slice(0, at), node, ...dest.slice(at)]
+
+  // New order for the destination list; the source list closes its gap simply
+  // by being renumbered from its own remaining, still-sorted children.
+  const destOrder = new Map(ordered.map((n, i) => [n.id, i]))
+  const srcSurvivors = childrenOf(tree, node.parentId).filter((n) => n.id !== id)
+  const srcOrder = new Map(srcSurvivors.map((n, i) => [n.id, i]))
+
+  return tree.map((n) => {
+    if (n.id === id) return { ...n, parentId: newParentId, order: destOrder.get(id)! }
+    if (destOrder.has(n.id)) return { ...n, order: destOrder.get(n.id)! }
+    // Only renumber the source list when it's a *different* parent; a
+    // same-parent move already covered everyone through destOrder above.
+    if (newParentId !== node.parentId && srcOrder.has(n.id)) return { ...n, order: srcOrder.get(n.id)! }
+    return n
+  })
+}
+
+/**
  * Tab: tuck a node under its preceding sibling, as that sibling's last child.
  * No-op for the first child (nothing to nest under) — outliners do the same.
  */
@@ -216,15 +253,12 @@ export function indent(tree: Tree, id: NodeId): Tree {
   const i = siblings.findIndex((s) => s.id === id)
   if (i <= 0) return tree
   const newParent = siblings[i - 1]
-  const dest = childrenOf(tree, newParent.id)
-  const order = dest.length ? dest[dest.length - 1].order + 1 : 0
-  return tree.map((n) => (n.id === id ? { ...n, parentId: newParent.id, order } : n))
+  return moveNode(tree, id, newParent.id, childrenOf(tree, newParent.id).length)
 }
 
 /**
  * Shift-Tab: pop a node up a level, landing right after its old parent among
  * the grandparent's children. No-op at the root — there's nowhere higher.
- * Following siblings shift down so the reinserted node keeps its slot.
  */
 export function outdent(tree: Tree, id: NodeId): Tree {
   const node = byId(tree, id)
@@ -232,13 +266,6 @@ export function outdent(tree: Tree, id: NodeId): Tree {
   const parent = byId(tree, node.parentId)
   if (!parent) return tree
   const uncles = childrenOf(tree, parent.parentId)
-  const parentOrder = uncles.find((u) => u.id === parent.id)?.order ?? 0
-  return tree.map((n) => {
-    if (n.id === id) return { ...n, parentId: parent.parentId, order: parentOrder + 1 }
-    // Make room after the parent for the reinserted node.
-    if (n.parentId === parent.parentId && n.id !== parent.id && n.order > parentOrder) {
-      return { ...n, order: n.order + 1 }
-    }
-    return n
-  })
+  const parentIndex = uncles.findIndex((u) => u.id === parent.id)
+  return moveNode(tree, id, parent.parentId, parentIndex + 1)
 }
