@@ -19,8 +19,11 @@ import {
   type Tree,
 } from './tree'
 
-/** Where a dragged node would land relative to the row under the pointer. */
-type DropMode = 'before' | 'after' | 'into'
+/**
+ * Where a dragged node would land relative to the row under the pointer.
+ * 'return' is the item's own vacated slot — drop there to put it back untouched.
+ */
+type DropMode = 'before' | 'after' | 'into' | 'return'
 interface DropTarget {
   id: NodeId
   mode: DropMode
@@ -40,7 +43,13 @@ interface VisibleRow {
  * leafOnly decides how much detail within it. leafOnly is never global — it
  * always means "the leaves under where I'm standing".
  */
-function visibleRows(tree: Tree, scope: NodeId | null, leafOnly: boolean, hideDone: boolean): VisibleRow[] {
+function visibleRows(
+  tree: Tree,
+  scope: NodeId | null,
+  leafOnly: boolean,
+  hideDone: boolean,
+  dragId: NodeId | null,
+): VisibleRow[] {
   if (leafOnly) {
     const leaves = scope
       ? leavesUnder(tree, scope)
@@ -55,6 +64,9 @@ function visibleRows(tree: Tree, scope: NodeId | null, leafOnly: boolean, hideDo
     for (const child of childrenOf(tree, parentId)) {
       if (hideDone && child.done) continue
       out.push({ id: child.id, depth, flat: false })
+      // While dragging, the lifted item's subtree is hidden so the list closes
+      // up. Its own row stays, rendered as a slim "return here" slot.
+      if (child.id === dragId) continue
       if (!child.collapsed) walk(child.id, depth + 1)
     }
   }
@@ -93,8 +105,8 @@ export default function Outliner({ initial }: { initial: Tree }) {
 
   // Resolve the pointer position to a drop target: which row, and which of its
   // three bands (top quarter = before, middle = into, bottom quarter = after).
-  // Rows that would make a cycle (self or a descendant of the dragged node) are
-  // skipped, so you can never drop a branch inside itself.
+  // Hovering the lifted item's own slot returns 'return' — drop there to put it
+  // back untouched. Descendants aren't rendered mid-drag, so cycles can't arise.
   function hitTest(clientY: number): DropTarget | null {
     const dragging = dragIdRef.current
     if (!dragging) return null
@@ -104,8 +116,11 @@ export default function Outliner({ initial }: { initial: Tree }) {
       const id = el.dataset.id!
       const r = el.getBoundingClientRect()
       if (clientY < r.top || clientY > r.bottom) continue
-      // Can't drop onto itself or into/around its own subtree.
-      if (id === dragging || isAncestor(t, dragging, id)) return null
+      // The item's own slot: dropping here returns it to where it started.
+      if (id === dragging) return { id, mode: 'return' }
+      // Belt and braces — a descendant shouldn't be rendered, but never nest
+      // into one if it somehow is.
+      if (isAncestor(t, dragging, id)) return null
       const rel = (clientY - r.top) / r.height
       const mode: DropMode = rel < 0.25 ? 'before' : rel > 0.75 ? 'after' : 'into'
       return { id, mode }
@@ -206,8 +221,8 @@ export default function Outliner({ initial }: { initial: Tree }) {
   }, [tree, scope])
 
   const rows = useMemo(
-    () => visibleRows(tree, scope, leafOnly, hideDone),
-    [tree, scope, leafOnly, hideDone],
+    () => visibleRows(tree, scope, leafOnly, hideDone, dragId),
+    [tree, scope, leafOnly, hideDone, dragId],
   )
 
   // One progress figure for the whole view: leaves done under the current
@@ -367,6 +382,21 @@ export default function Outliner({ initial }: { initial: Tree }) {
           {rows.map(({ id, depth, flat }) => {
             const node = byId(tree, id)
             if (!node) return null
+
+            // The lifted item leaves a slim slot behind (children hidden, list
+            // closed up). Hovering it is the always-available "put it back" drop.
+            if (dragId === id) {
+              return (
+                <div
+                  key={id}
+                  data-id={id}
+                  className={'row gap-slot' + (drop?.id === id ? ' drop-return' : '')}
+                  style={{ paddingLeft: 6 + depth * 22 } as React.CSSProperties}
+                  aria-hidden
+                />
+              )
+            }
+
             const parent = !isLeaf(tree, id)
             const wormIndex = worm.get(id)
 
@@ -393,7 +423,6 @@ export default function Outliner({ initial }: { initial: Tree }) {
                   'row' +
                   (node.done ? ' done' : '') +
                   (wormIndex !== undefined ? ' worm' : '') +
-                  (dragId === id ? ' dragging' : '') +
                   (dropHere === 'into' ? ' drop-into' : '') +
                   (dropHere === 'before' ? ' drop-before' : '') +
                   (dropHere === 'after' ? ' drop-after' : '')
