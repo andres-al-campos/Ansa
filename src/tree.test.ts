@@ -1,0 +1,190 @@
+import { describe, expect, it } from 'vitest'
+import {
+  addChild,
+  childrenOf,
+  isAncestor,
+  isLeaf,
+  leavesUnder,
+  lineageOf,
+  progressOf,
+  removeNode,
+  setDone,
+  type Tree,
+} from './tree'
+
+/**
+ *  taxes
+ *    gather
+ *      g1 (done)  g2  g3
+ *    forms
+ *      p1 -> p1a p1b
+ *      p2 -> p2a, p2b -> p2b1 p2b2
+ *  flat
+ *    f1 f2
+ */
+function fixture(): Tree {
+  const spec: Array<[string, string | null, string, boolean]> = [
+    ['taxes', null, 'File the tax return', false],
+    ['gather', 'taxes', 'Gather documents', false],
+    ['g1', 'gather', "Find last year's return", true],
+    ['g2', 'gather', 'Download bank CSV', false],
+    ['g3', 'gather', 'Dig out the P60', false],
+    ['forms', 'taxes', 'Fill the forms', false],
+    ['p1', 'forms', 'Page 1', false],
+    ['p1a', 'p1', 'Name and address', false],
+    ['p1b', 'p1', 'NI number', false],
+    ['p2', 'forms', 'Page 2', false],
+    ['p2a', 'p2', 'Salary', false],
+    ['p2b', 'p2', 'Freelance income', false],
+    ['p2b1', 'p2b', 'Total the invoices', false],
+    ['p2b2', 'p2b', 'Convert the USD ones', false],
+    ['flat', null, 'Sort out the flat', false],
+    ['f1', 'flat', 'Email the landlord', false],
+    ['f2', 'flat', 'Book a carpet clean', false],
+  ]
+  return spec.map(([id, parentId, text, done], i) => ({
+    id,
+    parentId,
+    text,
+    done,
+    order: i,
+    collapsed: false,
+    createdAt: 0,
+  }))
+}
+
+describe('structure', () => {
+  it('finds roots and direct children', () => {
+    const t = fixture()
+    expect(childrenOf(t, null).map((n) => n.id)).toEqual(['taxes', 'flat'])
+    expect(childrenOf(t, 'forms').map((n) => n.id)).toEqual(['p1', 'p2'])
+  })
+
+  it('knows a leaf from a parent', () => {
+    const t = fixture()
+    expect(isLeaf(t, 'p1a')).toBe(true)
+    expect(isLeaf(t, 'p2b')).toBe(false)
+  })
+
+  it('walks lineage root-first', () => {
+    expect(lineageOf(fixture(), 'p2b1').map((n) => n.id)).toEqual(['taxes', 'forms', 'p2', 'p2b', 'p2b1'])
+  })
+})
+
+describe('leavesUnder — the leaf filter', () => {
+  it('flattens the whole subtree, not just direct children', () => {
+    // p2b1/p2b2 sit 3 levels under `forms` and must still show.
+    expect(leavesUnder(fixture(), 'forms').map((n) => n.id)).toEqual(['p1a', 'p1b', 'p2a', 'p2b1', 'p2b2'])
+  })
+
+  it('excludes intermediate parents', () => {
+    expect(leavesUnder(fixture(), 'forms').map((n) => n.id)).not.toContain('p2b')
+  })
+
+  it('scopes to the given node only', () => {
+    expect(leavesUnder(fixture(), 'flat').map((n) => n.id)).toEqual(['f1', 'f2'])
+  })
+})
+
+describe('progress is leaf-weighted', () => {
+  it('a grandchild completing moves the grandparent', () => {
+    // The bug this guards: counting direct children would leave `taxes` at 0%,
+    // because `gather` is not itself done.
+    const t = fixture()
+    const before = progressOf(t, 'taxes')
+    const after = progressOf(setDone(t, 'g2', true).tree, 'taxes')
+    expect(after.done).toBeGreaterThan(before.done)
+    expect(after.pct).toBeGreaterThan(before.pct)
+  })
+
+  it('counts every leaf in the subtree', () => {
+    // gather 3 + forms 5 = 8 leaves under taxes, one already done.
+    const p = progressOf(fixture(), 'taxes')
+    expect(p.total).toBe(8)
+    expect(p.done).toBe(1)
+    expect(p.pct).toBe(13)
+  })
+
+  it('reaches exactly 100 when the subtree is finished', () => {
+    let t = fixture()
+    for (const id of ['p1a', 'p1b', 'p2a', 'p2b1', 'p2b2']) t = setDone(t, id, true).tree
+    expect(progressOf(t, 'forms')).toEqual({ done: 5, total: 5, pct: 100 })
+  })
+
+  it('decomposing a leaf moves the denominator, it does not reset the level', () => {
+    // The worry that nearly cut progress bars: splitting work shouldn't tank
+    // the number. 1/3 -> 1/5 is a dip, not a collapse to zero.
+    const t = fixture()
+    const before = progressOf(setDone(t, 'g2', true).tree, 'gather')
+    let after = setDone(t, 'g2', true).tree
+    after = addChild(after, 'g3', 'sub a').tree
+    after = addChild(after, 'g3', 'sub b').tree
+    const p = progressOf(after, 'gather')
+    expect(before.pct).toBe(67) // g1 + g2 of 3
+    expect(p.pct).toBe(50) // g1 + g2 of 4 (g3 became a parent of 2)
+  })
+})
+
+describe('setDone cascades', () => {
+  it('completes the parent when the last child lands, and reports it', () => {
+    const t = fixture()
+    const first = setDone(t, 'p1a', true)
+    expect(first.completed).toEqual([])
+    const second = setDone(first.tree, 'p1b', true)
+    expect(second.completed).toContain('p1')
+  })
+
+  it('climbs several levels at once', () => {
+    let t = fixture()
+    t = setDone(t, 'p1a', true).tree
+    t = setDone(t, 'p1b', true).tree
+    t = setDone(t, 'p2a', true).tree
+    t = setDone(t, 'p2b1', true).tree
+    const last = setDone(t, 'p2b2', true)
+    // p2b, then p2, then forms all complete off one tick.
+    expect(last.completed).toEqual(['p2b', 'p2', 'forms'])
+  })
+
+  it('ticking a parent completes its whole subtree', () => {
+    const { tree } = setDone(fixture(), 'forms', true)
+    for (const id of ['p1', 'p1a', 'p1b', 'p2', 'p2a', 'p2b', 'p2b1', 'p2b2']) {
+      expect(tree.find((n) => n.id === id)!.done, id).toBe(true)
+    }
+  })
+
+  it('unticking a descendant re-opens every ancestor', () => {
+    let t = setDone(fixture(), 'taxes', true).tree
+    expect(t.find((n) => n.id === 'taxes')!.done).toBe(true)
+    t = setDone(t, 'p2b2', false).tree
+    for (const id of ['p2b', 'p2', 'forms', 'taxes']) {
+      expect(t.find((n) => n.id === id)!.done, id).toBe(false)
+    }
+  })
+
+  it('does not mutate the tree it was given', () => {
+    const t = fixture()
+    setDone(t, 'p1a', true)
+    expect(t.find((n) => n.id === 'p1a')!.done).toBe(false)
+  })
+})
+
+describe('editing', () => {
+  it('removing a node takes its subtree with it', () => {
+    const t = removeNode(fixture(), 'p2')
+    for (const id of ['p2', 'p2a', 'p2b', 'p2b1', 'p2b2']) {
+      expect(t.find((n) => n.id === id), id).toBeUndefined()
+    }
+    expect(t.find((n) => n.id === 'p1')).toBeDefined()
+  })
+
+  it('a new child lands last among its siblings', () => {
+    const { tree, id } = addChild(fixture(), 'gather', 'Find the P45')
+    expect(childrenOf(tree, 'gather').map((n) => n.id)).toEqual(['g1', 'g2', 'g3', id])
+  })
+
+  it('spots ancestors so a move cannot make a cycle', () => {
+    const t = fixture()
+    expect(isAncestor(t, 'forms', 'p2b1')).toBe(true)
+    expect(isAncestor(t, 'p2b1', 'forms')).toBe(false)
+  })
+})
