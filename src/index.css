@@ -210,6 +210,31 @@ button { font: inherit; color: inherit; }
 .row.drop-before::before { top: -1px; }
 .row.drop-after::before { bottom: -1px; }
 
+/* The card carried under the pointer: the grabbed item alone, lifted off. */
+.drag-ghost {
+  position: fixed;
+  z-index: 100;
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  max-width: 340px;
+  padding: 7px 12px 7px 10px;
+  background: var(--panel);
+  border: 1px solid var(--edge);
+  border-radius: 8px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35), 0 2px 6px rgba(0, 0, 0, 0.25);
+  transform: rotate(-1.5deg);
+}
+.drag-ghost .bullet { margin-top: 0; }
+.drag-ghost .ghost-label {
+  font-size: 14.5px;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .twisty {
   width: 14px;
   flex: none;
@@ -233,13 +258,15 @@ button { font: inherit; color: inherit; }
   background: none;
   border: none;
   padding: 0;
-  cursor: grab;
+  cursor: pointer;
   position: relative;
   margin-top: 4px;
   /* Hold-to-drag must not scroll the page under the finger on touch. */
   touch-action: none;
 }
-.bullet:active { cursor: grabbing; }
+/* The grab cursor only shows once a drag is actually live — hold-to-drag is a
+ * power-user gesture, not something to advertise on every bullet at rest. */
+body:has(.row.dragging) { cursor: grabbing; }
 .bullet::after {
   content: '';
   position: absolute;

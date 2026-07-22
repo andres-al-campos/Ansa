@@ -75,6 +75,8 @@ export default function Outliner({ initial }: { initial: Tree }) {
   // ------------------------------------------------------------ drag state
   const [dragId, setDragId] = useState<NodeId | null>(null)
   const [drop, setDrop] = useState<DropTarget | null>(null)
+  // Pointer position, so the drag "card" can follow it. null when not dragging.
+  const [ghostAt, setGhostAt] = useState<{ x: number; y: number } | null>(null)
   // The long-press timer, and where the finger first went down, so a small
   // move cancels the press (a tap-to-zoom) but a held press starts a drag.
   const press = useRef<{ id: NodeId; x: number; y: number; timer: number } | null>(null)
@@ -116,6 +118,7 @@ export default function Outliner({ initial }: { initial: Tree }) {
     const target = drop
     setDragId(null)
     setDrop(null)
+    setGhostAt(null)
     // The suppress-the-zoom flag was set when the drag began; clear it just
     // after this release so it only guards the click that immediately follows,
     // never a later tap (the click may not even land on the dragged bullet).
@@ -146,6 +149,7 @@ export default function Outliner({ initial }: { initial: Tree }) {
     const onMove = (e: PointerEvent) => {
       e.preventDefault()
       setDrop(hitTest(e.clientY))
+      setGhostAt({ x: e.clientX, y: e.clientY })
     }
     const onUp = () => finishDrag()
     window.addEventListener('pointermove', onMove, { passive: false })
@@ -167,10 +171,12 @@ export default function Outliner({ initial }: { initial: Tree }) {
     const startX = e.clientX
     const startY = e.clientY
     const timer = window.setTimeout(() => {
+      const p = press.current
       press.current = null
       justDragged.current = true // suppress the zoom-click that ends this press
       setDragId(id)
       setDrop(null)
+      if (p) setGhostAt({ x: p.x, y: p.y })
     }, 350)
     press.current = { id, x: startX, y: startY, timer }
 
@@ -264,6 +270,10 @@ export default function Outliner({ initial }: { initial: Tree }) {
   }
 
   const lineage = scope ? lineageOf(tree, scope) : []
+
+  // The card that follows the pointer while dragging: just the grabbed item,
+  // shown collapsed — never its children, even when dragging a parent.
+  const dragNode = dragId ? byId(tree, dragId) : undefined
 
   return (
     <div className="app">
@@ -465,6 +475,17 @@ export default function Outliner({ initial }: { initial: Tree }) {
           )}
         </div>
       </main>
+
+      {dragNode && ghostAt && (
+        <div
+          className="drag-ghost"
+          style={{ left: ghostAt.x + 12, top: ghostAt.y + 8 } as React.CSSProperties}
+          aria-hidden
+        >
+          <span className={'bullet ' + (isLeaf(tree, dragNode.id) ? 'leaf' : 'parent')} />
+          <span className="ghost-label">{dragNode.text || 'Untitled'}</span>
+        </div>
+      )}
     </div>
   )
 }
