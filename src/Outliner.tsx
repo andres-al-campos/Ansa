@@ -273,7 +273,7 @@ export default function Outliner({ initial }: { initial: Tree }) {
                     </div>
                   )}
 
-                  {prog && !flat && (
+                  {prog && !flat && prog.pct > 0 && (
                     <div className="progress">
                       <div className="pbar">
                         <i style={{ width: `${prog.pct}%` }} />
