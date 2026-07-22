@@ -239,19 +239,25 @@ button { font: inherit; color: inherit; }
   cursor: pointer;
   position: relative;
 }
-.check:hover { border-color: var(--leaf); }
-.check[aria-checked='true'] { background: var(--leaf); border-color: var(--leaf); }
+.check:hover { border-color: var(--bar); }
+/* Checked but the sibling group isn't finished yet: blue, like the bar. */
+.check[aria-checked='true'] { background: var(--bar); border-color: var(--bar); }
+/* Whole group done: green. */
+.check.group-done[aria-checked='true'] { background: var(--leaf); border-color: var(--leaf); }
 .check[aria-checked='true']::after {
   content: '';
   position: absolute;
-  left: 4px;
-  top: 1px;
+  /* Center the tick, then nudge for the shape's own visual weight. */
+  left: 50%;
+  top: 50%;
   width: 4px;
   height: 8px;
   border: solid #fff;
   border-width: 0 2px 2px 0;
-  transform: rotate(42deg);
+  transform: translate(-50%, -60%) rotate(42deg);
 }
+/* Both check colors transition, so a parent-tick fades blue→green with the worm. */
+.check { transition: background-color 0.25s ease, border-color 0.25s ease; }
 
 .body { flex: 1; min-width: 0; }
 

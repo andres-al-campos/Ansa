@@ -90,13 +90,18 @@ export default function Outliner({ initial }: { initial: Tree }) {
   function handleToggleDone(id: NodeId) {
     const node = byId(tree, id)
     if (!node) return
-    const { tree: next, completed } = setDone(tree, id, !node.done)
+    const willComplete = !node.done
+    const { tree: next, completed } = setDone(tree, id, willComplete)
     setTree(next)
 
-    // Ripple the children of whatever just completed, top to bottom.
-    if (completed.length > 0) {
+    // Ripple the children of whatever just completed, top to bottom. That's
+    // every parent that flipped done up the chain, plus the node you ticked
+    // itself when it has children (completing a parent celebrates its kids too).
+    const rippleParents = new Set(completed)
+    if (willComplete && !isLeaf(tree, id)) rippleParents.add(id)
+    if (rippleParents.size > 0) {
       const map = new Map<NodeId, number>()
-      for (const parentId of completed) {
+      for (const parentId of rippleParents) {
         childrenOf(next, parentId).forEach((k, i) => map.set(k.id, i))
       }
       setWorm(map)
@@ -227,6 +232,11 @@ export default function Outliner({ initial }: { initial: Tree }) {
             const parent = !isLeaf(tree, id)
             const wormIndex = worm.get(id)
 
+            // A check is green once its whole sibling group is done — i.e. its
+            // parent is done (or it's a finished root). Otherwise a done item is
+            // blue: progress, but the group isn't closed out yet.
+            const groupDone = node.done && (node.parentId === null || !!byId(tree, node.parentId)?.done)
+
             // Ancestry between the current scope and this leaf, for the chip.
             const chip = flat
               ? lineageOf(tree, id)
@@ -267,7 +277,7 @@ export default function Outliner({ initial }: { initial: Tree }) {
                 />
 
                 <button
-                  className="check"
+                  className={'check' + (groupDone ? ' group-done' : '')}
                   role="checkbox"
                   aria-checked={node.done}
                   aria-label={node.text}
