@@ -2,10 +2,12 @@ import { describe, expect, it } from 'vitest'
 import {
   addChild,
   childrenOf,
+  indent,
   isAncestor,
   isLeaf,
   leavesUnder,
   lineageOf,
+  outdent,
   progressOf,
   removeNode,
   setDone,
@@ -186,5 +188,42 @@ describe('editing', () => {
     const t = fixture()
     expect(isAncestor(t, 'forms', 'p2b1')).toBe(true)
     expect(isAncestor(t, 'p2b1', 'forms')).toBe(false)
+  })
+})
+
+describe('indent / outdent', () => {
+  it('indent tucks a node under its preceding sibling, last', () => {
+    // g2 slides under g1.
+    const t = indent(fixture(), 'g2')
+    expect(childrenOf(t, 'gather').map((n) => n.id)).toEqual(['g1', 'g3'])
+    expect(childrenOf(t, 'g1').map((n) => n.id)).toEqual(['g2'])
+  })
+
+  it('indent is a no-op for a first child', () => {
+    const t = fixture()
+    expect(indent(t, 'g1')).toEqual(t)
+    // p1 is the first child of forms.
+    expect(indent(t, 'p1')).toEqual(t)
+  })
+
+  it('outdent pops a node up beside its old parent, right after it', () => {
+    // p1a leaves p1 to sit under forms, between p1 and p2.
+    const t = outdent(fixture(), 'p1a')
+    expect(t.find((n) => n.id === 'p1a')!.parentId).toBe('forms')
+    expect(childrenOf(t, 'forms').map((n) => n.id)).toEqual(['p1', 'p1a', 'p2'])
+    expect(childrenOf(t, 'p1').map((n) => n.id)).toEqual(['p1b'])
+  })
+
+  it('outdent is a no-op at the root', () => {
+    const t = fixture()
+    expect(outdent(t, 'taxes')).toEqual(t)
+  })
+
+  it('indent then outdent round-trips the parent', () => {
+    let t = fixture()
+    t = indent(t, 'g2') // g2 under g1
+    t = outdent(t, 'g2') // back beside g1 under gather
+    expect(t.find((n) => n.id === 'g2')!.parentId).toBe('gather')
+    expect(childrenOf(t, 'gather').map((n) => n.id)).toEqual(['g1', 'g2', 'g3'])
   })
 })

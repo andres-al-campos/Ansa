@@ -3,9 +3,11 @@ import {
   addChild,
   byId,
   childrenOf,
+  indent,
   isLeaf,
   leavesUnder,
   lineageOf,
+  outdent,
   progressOf,
   removeNode,
   roots,
@@ -104,6 +106,15 @@ export default function Outliner({ initial }: { initial: Tree }) {
     // An emptied row is a deletion — matches how outliners behave.
     setTree(trimmed ? setText(tree, id, trimmed) : removeNode(tree, id))
     setEditing(null)
+  }
+
+  /**
+   * Tab/Shift-Tab while editing. Commit the live text first so the reparent
+   * doesn't discard it, then re-nest and keep the row in edit mode.
+   */
+  function reindent(id: NodeId, text: string, dir: 'in' | 'out') {
+    const withText = setText(tree, id, text.trim())
+    setTree(dir === 'in' ? indent(withText, id) : outdent(withText, id))
   }
 
   function addSibling(afterId: NodeId | null) {
@@ -263,6 +274,10 @@ export default function Outliner({ initial }: { initial: Tree }) {
                           addSibling(id)
                         } else if (e.key === 'Escape') {
                           setEditing(null)
+                        } else if (e.key === 'Tab' && !leafOnly) {
+                          // Reparenting is incoherent in the flattened leaf view.
+                          e.preventDefault()
+                          reindent(id, e.currentTarget.value, e.shiftKey ? 'out' : 'in')
                         }
                       }}
                     />

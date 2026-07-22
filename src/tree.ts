@@ -204,3 +204,41 @@ export function toggleCollapsed(tree: Tree, id: NodeId): Tree {
 export function isAncestor(tree: Tree, maybeAncestor: NodeId, id: NodeId): boolean {
   return lineageOf(tree, id).some((n) => n.id === maybeAncestor)
 }
+
+/**
+ * Tab: tuck a node under its preceding sibling, as that sibling's last child.
+ * No-op for the first child (nothing to nest under) — outliners do the same.
+ */
+export function indent(tree: Tree, id: NodeId): Tree {
+  const node = byId(tree, id)
+  if (!node) return tree
+  const siblings = childrenOf(tree, node.parentId)
+  const i = siblings.findIndex((s) => s.id === id)
+  if (i <= 0) return tree
+  const newParent = siblings[i - 1]
+  const dest = childrenOf(tree, newParent.id)
+  const order = dest.length ? dest[dest.length - 1].order + 1 : 0
+  return tree.map((n) => (n.id === id ? { ...n, parentId: newParent.id, order } : n))
+}
+
+/**
+ * Shift-Tab: pop a node up a level, landing right after its old parent among
+ * the grandparent's children. No-op at the root — there's nowhere higher.
+ * Following siblings shift down so the reinserted node keeps its slot.
+ */
+export function outdent(tree: Tree, id: NodeId): Tree {
+  const node = byId(tree, id)
+  if (!node || node.parentId === null) return tree
+  const parent = byId(tree, node.parentId)
+  if (!parent) return tree
+  const uncles = childrenOf(tree, parent.parentId)
+  const parentOrder = uncles.find((u) => u.id === parent.id)?.order ?? 0
+  return tree.map((n) => {
+    if (n.id === id) return { ...n, parentId: parent.parentId, order: parentOrder + 1 }
+    // Make room after the parent for the reinserted node.
+    if (n.parentId === parent.parentId && n.id !== parent.id && n.order > parentOrder) {
+      return { ...n, order: n.order + 1 }
+    }
+    return n
+  })
+}
