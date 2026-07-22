@@ -277,11 +277,17 @@ button { font: inherit; color: inherit; }
 
 .chip { font-size: 10.5px; color: var(--ink-ghost); margin-left: 8px; }
 
-.progress { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
+/* One bar for the whole view, sitting under the scope heading. */
+.scope-progress {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: 780px;
+  margin: 0 0 24px;
+}
 .pbar {
-  height: 3px;
+  height: 4px;
   flex: 1;
-  max-width: 320px;
   background: var(--bar-track);
   border-radius: 2px;
   overflow: hidden;
@@ -294,18 +300,18 @@ button { font: inherit; color: inherit; }
   transition: width 0.45s cubic-bezier(0.4, 0, 0.2, 1), background-color 0.3s ease;
 }
 .pct {
-  font-size: 10.5px;
-  color: var(--ink-ghost);
+  font-size: 11px;
+  color: var(--ink-faint);
   font-variant-numeric: tabular-nums;
-  min-width: 30px;
+  min-width: 32px;
+  text-align: right;
 }
-.row.complete .pbar i { background: var(--leaf); }
-.row.complete .pct { color: var(--leaf); font-weight: 650; }
+.scope-progress.complete .pbar i { background: var(--leaf); }
+.scope-progress.complete .pct { color: var(--leaf); font-weight: 650; }
 
 /*
- * The worm: children ripple one after another rather than shaking at once.
- * --worm-i is each row's distance from the item that was just completed, so
- * the wave radiates out from where you ticked. A small symmetric wiggle.
+ * The worm: children ripple one after another, top to bottom, rather than
+ * shaking at once. --worm-i is each row's position among its siblings.
  */
 @keyframes worm {
   0% { transform: translateX(0); }

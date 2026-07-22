@@ -4,12 +4,10 @@ import {
   byId,
   childrenOf,
   indent,
-  isAncestor,
   isLeaf,
   leavesUnder,
   lineageOf,
   outdent,
-  progressOf,
   removeNode,
   roots,
   setDone,
@@ -78,10 +76,16 @@ export default function Outliner({ initial }: { initial: Tree }) {
     [tree, scope, leafOnly, hideDone],
   )
 
-  const openLeafCount = useMemo(() => {
+  // One progress figure for the whole view: leaves done under the current
+  // scope, or across every project at "Everything".
+  const scopeProgress = useMemo(() => {
     const leaves = scope ? leavesUnder(tree, scope) : roots(tree).flatMap((r) => leavesUnder(tree, r.id))
-    return leaves.filter((l) => !l.done).length
+    const done = leaves.filter((l) => l.done).length
+    const total = leaves.length
+    return { done, total, pct: total ? Math.round((done / total) * 100) : 0 }
   }, [tree, scope])
+
+  const openLeafCount = scopeProgress.total - scopeProgress.done
 
   function handleToggleDone(id: NodeId) {
     const node = byId(tree, id)
@@ -89,23 +93,17 @@ export default function Outliner({ initial }: { initial: Tree }) {
     const { tree: next, completed } = setDone(tree, id, !node.done)
     setTree(next)
 
-    // Ripple the children of whatever just completed. The wave radiates out
-    // from the item you actually ticked (its --worm-i is 0), so completing the
-    // last child ripples upward, and completing a middle one ripples both ways.
+    // Ripple the children of whatever just completed, top to bottom.
     if (completed.length > 0) {
       const map = new Map<NodeId, number>()
       for (const parentId of completed) {
-        const kids = childrenOf(next, parentId)
-        // The ticked node lives in exactly one of these child branches.
-        const origin = kids.findIndex((k) => k.id === id || isAncestor(next, k.id, id))
-        const from = origin < 0 ? kids.length - 1 : origin
-        kids.forEach((k, i) => map.set(k.id, Math.abs(i - from)))
+        childrenOf(next, parentId).forEach((k, i) => map.set(k.id, i))
       }
       setWorm(map)
       window.clearTimeout(wormTimer.current)
-      // Let the furthest row finish: its delay is maxDist*100ms + 400ms of run.
-      const maxDist = Math.max(0, ...map.values())
-      wormTimer.current = window.setTimeout(() => setWorm(new Map()), maxDist * 100 + 500)
+      // Let the last row finish: its delay is maxIndex*100ms + 400ms of run.
+      const maxIndex = Math.max(0, ...map.values())
+      wormTimer.current = window.setTimeout(() => setWorm(new Map()), maxIndex * 100 + 500)
     }
   }
 
@@ -205,6 +203,15 @@ export default function Outliner({ initial }: { initial: Tree }) {
               : 'All your projects'}
         </p>
 
+        {scopeProgress.total > 0 && (
+          <div className={'scope-progress' + (scopeProgress.pct === 100 ? ' complete' : '')}>
+            <div className="pbar">
+              <i style={{ width: `${scopeProgress.pct}%` }} />
+            </div>
+            <span className="pct">{scopeProgress.pct}%</span>
+          </div>
+        )}
+
         <div className="rows">
           {rows.length === 0 && (
             <p className="empty">
@@ -218,7 +225,6 @@ export default function Outliner({ initial }: { initial: Tree }) {
             const node = byId(tree, id)
             if (!node) return null
             const parent = !isLeaf(tree, id)
-            const prog = parent ? progressOf(tree, id) : null
             const wormIndex = worm.get(id)
 
             // Ancestry between the current scope and this leaf, for the chip.
@@ -235,7 +241,6 @@ export default function Outliner({ initial }: { initial: Tree }) {
                 className={
                   'row' +
                   (node.done ? ' done' : '') +
-                  (prog?.pct === 100 ? ' complete' : '') +
                   (wormIndex !== undefined ? ' worm' : '')
                 }
                 style={
@@ -293,15 +298,6 @@ export default function Outliner({ initial }: { initial: Tree }) {
                     <div className="label" onClick={() => setEditing(id)}>
                       {node.text || <span style={{ color: 'var(--ink-ghost)' }}>Untitled</span>}
                       {chip && <span className="chip">{chip}</span>}
-                    </div>
-                  )}
-
-                  {prog && !flat && prog.pct > 0 && (
-                    <div className="progress">
-                      <div className="pbar">
-                        <i style={{ width: `${prog.pct}%` }} />
-                      </div>
-                      <span className="pct">{prog.pct}%</span>
                     </div>
                   )}
                 </div>
