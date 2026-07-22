@@ -180,8 +180,35 @@ button { font: inherit; color: inherit; }
   gap: 9px;
   padding: 5px 6px;
   border-radius: 6px;
+  position: relative;
 }
 .row:hover { background: var(--sunk); }
+
+/* ---- drag & drop ---- */
+
+/* The row being dragged dims in place; it's a placeholder, not the cursor. */
+.row.dragging { opacity: 0.4; }
+
+/* Drop *into*: the whole row lights up as the container you'd nest under. */
+.row.drop-into {
+  background: var(--brass-soft);
+  box-shadow: inset 0 0 0 1.5px var(--brass);
+}
+.row.drop-into .bullet::before { background: var(--brass); }
+
+/* Drop *between*: an insertion line at the row's top or bottom edge. */
+.row.drop-before::before,
+.row.drop-after::before {
+  content: '';
+  position: absolute;
+  left: 6px;
+  right: 6px;
+  height: 2px;
+  background: var(--bar);
+  border-radius: 1px;
+}
+.row.drop-before::before { top: -1px; }
+.row.drop-after::before { bottom: -1px; }
 
 .twisty {
   width: 14px;
@@ -206,10 +233,13 @@ button { font: inherit; color: inherit; }
   background: none;
   border: none;
   padding: 0;
-  cursor: pointer;
+  cursor: grab;
   position: relative;
   margin-top: 4px;
+  /* Hold-to-drag must not scroll the page under the finger on touch. */
+  touch-action: none;
 }
+.bullet:active { cursor: grabbing; }
 .bullet::after {
   content: '';
   position: absolute;

@@ -4,9 +4,11 @@ import {
   byId,
   childrenOf,
   indent,
+  isAncestor,
   isLeaf,
   leavesUnder,
   lineageOf,
+  moveNode,
   outdent,
   removeNode,
   roots,
@@ -16,6 +18,13 @@ import {
   type NodeId,
   type Tree,
 } from './tree'
+
+/** Where a dragged node would land relative to the row under the pointer. */
+type DropMode = 'before' | 'after' | 'into'
+interface DropTarget {
+  id: NodeId
+  mode: DropMode
+}
 
 interface VisibleRow {
   id: NodeId
@@ -63,7 +72,126 @@ export default function Outliner({ initial }: { initial: Tree }) {
   const [worm, setWorm] = useState<Map<NodeId, number>>(new Map())
   const wormTimer = useRef<number | undefined>(undefined)
 
+  // ------------------------------------------------------------ drag state
+  const [dragId, setDragId] = useState<NodeId | null>(null)
+  const [drop, setDrop] = useState<DropTarget | null>(null)
+  // The long-press timer, and where the finger first went down, so a small
+  // move cancels the press (a tap-to-zoom) but a held press starts a drag.
+  const press = useRef<{ id: NodeId; x: number; y: number; timer: number } | null>(null)
+  // Live refs read by the global move handler without re-subscribing.
+  const treeRef = useRef(tree)
+  treeRef.current = tree
+  const dragIdRef = useRef<NodeId | null>(null)
+  dragIdRef.current = dragId
+  // Set when a press turns into a drag, so the bullet's click (which fires on
+  // release) doesn't also zoom. Cleared by that click.
+  const justDragged = useRef(false)
+
   useEffect(() => () => window.clearTimeout(wormTimer.current), [])
+
+  // Resolve the pointer position to a drop target: which row, and which of its
+  // three bands (top quarter = before, middle = into, bottom quarter = after).
+  // Rows that would make a cycle (self or a descendant of the dragged node) are
+  // skipped, so you can never drop a branch inside itself.
+  function hitTest(clientY: number): DropTarget | null {
+    const dragging = dragIdRef.current
+    if (!dragging) return null
+    const t = treeRef.current
+    const rowEls = document.querySelectorAll<HTMLElement>('.row[data-id]')
+    for (const el of rowEls) {
+      const id = el.dataset.id!
+      const r = el.getBoundingClientRect()
+      if (clientY < r.top || clientY > r.bottom) continue
+      // Can't drop onto itself or into/around its own subtree.
+      if (id === dragging || isAncestor(t, dragging, id)) return null
+      const rel = (clientY - r.top) / r.height
+      const mode: DropMode = rel < 0.25 ? 'before' : rel > 0.75 ? 'after' : 'into'
+      return { id, mode }
+    }
+    return null
+  }
+
+  function finishDrag() {
+    const dragging = dragIdRef.current
+    const target = drop
+    setDragId(null)
+    setDrop(null)
+    // The suppress-the-zoom flag was set when the drag began; clear it just
+    // after this release so it only guards the click that immediately follows,
+    // never a later tap (the click may not even land on the dragged bullet).
+    window.setTimeout(() => (justDragged.current = false), 0)
+
+    if (!dragging || !target || dragging === target.id) return
+
+    const t = treeRef.current
+    const node = byId(t, target.id)
+    if (!node) return
+
+    if (target.mode === 'into') {
+      // Nest as the first child; open the parent so the move is visible.
+      let next = moveNode(t, dragging, target.id, 0)
+      if (node.collapsed) next = toggleCollapsed(next, target.id)
+      setTree(next)
+    } else {
+      const siblings = childrenOf(t, node.parentId).filter((n) => n.id !== dragging)
+      const pos = siblings.findIndex((n) => n.id === target.id)
+      const index = target.mode === 'before' ? pos : pos + 1
+      setTree(moveNode(t, dragging, node.parentId, index))
+    }
+  }
+
+  // While a drag is live, track the pointer globally and end on release.
+  useEffect(() => {
+    if (!dragId) return
+    const onMove = (e: PointerEvent) => {
+      e.preventDefault()
+      setDrop(hitTest(e.clientY))
+    }
+    const onUp = () => finishDrag()
+    window.addEventListener('pointermove', onMove, { passive: false })
+    window.addEventListener('pointerup', onUp)
+    window.addEventListener('pointercancel', onUp)
+    return () => {
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+      window.removeEventListener('pointercancel', onUp)
+    }
+    // finishDrag/hitTest read from refs, so this only needs to re-bind per drag.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dragId, drop])
+
+  // Bullet pointerdown: arm a long-press. A move beyond a few px before it
+  // fires cancels it (that was a scroll or a click), otherwise the drag begins.
+  function onBulletPointerDown(e: React.PointerEvent, id: NodeId) {
+    if (leafOnly) return // structure isn't shown in the flattened view
+    const startX = e.clientX
+    const startY = e.clientY
+    const timer = window.setTimeout(() => {
+      press.current = null
+      justDragged.current = true // suppress the zoom-click that ends this press
+      setDragId(id)
+      setDrop(null)
+    }, 350)
+    press.current = { id, x: startX, y: startY, timer }
+
+    const cancelIfMoved = (ev: PointerEvent) => {
+      if (!press.current) return
+      if (Math.abs(ev.clientX - press.current.x) > 6 || Math.abs(ev.clientY - press.current.y) > 6) {
+        window.clearTimeout(press.current.timer)
+        press.current = null
+      }
+    }
+    const cleanup = () => {
+      if (press.current) {
+        window.clearTimeout(press.current.timer)
+        press.current = null
+      }
+      window.removeEventListener('pointermove', cancelIfMoved)
+      window.removeEventListener('pointerup', cleanup)
+    }
+    window.addEventListener('pointermove', cancelIfMoved)
+    window.addEventListener('pointerup', cleanup)
+  }
 
   const scopeNode = scope ? byId(tree, scope) : undefined
   // A scope whose node was deleted would strand the view.
@@ -245,13 +373,20 @@ export default function Outliner({ initial }: { initial: Tree }) {
                   .join(' › ')
               : ''
 
+            const dropHere = drop?.id === id ? drop.mode : null
+
             return (
               <div
                 key={id}
+                data-id={id}
                 className={
                   'row' +
                   (node.done ? ' done' : '') +
-                  (wormIndex !== undefined ? ' worm' : '')
+                  (wormIndex !== undefined ? ' worm' : '') +
+                  (dragId === id ? ' dragging' : '') +
+                  (dropHere === 'into' ? ' drop-into' : '') +
+                  (dropHere === 'before' ? ' drop-before' : '') +
+                  (dropHere === 'after' ? ' drop-after' : '')
                 }
                 style={
                   {
@@ -271,9 +406,17 @@ export default function Outliner({ initial }: { initial: Tree }) {
 
                 <button
                   className={'bullet ' + (parent ? 'parent' : 'leaf')}
-                  onClick={() => setScope(id)}
+                  onPointerDown={flat ? undefined : (e) => onBulletPointerDown(e, id)}
+                  onClick={() => {
+                    // A press that became a drag must not also zoom.
+                    if (justDragged.current) {
+                      justDragged.current = false
+                      return
+                    }
+                    setScope(id)
+                  }}
                   aria-label={`Zoom into ${node.text}`}
-                  title="Zoom in"
+                  title={flat ? 'Zoom in' : 'Zoom in — or hold to drag'}
                 />
 
                 <button
