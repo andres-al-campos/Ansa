@@ -136,6 +136,20 @@ button { font: inherit; color: inherit; }
 }
 .filters .scopename { color: var(--brass-ink); font-weight: 600; }
 
+.data-actions { display: flex; gap: 8px; }
+.data-actions button {
+  flex: 1;
+  background: var(--panel);
+  border: 1px solid var(--edge);
+  border-radius: 6px;
+  cursor: pointer;
+  color: var(--ink-mid);
+  font-size: 12.5px;
+  padding: 6px 8px;
+}
+.data-actions button:hover { border-color: var(--brass); color: var(--ink); }
+.data-note { margin: 8px 0 0; }
+
 /* ----------------------------------------------------------- main pane */
 
 .main { padding: 26px 30px 40px; overflow-y: auto; }

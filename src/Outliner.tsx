@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { exportTree, parseTree, saveTree } from './storage'
 import {
   addChild,
   byId,
@@ -102,6 +103,10 @@ export default function Outliner({ initial }: { initial: Tree }) {
   const justDragged = useRef(false)
 
   useEffect(() => () => window.clearTimeout(wormTimer.current), [])
+
+  // Persist on every change. localStorage writes are synchronous and cheap at
+  // this size; if the tree ever outgrows that, debounce here.
+  useEffect(() => saveTree(tree), [tree])
 
   // Resolve the pointer position to a drop target: which row, and which of its
   // three bands (top quarter = before, middle = into, bottom quarter = after).
@@ -284,6 +289,39 @@ export default function Outliner({ initial }: { initial: Tree }) {
     setEditing(id)
   }
 
+  // Download the whole tree as a JSON file — the backup / hand-off format.
+  function handleExport() {
+    const blob = new Blob([exportTree(tree)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `ansa-${new Date().toISOString().slice(0, 10)}.json`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  const fileInput = useRef<HTMLInputElement>(null)
+
+  // Replace the current tree from a JSON file. Rejected outright if the file
+  // isn't a valid tree, and confirmed first because it overwrites everything.
+  function handleImportFile(file: File) {
+    const reader = new FileReader()
+    reader.onload = () => {
+      const next = parseTree(String(reader.result))
+      if (!next) {
+        window.alert(
+          "That file isn't a valid Ansa export. Pick a JSON file you exported from Ansa, or check it wasn't edited into an invalid shape.",
+        )
+        return
+      }
+      if (!window.confirm('Replace everything currently here with the imported list?')) return
+      setScope(null)
+      setEditing(null)
+      setTree(next)
+    }
+    reader.readAsText(file)
+  }
+
   const lineage = scope ? lineageOf(tree, scope) : []
 
   // The card that follows the pointer while dragging: just the grabbed item,
@@ -335,6 +373,24 @@ export default function Outliner({ initial }: { initial: Tree }) {
             </span>
           </label>
         </div>
+
+        <p className="sect">Your data</p>
+        <div className="data-actions">
+          <button onClick={handleExport}>Export</button>
+          <button onClick={() => fileInput.current?.click()}>Import</button>
+          <input
+            ref={fileInput}
+            type="file"
+            accept="application/json,.json"
+            hidden
+            onChange={(e) => {
+              const f = e.target.files?.[0]
+              if (f) handleImportFile(f)
+              e.target.value = '' // let the same file be re-picked later
+            }}
+          />
+        </div>
+        <p className="fine data-note">Saved in this browser. Export a copy to keep or move it.</p>
       </aside>
 
       <main className="main">
