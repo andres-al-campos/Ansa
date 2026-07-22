@@ -307,11 +307,13 @@ button { font: inherit; color: inherit; }
  * Row order is reversed into --worm-i by the component.
  */
 @keyframes worm {
-  0%, 100% { transform: translateX(0); }
-  40% { transform: translateX(7px); }
+  0% { transform: translateX(0); }
+  25% { transform: translateX(6px); }
+  65% { transform: translateX(-9px); }
+  100% { transform: translateX(0); }
 }
 .row.worm {
-  animation: worm 0.36s ease-in-out;
+  animation: worm 0.42s ease-in-out;
   animation-delay: calc(var(--worm-i, 0) * 45ms);
 }
 
