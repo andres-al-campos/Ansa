@@ -398,6 +398,9 @@ export default function Outliner({ initial }: { initial: Tree }) {
             }
 
             const parent = !isLeaf(tree, id)
+            // A root is a project: draw it with the parent bullet (grey halo)
+            // even before it has children, so it never shows the green leaf dot.
+            const bulletParent = parent || node.parentId === null
             const wormIndex = worm.get(id)
 
             // A check is green once its whole sibling group is done — i.e. its
@@ -444,7 +447,7 @@ export default function Outliner({ initial }: { initial: Tree }) {
                 </button>
 
                 <button
-                  className={'bullet ' + (parent ? 'parent' : 'leaf')}
+                  className={'bullet ' + (bulletParent ? 'parent' : 'leaf')}
                   onPointerDown={flat ? undefined : (e) => onBulletPointerDown(e, id)}
                   onClick={() => {
                     // A press that became a drag must not also zoom.
