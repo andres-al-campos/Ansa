@@ -613,6 +613,38 @@ body:has(.row.gap-slot) { cursor: grabbing; }
 }
 .proj-card:hover .proj-card-del { opacity: 1; }
 .proj-card-del:hover { color: var(--danger); background: var(--danger-soft); }
+
+/* Armed state: a cancel ✕ and a confirm ✓, anchored to the same top-right spot
+ * the trash can held. The row is right-aligned so the ✓ (last child) lands
+ * exactly where the trash can was — a stationary double-click confirms — while
+ * the ✕ extends to its left. */
+.proj-card-confirm {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+.proj-card-cancel,
+.proj-card-confirm-yes {
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1;
+  transition: color 0.12s ease, background 0.12s ease;
+}
+.proj-card-cancel { color: var(--ink-mid); }
+.proj-card-cancel:hover { color: var(--ink); background: var(--edge-soft); }
+.proj-card-confirm-yes { color: var(--danger); background: var(--danger-soft); }
+.proj-card-confirm-yes:hover { color: #fff; background: var(--danger); }
 .proj-card-head {
   display: flex;
   align-items: center;

@@ -112,6 +112,22 @@ function PinIcon({ filled }: { filled: boolean }) {
   )
 }
 
+// A plain trash can. Monochrome, inherits currentColor like the pin.
+function TrashIcon() {
+  return (
+    <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden focusable="false">
+      <path
+        d="M6.5 2h3M3 4.2h10M4.3 4.2l.5 8.3a1 1 0 0 0 1 .95h4.4a1 1 0 0 0 1-.95l.5-8.3M6.6 6.6v4.4M9.4 6.6v4.4"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.1"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
+}
+
 export default function Outliner({ initial }: { initial: Tree }) {
   // Undo/redo is a snapshot history: the whole tree is one immutable value, so
   // a step is just the previous value. `commit` replaces the tree and records
@@ -155,6 +171,9 @@ export default function Outliner({ initial }: { initial: Tree }) {
   const [leafOnly, setLeafOnly] = useState(false)
   const [hideDone, setHideDone] = useState(false)
   const [editing, setEditing] = useState<NodeId | null>(null)
+  // The landing card whose delete is armed: its trash can has flipped to a
+  // confirm ✓ with a cancel ✕ beside it. Only one card can be armed at a time.
+  const [confirmDelete, setConfirmDelete] = useState<NodeId | null>(null)
   /** ids currently running the worm, with their ripple index */
   const [worm, setWorm] = useState<Map<NodeId, number>>(new Map())
   const wormTimer = useRef<number | undefined>(undefined)
@@ -508,13 +527,13 @@ export default function Outliner({ initial }: { initial: Tree }) {
     setTree(setPinned(tree, id, !node.pinned))
   }
 
-  // Deleting a whole project takes everything under it, so it always confirms.
+  // Actually delete a project and everything under it. Confirmation happens in
+  // the card UI (arm the trash can, then click the ✓), so by the time this runs
+  // the intent is settled.
   function deleteProject(id: NodeId) {
-    const node = byId(tree, id)
-    if (!node) return
-    const name = node.text.trim() || 'this project'
-    if (!window.confirm(`Delete “${name}” and everything under it? This can't be undone from here.`)) return
+    if (!byId(tree, id)) return
     if (scope === id) setScope(null)
+    setConfirmDelete(null)
     setTree(removeNode(tree, id))
   }
 
@@ -689,9 +708,13 @@ export default function Outliner({ initial }: { initial: Tree }) {
               const prog = progressOf(tree, p.id)
               const open = prog.total - prog.done
               return (
-                <div key={p.id} className="proj-card">
-                  {/* The card body is the zoom-in target; the delete ✕ sits over
-                      it as its own control so the two clicks never collide. */}
+                <div
+                  key={p.id}
+                  className={'proj-card' + (confirmDelete === p.id ? ' arming' : '')}
+                  onMouseLeave={() => setConfirmDelete((cur) => (cur === p.id ? null : cur))}
+                >
+                  {/* The card body is the zoom-in target; the delete control sits
+                      over it on its own so the two clicks never collide. */}
                   <button className="proj-card-open" onClick={() => setScope(p.id)}>
                     <span className="proj-card-head">
                       <span className="proj-card-title">{p.text || 'Untitled'}</span>
@@ -710,14 +733,40 @@ export default function Outliner({ initial }: { initial: Tree }) {
                         : `${open} ${open === 1 ? 'thing' : 'things'} left · ${prog.pct}%`}
                     </span>
                   </button>
-                  <button
-                    className="proj-card-del"
-                    onClick={() => deleteProject(p.id)}
-                    aria-label={`Delete ${p.text || 'this project'}`}
-                    title="Delete project"
-                  >
-                    ✕
-                  </button>
+                  {/* Delete confirms in place. The trash can arms on the first
+                      click, flipping to a ✓ in the very same spot with a cancel
+                      ✕ to its left — so a second click on the same spot (a plain
+                      double-click) is a fast delete, while a deliberate ✕ backs
+                      out. */}
+                  {confirmDelete === p.id ? (
+                    <span className="proj-card-confirm">
+                      <button
+                        className="proj-card-cancel"
+                        onClick={() => setConfirmDelete(null)}
+                        aria-label="Cancel delete"
+                        title="Cancel"
+                      >
+                        ✕
+                      </button>
+                      <button
+                        className="proj-card-confirm-yes"
+                        onClick={() => deleteProject(p.id)}
+                        aria-label={`Confirm delete ${p.text || 'this project'}`}
+                        title="Delete for good"
+                      >
+                        ✓
+                      </button>
+                    </span>
+                  ) : (
+                    <button
+                      className="proj-card-del"
+                      onClick={() => setConfirmDelete(p.id)}
+                      aria-label={`Delete ${p.text || 'this project'}`}
+                      title="Delete project"
+                    >
+                      <TrashIcon />
+                    </button>
+                  )}
                 </div>
               )
             })}
