@@ -21,6 +21,8 @@ export interface Node {
   order: number
   /** folded in place — a view concern, but persisted so it survives reload */
   collapsed: boolean
+  /** favourited to the top of the projects list. Only meaningful on a root. */
+  pinned?: boolean
   createdAt: number
 }
 
@@ -198,6 +200,19 @@ export function setText(tree: Tree, id: NodeId, text: string): Tree {
 
 export function toggleCollapsed(tree: Tree, id: NodeId): Tree {
   return tree.map((n) => (n.id === id ? { ...n, collapsed: !n.collapsed } : n))
+}
+
+export function setPinned(tree: Tree, id: NodeId, pinned: boolean): Tree {
+  return tree.map((n) => (n.id === id ? { ...n, pinned } : n))
+}
+
+/**
+ * Projects for the sidebar: pinned first, then the rest, each group kept in its
+ * own sibling order. Pinning never reshuffles the underlying `order`.
+ */
+export function projectList(tree: Tree): Node[] {
+  const rs = roots(tree)
+  return [...rs.filter((r) => r.pinned), ...rs.filter((r) => !r.pinned)]
 }
 
 /** True when `maybeAncestor` is at or above `id` — used to block cyclic moves. */

@@ -18,6 +18,7 @@ import {
   moveNode,
   removeNode,
   setDone,
+  setPinned,
   setText,
   toggleCollapsed,
   type NodeId,
@@ -38,10 +39,15 @@ export class Store {
         done      INTEGER NOT NULL DEFAULT 0,
         "order"   INTEGER NOT NULL DEFAULT 0,
         collapsed INTEGER NOT NULL DEFAULT 0,
+        pinned    INTEGER NOT NULL DEFAULT 0,
         createdAt INTEGER NOT NULL
       );
       CREATE INDEX IF NOT EXISTS idx_nodes_parent ON nodes(parentId);
     `)
+    // Add `pinned` to DBs created before the projects navigator existed.
+    if (!this.db.prepare('PRAGMA table_info(nodes)').all().some((c: any) => c.name === 'pinned')) {
+      this.db.exec('ALTER TABLE nodes ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0')
+    }
   }
 
   /** The whole tree, as the flat Node array the app and shared ops expect. */
@@ -53,6 +59,7 @@ export class Store {
       done: number
       order: number
       collapsed: number
+      pinned: number
       createdAt: number
     }>
     return rows.map((r) => ({
@@ -62,6 +69,7 @@ export class Store {
       done: !!r.done,
       order: r.order,
       collapsed: !!r.collapsed,
+      pinned: !!r.pinned,
       createdAt: r.createdAt,
     }))
   }
@@ -74,8 +82,8 @@ export class Store {
   private replace(tree: Tree): Tree {
     const wipe = this.db.prepare('DELETE FROM nodes')
     const insert = this.db.prepare(
-      `INSERT INTO nodes (id, parentId, text, done, "order", collapsed, createdAt)
-       VALUES (@id, @parentId, @text, @done, @order, @collapsed, @createdAt)`,
+      `INSERT INTO nodes (id, parentId, text, done, "order", collapsed, pinned, createdAt)
+       VALUES (@id, @parentId, @text, @done, @order, @collapsed, @pinned, @createdAt)`,
     )
     const tx = this.db.transaction((t: Tree) => {
       wipe.run()
@@ -89,6 +97,7 @@ export class Store {
           done: n.done ? 1 : 0,
           order: n.order,
           collapsed: n.collapsed ? 1 : 0,
+          pinned: n.pinned ? 1 : 0,
           createdAt: n.createdAt,
         })
       }
@@ -123,6 +132,10 @@ export class Store {
 
   toggleCollapsed(id: NodeId): Tree {
     return this.replace(toggleCollapsed(this.load(), id))
+  }
+
+  setPinned(id: NodeId, pinned: boolean): Tree {
+    return this.replace(setPinned(this.load(), id, pinned))
   }
 
   /** Overwrite the whole tree — used by import and by first-run seeding. */

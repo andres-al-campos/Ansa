@@ -93,17 +93,18 @@ app.post<{ Body: { parentId: string | null; text?: string } }>('/api/nodes', asy
   return { tree: emit(tree, req), id }
 })
 
-app.patch<{ Params: { id: string }; Body: { text?: string; done?: boolean } }>(
+app.patch<{ Params: { id: string }; Body: { text?: string; done?: boolean; pinned?: boolean } }>(
   '/api/nodes/:id',
   async (req, reply) => {
     const { id } = req.params
-    const { text, done } = req.body ?? {}
+    const { text, done, pinned } = req.body ?? {}
     if (typeof text === 'string') return { tree: emit(store.rename(id, text), req) }
     if (typeof done === 'boolean') {
       const { tree, completed } = store.setDone(id, done)
       return { tree: emit(tree, req), completed }
     }
-    return reply.code(400).send({ error: 'provide either text (string) or done (boolean)' })
+    if (typeof pinned === 'boolean') return { tree: emit(store.setPinned(id, pinned), req) }
+    return reply.code(400).send({ error: 'provide text (string), done (boolean), or pinned (boolean)' })
   },
 )
 
