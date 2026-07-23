@@ -4,6 +4,8 @@
   --sunk: #eff2f6;
   --edge: #dce1e8;
   --edge-soft: #e9edf2;
+  --guide: #c7cdd7;
+  --guide-lit: #8a93a3;
   --ink: #181d28;
   --ink-mid: #525a69;
   --ink-faint: #8a93a3;
@@ -24,6 +26,8 @@
     --sunk: #13161d;
     --edge: #2a303b;
     --edge-soft: #222831;
+    --guide: #3a4150;
+    --guide-lit: #6a7382;
     --ink: #e7eaf0;
     --ink-mid: #98a1b0;
     --ink-faint: #6a7382;
@@ -352,16 +356,18 @@ button { font: inherit; color: inherit; }
 .row.collapsed .twisty:not(.hidden) { opacity: 1; }
 
 /* Vertical nesting guides, one per ancestor level, aligned under each parent
- * bullet. They fade in on hover so the resting list stays calm. */
+ * bullet. Calm but readable at rest; the segments on the hovered row's lineage
+ * brighten into a trace running back up to its parents. */
 .guide {
   position: absolute;
   top: 0;
   bottom: 0;
   width: 1px;
-  background: var(--edge);
+  background: var(--guide);
   pointer-events: none;
+  transition: background 0.12s ease;
 }
-.row:hover .guide { background: var(--ink-ghost); }
+.guide.lit { background: var(--guide-lit); }
 
 .bullet {
   width: 16px;
