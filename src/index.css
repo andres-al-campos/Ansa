@@ -381,7 +381,6 @@ button { font: inherit; color: inherit; }
    never shifts between display and edit. The underline is a box-shadow, not a
    border, so it adds no height. */
 .scope-title.editable[contenteditable='true'] {
-  background: var(--edge-soft);
   box-shadow: inset 0 -1px 0 0 var(--brass);
   outline: none;
   cursor: text;
@@ -622,9 +621,12 @@ body:has(.row.gap-slot) { cursor: grabbing; }
   background: var(--panel);
   color: var(--ink);
   border: 1px solid var(--brass);
-  border-radius: 4px;
-  padding: 1px 5px;
+  border-radius: 6px;
+  padding: 5px 9px;
 }
+/* The brass border is the whole affordance; the global focus-visible ring on
+   top of it reads as a doubled outline, so drop it for the in-place editor. */
+.label-input:focus-visible { outline: none; }
 
 .chip { font-size: 10.5px; color: var(--ink-ghost); margin-left: 8px; flex: none; white-space: nowrap; }
 
