@@ -71,26 +71,6 @@ server.registerTool(
   },
 )
 
-server.registerTool(
-  'add_task',
-  {
-    title: 'Add a task',
-    description:
-      'Add a new task. Omit parentId (or pass null) for a top-level project; pass a parent id to nest it as a child. Returns the new id.',
-    inputSchema: {
-      text: z.string().describe('The task title'),
-      parentId: z.string().nullable().optional().describe('Parent node id, or null/omitted for a root task'),
-    },
-  },
-  async ({ text: t, parentId }) => {
-    const res = await api('/api/nodes', {
-      method: 'POST',
-      body: JSON.stringify({ parentId: parentId ?? null, text: t }),
-    })
-    return text(`Added "${t}" (id ${res.id}).\n\n${renderOutline(res.tree)}`)
-  },
-)
-
 // A nested outline the model can hand over in one call. Recursive, so it can
 // describe parents, children and grandchildren to any depth at once.
 type SubtreeInput = { text: string; children?: SubtreeInput[] }
@@ -104,13 +84,14 @@ const subtreeNode: z.ZodType<SubtreeInput> = z.lazy(() =>
 server.registerTool(
   'add_subtree',
   {
-    title: 'Add a whole subtree at once',
+    title: 'Add tasks',
     description:
-      'Create many tasks in one call from a nested outline — parents, children, grandchildren, any depth. ' +
+      'The one tool for creating tasks — from a single node to a whole nested tree of parents, children and ' +
+      'grandchildren, any depth, in one call. For a single task, pass one node with no children. ' +
       'Omit parentId (or pass null) to start a brand-new project: pass exactly one top-level node (the project ' +
-      'itself) with the rest of the tree under its children. Pass a parent id to graft the subtree under an ' +
-      'existing task, where several top-level nodes are fine. Use this instead of many add_task calls whenever ' +
-      'you already know the shape. Returns the created ids depth-first (the first id is the subtree root — the new project when parentId is null).',
+      'itself) with the rest of the tree under its children. Pass a parent id to graft under an existing task, ' +
+      'where several top-level nodes are fine. Returns the created ids depth-first (the first id is the subtree ' +
+      'root — the new project when parentId is null).',
     inputSchema: {
       parentId: z
         .string()

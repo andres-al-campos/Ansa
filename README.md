@@ -19,9 +19,10 @@ MCP server ─┘                (SQLite)            └─ any other tab
 - **`server/`** — Fastify + SQLite (`ansa.db`). The one process that owns the
   database and is the single write path. Broadcasts every change over SSE.
 - **`mcp/`** — an MCP server that lets another Claude do everything a human can:
-  view the outline and add / rename / check / move / fold / delete tasks. It is
-  just another client of the same REST API, so a Claude and a person editing at
-  once share one state and can't diverge.
+  view the outline and add / rename / check / move / fold / delete tasks — and
+  build a whole nested tree in one call. It is just another client of the same
+  REST API, so a Claude and a person editing at once share one state and can't
+  diverge.
 - **`shared/`** — the tree model and pure operations (`tree.ts`) plus the seed,
   used identically by all three.
 
@@ -54,5 +55,11 @@ Point an MCP client at it with a stdio command:
 
 The server must be running (`npm run server`) — the MCP talks to it over HTTP,
 set with `ANSA_API` (default `http://127.0.0.1:4000`). Tools: `view_tree`,
-`add_task`, `rename_task`, `set_done`, `move_task`, `toggle_collapsed`,
+`add_subtree`, `rename_task`, `set_done`, `move_task`, `toggle_collapsed`,
 `remove_task`, `progress`.
+
+`add_subtree` is the one creation tool: hand it a nested `{ text, children? }`
+outline and it creates the whole thing — parents, children, grandchildren — in
+a single call. A single task is just one node with no children. Pass a
+`parentId` to graft under an existing task; omit it to start a new project (one
+top-level node, the rest under its children).
