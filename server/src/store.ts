@@ -15,6 +15,7 @@
 import Database from 'better-sqlite3'
 import {
   addChild,
+  markOpened,
   moveNode,
   removeNode,
   setDone,
@@ -40,14 +41,16 @@ export class Store {
         "order"   INTEGER NOT NULL DEFAULT 0,
         collapsed INTEGER NOT NULL DEFAULT 0,
         pinned    INTEGER NOT NULL DEFAULT 0,
+        lastOpenedAt INTEGER,
         createdAt INTEGER NOT NULL
       );
       CREATE INDEX IF NOT EXISTS idx_nodes_parent ON nodes(parentId);
     `)
-    // Add `pinned` to DBs created before the projects navigator existed.
-    if (!this.db.prepare('PRAGMA table_info(nodes)').all().some((c: any) => c.name === 'pinned')) {
-      this.db.exec('ALTER TABLE nodes ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0')
-    }
+    const columns = this.db.prepare('PRAGMA table_info(nodes)').all() as Array<{ name: string }>
+    const has = (name: string) => columns.some((c) => c.name === name)
+    // Add columns to DBs created before the projects navigator existed.
+    if (!has('pinned')) this.db.exec('ALTER TABLE nodes ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0')
+    if (!has('lastOpenedAt')) this.db.exec('ALTER TABLE nodes ADD COLUMN lastOpenedAt INTEGER')
   }
 
   /** The whole tree, as the flat Node array the app and shared ops expect. */
@@ -60,6 +63,7 @@ export class Store {
       order: number
       collapsed: number
       pinned: number
+      lastOpenedAt: number | null
       createdAt: number
     }>
     return rows.map((r) => ({
@@ -70,6 +74,7 @@ export class Store {
       order: r.order,
       collapsed: !!r.collapsed,
       pinned: !!r.pinned,
+      ...(r.lastOpenedAt != null ? { lastOpenedAt: r.lastOpenedAt } : {}),
       createdAt: r.createdAt,
     }))
   }
@@ -82,8 +87,8 @@ export class Store {
   private replace(tree: Tree): Tree {
     const wipe = this.db.prepare('DELETE FROM nodes')
     const insert = this.db.prepare(
-      `INSERT INTO nodes (id, parentId, text, done, "order", collapsed, pinned, createdAt)
-       VALUES (@id, @parentId, @text, @done, @order, @collapsed, @pinned, @createdAt)`,
+      `INSERT INTO nodes (id, parentId, text, done, "order", collapsed, pinned, lastOpenedAt, createdAt)
+       VALUES (@id, @parentId, @text, @done, @order, @collapsed, @pinned, @lastOpenedAt, @createdAt)`,
     )
     const tx = this.db.transaction((t: Tree) => {
       wipe.run()
@@ -98,6 +103,7 @@ export class Store {
           order: n.order,
           collapsed: n.collapsed ? 1 : 0,
           pinned: n.pinned ? 1 : 0,
+          lastOpenedAt: n.lastOpenedAt ?? null,
           createdAt: n.createdAt,
         })
       }
@@ -136,6 +142,10 @@ export class Store {
 
   setPinned(id: NodeId, pinned: boolean): Tree {
     return this.replace(setPinned(this.load(), id, pinned))
+  }
+
+  markOpened(id: NodeId): Tree {
+    return this.replace(markOpened(this.load(), id))
   }
 
   /** Overwrite the whole tree — used by import and by first-run seeding. */

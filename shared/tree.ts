@@ -23,6 +23,8 @@ export interface Node {
   collapsed: boolean
   /** favourited to the top of the projects list. Only meaningful on a root. */
   pinned?: boolean
+  /** when this project was last opened, so Recents can sort by it. Root-only. */
+  lastOpenedAt?: number
   createdAt: number
 }
 
@@ -206,13 +208,31 @@ export function setPinned(tree: Tree, id: NodeId, pinned: boolean): Tree {
   return tree.map((n) => (n.id === id ? { ...n, pinned } : n))
 }
 
+/** Stamp a project as just-opened, so Recents can sort by last visit. */
+export function markOpened(tree: Tree, id: NodeId, at: number = Date.now()): Tree {
+  return tree.map((n) => (n.id === id ? { ...n, lastOpenedAt: at } : n))
+}
+
 /**
- * Projects for the sidebar: pinned first, then the rest, each group kept in its
- * own sibling order. Pinning never reshuffles the underlying `order`.
+ * Projects for the sidebar, split into two sections:
+ *  - pinned: the favourited roots, kept in their own sibling order.
+ *  - recents: everything else, most-recently-opened first. A project never
+ *    opened falls back to its creation time, so a fresh list still has an order.
+ * The two are disjoint — a pinned project shows only under Pinned.
  */
-export function projectList(tree: Tree): Node[] {
+export function projectSections(tree: Tree): { pinned: Node[]; recents: Node[] } {
   const rs = roots(tree)
-  return [...rs.filter((r) => r.pinned), ...rs.filter((r) => !r.pinned)]
+  const pinned = rs.filter((r) => r.pinned)
+  const recents = rs
+    .filter((r) => !r.pinned)
+    .sort((a, b) => (b.lastOpenedAt ?? b.createdAt) - (a.lastOpenedAt ?? a.createdAt))
+  return { pinned, recents }
+}
+
+/** Flat list of every project — pinned first, then recents. */
+export function projectList(tree: Tree): Node[] {
+  const { pinned, recents } = projectSections(tree)
+  return [...pinned, ...recents]
 }
 
 /** True when `maybeAncestor` is at or above `id` — used to block cyclic moves. */
