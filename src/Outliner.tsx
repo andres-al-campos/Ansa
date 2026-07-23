@@ -16,6 +16,7 @@ import {
   roots,
   setDone,
   setText,
+  subtreeOf,
   toggleCollapsed,
   type NodeId,
   type Tree,
@@ -28,6 +29,13 @@ import {
 const ROW_PAD = 6
 const INDENT = 28
 const GUIDE_X0 = 37
+
+// Completion worm: each row wiggles for WORM_RUN, offset from the previous by
+// WORM_STAGGER. On long waves the stagger tightens so the whole sweep clears
+// within WORM_CAP instead of crawling — same little wave, just faster.
+const WORM_RUN = 400
+const WORM_STAGGER = 100
+const WORM_CAP = 1000
 
 /**
  * Where a dragged node would land relative to the row under the pointer.
@@ -371,21 +379,39 @@ export default function Outliner({ initial }: { initial: Tree }) {
     const node = byId(tree, id)
     if (!node) return
     const willComplete = !node.done
-    const { tree: next } = setDone(tree, id, willComplete)
+    const { tree: next, completed } = setDone(tree, id, willComplete)
     setTree(next)
 
-    // Ripple when you complete something. Rather than shaking just the
-    // completed node's own children — which looks patchy when a grandchild
-    // lands and only some cousins move — send one clean wave down every row on
-    // screen, indexed by its visible position. Un-checking never worms.
+    // Ripple only what this click actually finished. `completed` lists the
+    // ancestors that flipped to done, bottom-up, so the last entry is the
+    // topmost one — the whole subtree under it is exactly what just became
+    // complete. Nothing flipped above? Then it's just this node's subtree.
+    // Completing a small branch worms that branch; completing the last leaf of
+    // a whole project worms the whole project, so it reads as the bigger event.
+    // Un-checking never worms.
     if (willComplete) {
+      const topId = completed.length ? completed[completed.length - 1] : id
+      const inSubtree = new Set(subtreeOf(next, topId).map((n) => n.id))
+      inSubtree.add(topId)
+
+      // Ripple in visible order; collapsed descendants aren't on screen.
+      const wave = rows.filter((r) => inSubtree.has(r.id))
+
+      // A little wave that travels down the list at a constant shape: each row
+      // wiggles for WORM_RUN, staggered by WORM_STAGGER. On long waves the
+      // stagger tightens so the whole thing clears within WORM_CAP rather than
+      // crawling — the wave just moves faster, it doesn't change shape.
+      const stagger =
+        wave.length > 1
+          ? Math.round(Math.min(WORM_STAGGER, Math.max(20, (WORM_CAP - WORM_RUN) / (wave.length - 1))))
+          : WORM_STAGGER
+
       const map = new Map<NodeId, number>()
-      rows.forEach((r, i) => map.set(r.id, i))
+      wave.forEach((r, i) => map.set(r.id, i * stagger))
       setWorm(map)
       window.clearTimeout(wormTimer.current)
-      // Let the last row finish: its delay is maxIndex*100ms + 400ms of run.
-      const maxIndex = Math.max(0, ...map.values())
-      wormTimer.current = window.setTimeout(() => setWorm(new Map()), maxIndex * 100 + 500)
+      const last = Math.max(0, ...map.values())
+      wormTimer.current = window.setTimeout(() => setWorm(new Map()), last + WORM_RUN + 100)
     }
   }
 
@@ -595,7 +621,7 @@ export default function Outliner({ initial }: { initial: Tree }) {
             // A root is a project: draw it with the parent bullet (grey halo)
             // even before it has children, so it never shows the green leaf dot.
             const bulletParent = parent || node.parentId === null
-            const wormIndex = worm.get(id)
+            const wormDelay = worm.get(id)
 
             // A check is green once its whole sibling group is done — i.e. its
             // parent is done (or it's a finished root). Otherwise a done item is
@@ -620,7 +646,7 @@ export default function Outliner({ initial }: { initial: Tree }) {
                   'row' +
                   (node.done ? ' done' : '') +
                   (node.collapsed && parent && !flat ? ' collapsed' : '') +
-                  (wormIndex !== undefined ? ' worm' : '') +
+                  (wormDelay !== undefined ? ' worm' : '') +
                   (dropHere === 'into' ? ' drop-into' : '') +
                   (dropHere === 'before' ? ' drop-before' : '') +
                   (dropHere === 'after' ? ' drop-after' : '')
@@ -628,7 +654,7 @@ export default function Outliner({ initial }: { initial: Tree }) {
                 style={
                   {
                     paddingLeft: flat ? ROW_PAD : ROW_PAD + depth * INDENT,
-                    ...(wormIndex !== undefined ? { ['--worm-i' as string]: wormIndex } : {}),
+                    ...(wormDelay !== undefined ? { ['--worm-delay' as string]: `${wormDelay}ms` } : {}),
                   } as React.CSSProperties
                 }
               >

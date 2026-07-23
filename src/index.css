@@ -473,8 +473,9 @@ body:has(.row.gap-slot) { cursor: grabbing; }
 .scope-progress.complete .pct { color: var(--leaf); font-weight: 650; }
 
 /*
- * The worm: children ripple one after another, top to bottom, rather than
- * shaking at once. --worm-i is each row's position among its siblings.
+ * The worm: rows ripple one after another, top to bottom, rather than shaking
+ * at once. --worm-delay is each row's start offset, computed in JS so the
+ * stagger can tighten on long waves and keep the whole sweep short.
  */
 @keyframes worm {
   0% { transform: translateX(0); }
@@ -484,7 +485,7 @@ body:has(.row.gap-slot) { cursor: grabbing; }
 }
 .row.worm {
   animation: worm 0.4s ease-in-out;
-  animation-delay: calc(var(--worm-i, 0) * 100ms);
+  animation-delay: var(--worm-delay, 0ms);
 }
 
 @media (prefers-reduced-motion: reduce) {
