@@ -95,6 +95,23 @@ function visibleRows(
   return out
 }
 
+// A pushpin standing straight up-and-down (needle pointing down), not the
+// diagonal thumbtack. Inherits currentColor so the sidebar's rest/hover/active
+// states drive it, and stays monochrome rather than pulling in an emoji.
+function PinIcon({ filled }: { filled: boolean }) {
+  return (
+    <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden focusable="false">
+      <path
+        d="M5 2h6a.7.7 0 0 1 0 1.4h-.5l.6 4.3a3 3 0 0 1 1.6 2.3.7.7 0 0 1-.7.7H8.7V15a.7.7 0 0 1-1.4 0v-4.3H3.4a.7.7 0 0 1-.7-.7 3 3 0 0 1 1.6-2.3l.6-4.3H5A.7.7 0 0 1 5 2Z"
+        fill={filled ? 'currentColor' : 'none'}
+        stroke="currentColor"
+        strokeWidth="1.1"
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
+}
+
 export default function Outliner({ initial }: { initial: Tree }) {
   // Undo/redo is a snapshot history: the whole tree is one immutable value, so
   // a step is just the previous value. `commit` replaces the tree and records
@@ -550,7 +567,7 @@ export default function Outliner({ initial }: { initial: Tree }) {
                   aria-label={node.pinned ? 'Unpin project' : 'Pin project'}
                   title={node.pinned ? 'Unpin' : 'Pin to top'}
                 >
-                  {node.pinned ? '★' : '☆'}
+                  <PinIcon filled={!!node.pinned} />
                 </button>
               </li>
             )

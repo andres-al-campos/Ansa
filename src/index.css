@@ -121,8 +121,9 @@ button { font: inherit; color: inherit; }
   font-weight: 600;
 }
 
-/* Projects list: each row is the project name plus a pin star that reveals on
- * hover. The star stays put for pinned projects so the state is always legible. */
+/* Projects list: each row is the project name plus a pin toggle that reveals on
+ * hover. A pinned project keeps its pin filled and visible so the state reads at
+ * a glance. */
 .rail.projects li {
   display: flex;
   align-items: center;
@@ -141,11 +142,12 @@ button { font: inherit; color: inherit; }
 .rail.projects .pin {
   flex: none;
   width: auto;
+  display: flex;
+  align-items: center;
   background: none;
   border: none;
   cursor: pointer;
   color: var(--ink-ghost);
-  font-size: 13px;
   line-height: 1;
   padding: 4px 6px;
   border-radius: 5px;
@@ -572,7 +574,7 @@ body:has(.row.gap-slot) { cursor: grabbing; }
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.proj-card-pin { flex: none; color: var(--brass); font-size: 12px; }
+.proj-card-pin { flex: none; display: flex; align-items: center; color: var(--brass); }
 .proj-card .pbar.complete i { background: var(--leaf); }
 .proj-card-meta {
   font-size: 11.5px;
