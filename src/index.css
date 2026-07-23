@@ -124,6 +124,9 @@ button { font: inherit; color: inherit; }
   color: var(--ink-ghost);
   font-weight: 650;
   margin: 0 0 9px;
+  /* Match the item rows' 8px text inset so headers and item labels share one
+     left edge (rows carry that inset as button padding). */
+  padding: 0 8px;
 }
 
 .rail { list-style: none; margin: 0 0 28px; padding: 0; }
