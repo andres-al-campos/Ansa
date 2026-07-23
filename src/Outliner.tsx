@@ -32,8 +32,8 @@ import {
 // bullet's centre sits, so a guide for ancestor depth d lands at GUIDE_X0 +
 // d*INDENT — directly under that ancestor's bullet.
 const ROW_PAD = 6
-const INDENT = 28
-const GUIDE_X0 = 37
+const INDENT = 24
+const GUIDE_X0 = 32
 
 // Completion worm: each row wiggles for WORM_RUN, offset from the previous by
 // WORM_STAGGER. On long waves the stagger tightens so the whole sweep clears
