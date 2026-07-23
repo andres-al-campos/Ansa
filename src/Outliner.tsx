@@ -12,9 +12,12 @@ import {
   lineageOf,
   moveNode,
   outdent,
+  progressOf,
+  projectList,
   removeNode,
   roots,
   setDone,
+  setPinned,
   setText,
   subtreeOf,
   toggleCollapsed,
@@ -470,6 +473,21 @@ export default function Outliner({ initial }: { initial: Tree }) {
     setEditing(id)
   }
 
+  // Start a new project: a fresh root, scoped into and put straight into edit
+  // so you name it in place.
+  function newProject() {
+    const { tree: next, id } = addChild(tree, null, '')
+    setTree(next)
+    setScope(id)
+    setEditing(id)
+  }
+
+  function togglePin(id: NodeId) {
+    const node = byId(tree, id)
+    if (!node) return
+    setTree(setPinned(tree, id, !node.pinned))
+  }
+
   // Download the whole tree as a JSON file — the backup / hand-off format.
   function handleExport() {
     const blob = new Blob([exportTree(tree)], { type: 'application/json' })
@@ -517,21 +535,30 @@ export default function Outliner({ initial }: { initial: Tree }) {
         </p>
         <p className="tagline">the handle of a thing</p>
 
-        <p className="sect">Where you are</p>
-        <ol className="rail">
-          <li className={scope ? '' : 'here'}>
-            <button onClick={() => setScope(null)}>Everything</button>
+        <p className="sect">Projects</p>
+        <ol className="rail projects">
+          {projectList(tree).map((node) => {
+            // The active project is the root of the current scope's lineage.
+            const active = scope !== null && lineage[0]?.id === node.id
+            return (
+              <li key={node.id} className={active ? 'here' : ''}>
+                <button className="proj" onClick={() => setScope(node.id)}>
+                  {node.text || 'Untitled'}
+                </button>
+                <button
+                  className={'pin' + (node.pinned ? ' on' : '')}
+                  onClick={() => togglePin(node.id)}
+                  aria-label={node.pinned ? 'Unpin project' : 'Pin project'}
+                  title={node.pinned ? 'Unpin' : 'Pin to top'}
+                >
+                  {node.pinned ? '★' : '☆'}
+                </button>
+              </li>
+            )
+          })}
+          <li className="new-proj">
+            <button onClick={newProject}>+ New project</button>
           </li>
-          {(scope ? lineage : roots(tree)).map((node, i) => (
-            <li key={node.id} className={node.id === scope ? 'here' : ''}>
-              <button
-                style={{ paddingLeft: 8 + (scope ? i + 1 : 1) * 12 }}
-                onClick={() => setScope(node.id)}
-              >
-                {node.text || 'Untitled'}
-              </button>
-            </li>
-          ))}
         </ol>
 
         <p className="sect">View</p>
@@ -542,7 +569,8 @@ export default function Outliner({ initial }: { initial: Tree }) {
               Only what&rsquo;s doable
               <span className="fine">
                 Hides anything with subtasks. Applies inside{' '}
-                <span className="scopename">{scopeNode ? scopeNode.text : 'Everything'}</span> only.
+                <span className="scopename">{scopeNode ? scopeNode.text : 'the current project'}</span>{' '}
+                only.
               </span>
             </span>
           </label>
@@ -592,7 +620,7 @@ export default function Outliner({ initial }: { initial: Tree }) {
       <main className="main">
         <nav className="crumbs" aria-label="Breadcrumb">
           <button className={scope ? '' : 'cur'} onClick={() => setScope(null)}>
-            Everything
+            Projects
           </button>
           {lineage.map((node) => (
             <span key={node.id} style={{ display: 'contents' }}>
@@ -604,16 +632,16 @@ export default function Outliner({ initial }: { initial: Tree }) {
           ))}
         </nav>
 
-        <h1 className="scope-title">{scopeNode ? scopeNode.text : 'Everything'}</h1>
+        <h1 className="scope-title">{scopeNode ? scopeNode.text : 'Projects'}</h1>
         <p className="scope-meta">
-          {leafOnly
-            ? `${openLeafCount} doable ${openLeafCount === 1 ? 'thing' : 'things'} in here`
-            : scopeNode
-              ? 'Everything under this'
-              : 'All your projects'}
+          {scope === null
+            ? 'Pick a project, or start a new one'
+            : leafOnly
+              ? `${openLeafCount} doable ${openLeafCount === 1 ? 'thing' : 'things'} in here`
+              : 'Everything under this'}
         </p>
 
-        {scopeProgress.total > 0 && (
+        {scope !== null && scopeProgress.total > 0 && (
           <div className={'scope-progress' + (scopeProgress.pct === 100 ? ' complete' : '')}>
             <div className="pbar">
               <i style={{ width: `${scopeProgress.pct}%` }} />
@@ -622,6 +650,36 @@ export default function Outliner({ initial }: { initial: Tree }) {
           </div>
         )}
 
+        {scope === null ? (
+          <div className="landing">
+            {projectList(tree).length === 0 && (
+              <p className="empty">No projects yet — start one below.</p>
+            )}
+            {projectList(tree).map((p) => {
+              const prog = progressOf(tree, p.id)
+              const open = prog.total - prog.done
+              return (
+                <button key={p.id} className="proj-card" onClick={() => setScope(p.id)}>
+                  <div className="proj-card-head">
+                    <span className="proj-card-title">{p.text || 'Untitled'}</span>
+                    {p.pinned && <span className="proj-card-pin" aria-label="Pinned">★</span>}
+                  </div>
+                  <div className={'pbar' + (prog.pct === 100 ? ' complete' : '')}>
+                    <i style={{ width: `${prog.pct}%` }} />
+                  </div>
+                  <span className="proj-card-meta">
+                    {prog.pct === 100
+                      ? 'All done'
+                      : `${open} ${open === 1 ? 'thing' : 'things'} left · ${prog.pct}%`}
+                  </span>
+                </button>
+              )
+            })}
+            <button className="proj-card new" onClick={newProject}>
+              + New project
+            </button>
+          </div>
+        ) : (
         <div className="rows">
           {rows.length === 0 && (
             <p className="empty">
@@ -774,10 +832,11 @@ export default function Outliner({ initial }: { initial: Tree }) {
 
           {!leafOnly && (
             <button className="add" onClick={() => addSibling(null)}>
-              + add {scopeNode ? 'a subtask' : 'a project'}
+              + add a subtask
             </button>
           )}
         </div>
+        )}
       </main>
 
       {dragNode && ghostAt && (

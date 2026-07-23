@@ -121,6 +121,45 @@ button { font: inherit; color: inherit; }
   font-weight: 600;
 }
 
+/* Projects list: each row is the project name plus a pin star that reveals on
+ * hover. The star stays put for pinned projects so the state is always legible. */
+.rail.projects li {
+  display: flex;
+  align-items: center;
+  border-radius: 5px;
+}
+.rail.projects li.here { background: var(--brass-soft); }
+.rail.projects .proj {
+  flex: 1 1 auto;
+  width: auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rail.projects li.here .proj { background: none; }
+.rail.projects .pin {
+  flex: none;
+  width: auto;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--ink-ghost);
+  font-size: 13px;
+  line-height: 1;
+  padding: 4px 6px;
+  border-radius: 5px;
+  opacity: 0;
+  transition: opacity 0.12s ease, color 0.12s ease;
+}
+.rail.projects li:hover .pin,
+.rail.projects .pin.on { opacity: 1; }
+.rail.projects .pin.on { color: var(--brass); }
+.rail.projects .pin:hover { color: var(--brass-ink); }
+
+.rail.projects .new-proj button { color: var(--ink-ghost); }
+.rail.projects .new-proj button:hover { color: var(--brass-ink); background: var(--sunk); }
+
 .filters { display: flex; flex-direction: column; gap: 13px; }
 .filters label {
   display: flex;
@@ -197,6 +236,7 @@ button { font: inherit; color: inherit; }
 .scope-title,
 .scope-meta,
 .scope-progress,
+.landing,
 .rows {
   width: 100%;
   max-width: 720px;
@@ -497,6 +537,57 @@ body:has(.row.gap-slot) { cursor: grabbing; }
 }
 .scope-progress.complete .pbar i { background: var(--leaf); }
 .scope-progress.complete .pct { color: var(--leaf); font-weight: 650; }
+
+/* Projects landing: one card per project, each its own zoom-in target with a
+ * progress bar so you can read where each one stands before diving in. */
+.landing {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 14px;
+  margin-top: 8px;
+}
+.proj-card {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  text-align: left;
+  background: var(--panel);
+  border: 1px solid var(--edge);
+  border-radius: 10px;
+  padding: 15px 16px;
+  cursor: pointer;
+  transition: border-color 0.12s ease, transform 0.12s ease;
+}
+.proj-card:hover { border-color: var(--brass); transform: translateY(-1px); }
+.proj-card-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.proj-card-title {
+  font-size: 14.5px;
+  font-weight: 600;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.proj-card-pin { flex: none; color: var(--brass); font-size: 12px; }
+.proj-card .pbar.complete i { background: var(--leaf); }
+.proj-card-meta {
+  font-size: 11.5px;
+  color: var(--ink-faint);
+  font-variant-numeric: tabular-nums;
+}
+.proj-card.new {
+  align-items: flex-start;
+  justify-content: center;
+  color: var(--ink-ghost);
+  font-size: 13.5px;
+  border-style: dashed;
+  background: none;
+}
+.proj-card.new:hover { color: var(--brass-ink); border-color: var(--brass); }
 
 /*
  * The worm: rows ripple one after another, top to bottom, rather than shaking
