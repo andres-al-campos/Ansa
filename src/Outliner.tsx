@@ -306,19 +306,16 @@ export default function Outliner({ initial }: { initial: Tree }) {
     const node = byId(tree, id)
     if (!node) return
     const willComplete = !node.done
-    const { tree: next, completed } = setDone(tree, id, willComplete)
+    const { tree: next } = setDone(tree, id, willComplete)
     setTree(next)
 
-    // Ripple the children of whatever just completed, top to bottom. That's
-    // every parent that flipped done up the chain, plus the node you ticked
-    // itself when it has children (completing a parent celebrates its kids too).
-    const rippleParents = new Set(completed)
-    if (willComplete && !isLeaf(tree, id)) rippleParents.add(id)
-    if (rippleParents.size > 0) {
+    // Ripple when you complete something. Rather than shaking just the
+    // completed node's own children — which looks patchy when a grandchild
+    // lands and only some cousins move — send one clean wave down every row on
+    // screen, indexed by its visible position. Un-checking never worms.
+    if (willComplete) {
       const map = new Map<NodeId, number>()
-      for (const parentId of rippleParents) {
-        childrenOf(next, parentId).forEach((k, i) => map.set(k.id, i))
-      }
+      rows.forEach((r, i) => map.set(r.id, i))
       setWorm(map)
       window.clearTimeout(wormTimer.current)
       // Let the last row finish: its delay is maxIndex*100ms + 400ms of run.
@@ -557,6 +554,7 @@ export default function Outliner({ initial }: { initial: Tree }) {
                 className={
                   'row' +
                   (node.done ? ' done' : '') +
+                  (node.collapsed && parent && !flat ? ' collapsed' : '') +
                   (wormIndex !== undefined ? ' worm' : '') +
                   (dropHere === 'into' ? ' drop-into' : '') +
                   (dropHere === 'before' ? ' drop-before' : '') +
@@ -569,6 +567,16 @@ export default function Outliner({ initial }: { initial: Tree }) {
                   } as React.CSSProperties
                 }
               >
+                {/* Nesting guides: one vertical line per level of ancestry, so
+                    you can read what belongs under what without counting indent. */}
+                {!flat &&
+                  depth > 0 &&
+                  Array.from({ length: depth }, (_, d) => (
+                    // Each line sits under the bullet of the ancestor at depth d
+                    // (bullet centre of a depth-0 row is 37px in; step is 22px).
+                    <span key={d} className="guide" style={{ left: 37 + d * 22 }} aria-hidden />
+                  ))}
+
                 <button
                   className={'twisty' + (parent && !flat ? (node.collapsed ? '' : ' open') : ' hidden')}
                   onClick={() => setPresent(toggleCollapsed(tree, id))}

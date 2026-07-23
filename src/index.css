@@ -308,6 +308,24 @@ button { font: inherit; color: inherit; }
 .twisty:hover { color: var(--ink); }
 .twisty.hidden { visibility: hidden; }
 .twisty.open { transform: rotate(90deg); }
+/* The triangle is quiet until you need it: hidden at rest, shown when the row
+ * is hovered — except a collapsed row keeps it, so you can see there's more
+ * folded underneath. */
+.twisty:not(.hidden) { opacity: 0; transition: opacity 0.12s ease, transform 0.15s ease; }
+.row:hover .twisty:not(.hidden),
+.row.collapsed .twisty:not(.hidden) { opacity: 1; }
+
+/* Vertical nesting guides, one per ancestor level, aligned under each parent
+ * bullet. They fade in on hover so the resting list stays calm. */
+.guide {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--edge-soft);
+  pointer-events: none;
+}
+.row:hover .guide { background: var(--edge); }
 
 .bullet {
   width: 16px;
