@@ -321,8 +321,10 @@ button { font: inherit; color: inherit; }
   line-height: 2.2;
   transition: transform 0.15s ease;
   /* Sit above the nesting guides so the triangle knocks the line out behind
-     it rather than floating on top of it. */
+     it rather than floating on top of it. Nudged 4px left so the triangle's
+     centre lands on the guide it's covering, not just beside it. */
   position: relative;
+  left: -4px;
   z-index: 1;
 }
 /* The knockout chip: a slug of row-coloured background centred on the twisty,
