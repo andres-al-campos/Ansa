@@ -76,7 +76,44 @@ function visibleRows(
 }
 
 export default function Outliner({ initial }: { initial: Tree }) {
-  const [tree, setTree] = useState<Tree>(initial)
+  // Undo/redo is a snapshot history: the whole tree is one immutable value, so
+  // a step is just the previous value. `commit` replaces the tree and records
+  // the old one; undo/redo shuttle between the past and future stacks. History
+  // lives only for the session — the current tree is what's persisted.
+  const [history, setHistory] = useState<{ past: Tree[]; present: Tree; future: Tree[] }>({
+    past: [],
+    present: initial,
+    future: [],
+  })
+  const tree = history.present
+
+  /** Record a new tree as an undoable checkpoint. */
+  function commit(next: Tree) {
+    setHistory((h) => (next === h.present ? h : { past: [...h.past, h.present], present: next, future: [] }))
+  }
+  /** Replace the tree *without* a checkpoint — for undo/redo themselves. */
+  function setPresent(next: Tree) {
+    setHistory((h) => ({ ...h, present: next }))
+  }
+  // Everything that used to call setTree still checkpoints, unchanged.
+  const setTree = commit
+
+  function undo() {
+    setHistory((h) => {
+      if (h.past.length === 0) return h
+      const past = h.past.slice(0, -1)
+      const present = h.past[h.past.length - 1]
+      return { past, present, future: [h.present, ...h.future] }
+    })
+  }
+  function redo() {
+    setHistory((h) => {
+      if (h.future.length === 0) return h
+      const [present, ...future] = h.future
+      return { past: [...h.past, h.present], present, future }
+    })
+  }
+
   const [scope, setScope] = useState<NodeId | null>(null)
   const [leafOnly, setLeafOnly] = useState(false)
   const [hideDone, setHideDone] = useState(false)
@@ -107,6 +144,30 @@ export default function Outliner({ initial }: { initial: Tree }) {
   // Persist on every change. localStorage writes are synchronous and cheap at
   // this size; if the tree ever outgrows that, debounce here.
   useEffect(() => saveTree(tree), [tree])
+
+  // Cmd/Ctrl+Z undo, +Shift+Z (or Ctrl+Y) redo. Skipped while editing a label,
+  // so the text field keeps its own native undo. Refs keep the listener stable.
+  const undoRef = useRef(undo)
+  undoRef.current = undo
+  const redoRef = useRef(redo)
+  redoRef.current = redo
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey)) return
+      const k = e.key.toLowerCase()
+      const target = e.target as HTMLElement | null
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA')) return
+      if (k === 'z' && !e.shiftKey) {
+        e.preventDefault()
+        undoRef.current()
+      } else if ((k === 'z' && e.shiftKey) || k === 'y') {
+        e.preventDefault()
+        redoRef.current()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
 
   // Resolve the pointer position to a drop target: which row, and which of its
   // three bands (top quarter = before, middle = into, bottom quarter = after).
@@ -374,23 +435,38 @@ export default function Outliner({ initial }: { initial: Tree }) {
           </label>
         </div>
 
-        <p className="sect">Your data</p>
-        <div className="data-actions">
-          <button onClick={handleExport}>Export</button>
-          <button onClick={() => fileInput.current?.click()}>Import</button>
-          <input
-            ref={fileInput}
-            type="file"
-            accept="application/json,.json"
-            hidden
-            onChange={(e) => {
-              const f = e.target.files?.[0]
-              if (f) handleImportFile(f)
-              e.target.value = '' // let the same file be re-picked later
-            }}
-          />
+        <p className="sect">History</p>
+        <div className="undo-actions">
+          <button onClick={undo} disabled={history.past.length === 0} title="Undo (⌘Z)">
+            ↶ Undo
+          </button>
+          <button onClick={redo} disabled={history.future.length === 0} title="Redo (⇧⌘Z)">
+            ↷ Redo
+          </button>
         </div>
-        <p className="fine data-note">Saved in this browser. Export a copy to keep or move it.</p>
+
+        <details className="data-fold">
+          <summary>Backup &amp; transfer</summary>
+          <p className="fine data-note">
+            Saved automatically in this browser. Export a copy only to keep it elsewhere or move to
+            another machine.
+          </p>
+          <div className="data-actions">
+            <button onClick={handleExport}>Export</button>
+            <button onClick={() => fileInput.current?.click()}>Import</button>
+            <input
+              ref={fileInput}
+              type="file"
+              accept="application/json,.json"
+              hidden
+              onChange={(e) => {
+                const f = e.target.files?.[0]
+                if (f) handleImportFile(f)
+                e.target.value = '' // let the same file be re-picked later
+              }}
+            />
+          </div>
+        </details>
       </aside>
 
       <main className="main">
@@ -495,7 +571,7 @@ export default function Outliner({ initial }: { initial: Tree }) {
               >
                 <button
                   className={'twisty' + (parent && !flat ? (node.collapsed ? '' : ' open') : ' hidden')}
-                  onClick={() => setTree(toggleCollapsed(tree, id))}
+                  onClick={() => setPresent(toggleCollapsed(tree, id))}
                   aria-label={node.collapsed ? 'Expand' : 'Collapse'}
                   tabIndex={parent && !flat ? 0 : -1}
                 >
