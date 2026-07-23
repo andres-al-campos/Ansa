@@ -190,6 +190,61 @@ export function addChild(tree: Tree, parentId: NodeId | null, text: string): { t
   return { tree: [...tree, node], id: node.id }
 }
 
+/**
+ * A nested outline to graft on in one shot: each entry is a title plus optional
+ * children, recursively. This is the shape a caller uses when it already knows
+ * the whole subtree — building it node-by-node would be a chain of round-trips.
+ */
+export interface SubtreeSpec {
+  text: string
+  children?: SubtreeSpec[]
+}
+
+/**
+ * Append a whole nested subtree under `parentId` (or as a new root when it's
+ * null), assigning a fresh id to every node. Siblings keep the given order and
+ * land after any existing children of the parent.
+ *
+ * Returns the new tree and the ids created, in the same depth-first order as
+ * the spec, so the caller can address the new nodes without re-reading the tree.
+ * The first id is the root of the grafted subtree — the new project's id when
+ * parentId was null.
+ */
+export function addSubtree(
+  tree: Tree,
+  parentId: NodeId | null,
+  nodes: SubtreeSpec[],
+): { tree: Tree; ids: NodeId[] } {
+  const added: Node[] = []
+  const ids: NodeId[] = []
+  const now = Date.now()
+
+  const walk = (pid: NodeId | null, specs: SubtreeSpec[]) => {
+    // Land after every existing sibling: start past the highest order already
+    // in use under this parent (whether it was there before or added just now),
+    // so the graft appends even when the existing orders are sparse.
+    const siblings = [...childrenOf(tree, pid), ...added.filter((n) => n.parentId === pid)]
+    const start = siblings.reduce((max, n) => Math.max(max, n.order + 1), 0)
+    specs.forEach((spec, i) => {
+      const node: Node = {
+        id: newId(),
+        parentId: pid,
+        text: spec.text,
+        done: false,
+        order: start + i,
+        collapsed: false,
+        createdAt: now,
+      }
+      added.push(node)
+      ids.push(node.id)
+      if (spec.children?.length) walk(node.id, spec.children)
+    })
+  }
+
+  walk(parentId, nodes)
+  return { tree: [...tree, ...added], ids }
+}
+
 /** Remove a node and everything under it. */
 export function removeNode(tree: Tree, id: NodeId): Tree {
   const doomed = new Set([id, ...subtreeOf(tree, id).map((n) => n.id)])

@@ -15,6 +15,7 @@
 import Database from 'better-sqlite3'
 import {
   addChild,
+  addSubtree,
   markOpened,
   moveNode,
   removeNode,
@@ -23,6 +24,7 @@ import {
   setText,
   toggleCollapsed,
   type NodeId,
+  type SubtreeSpec,
   type Tree,
 } from '../../shared/tree.ts'
 
@@ -117,6 +119,11 @@ export class Store {
   addChild(parentId: NodeId | null, text: string): { tree: Tree; id: NodeId } {
     const { tree, id } = addChild(this.load(), parentId, text)
     return { tree: this.replace(tree), id }
+  }
+
+  addSubtree(parentId: NodeId | null, nodes: SubtreeSpec[]): { tree: Tree; ids: NodeId[] } {
+    const { tree, ids } = addSubtree(this.load(), parentId, nodes)
+    return { tree: this.replace(tree), ids }
   }
 
   remove(id: NodeId): Tree {

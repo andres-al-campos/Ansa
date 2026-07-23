@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   addChild,
+  addSubtree,
   childrenOf,
   indent,
   isAncestor,
@@ -13,6 +14,7 @@ import {
   removeNode,
   roots,
   setDone,
+  subtreeOf,
   type Tree,
 } from './tree'
 
@@ -190,6 +192,68 @@ describe('editing', () => {
     const t = fixture()
     expect(isAncestor(t, 'forms', 'p2b1')).toBe(true)
     expect(isAncestor(t, 'p2b1', 'forms')).toBe(false)
+  })
+})
+
+describe('addSubtree', () => {
+  const spec = [
+    { text: 'Gather', children: [{ text: 'Find the P45' }, { text: 'Download CSV' }] },
+    { text: 'Submit' },
+  ]
+
+  it('grafts a nested subtree under a parent in one call', () => {
+    const { tree, ids } = addSubtree(fixture(), 'taxes', spec)
+    // Two new top-level children plus two grandchildren = 4 ids.
+    expect(ids).toHaveLength(4)
+    const [gather, find, download, submit] = ids
+    // The spec order is preserved, depth-first: Gather, its two kids, then Submit.
+    expect(tree.find((n) => n.id === gather)?.text).toBe('Gather')
+    expect(tree.find((n) => n.id === submit)?.text).toBe('Submit')
+    expect(childrenOf(tree, gather).map((n) => n.id)).toEqual([find, download])
+    // Grafted after the existing children of taxes (gather, forms).
+    expect(childrenOf(tree, 'taxes').map((n) => n.text)).toEqual([
+      'Gather documents',
+      'Fill the forms',
+      'Gather',
+      'Submit',
+    ])
+  })
+
+  it('creates a brand-new project when parentId is null', () => {
+    const before = roots(fixture()).length
+    const { tree, ids } = addSubtree(fixture(), null, [
+      { text: 'Plan the trip', children: [{ text: 'Book flights' }] },
+    ])
+    expect(roots(tree)).toHaveLength(before + 1)
+    // The first id is the new root — the project id a caller would open.
+    const [project, flights] = ids
+    expect(tree.find((n) => n.id === project)?.parentId).toBeNull()
+    expect(tree.find((n) => n.id === flights)?.parentId).toBe(project)
+  })
+
+  it('gives every grafted node a distinct id', () => {
+    const { ids } = addSubtree(fixture(), 'taxes', spec)
+    expect(new Set(ids).size).toBe(ids.length)
+  })
+
+  it('siblings within the graft keep a dense 0..n order', () => {
+    const { tree, ids } = addSubtree(fixture(), null, spec)
+    const kids = childrenOf(tree, ids[0]) // children of "Gather"
+    expect(kids.map((n) => n.order)).toEqual([0, 1])
+  })
+
+  it('leaves the original tree untouched', () => {
+    const t = fixture()
+    const copy = JSON.parse(JSON.stringify(t))
+    addSubtree(t, 'taxes', spec)
+    expect(t).toEqual(copy)
+  })
+
+  it('a deep spec round-trips through subtreeOf', () => {
+    const { tree, ids } = addSubtree(fixture(), null, [
+      { text: 'A', children: [{ text: 'B', children: [{ text: 'C' }] }] },
+    ])
+    expect(subtreeOf(tree, ids[0]).map((n) => n.text)).toEqual(['B', 'C'])
   })
 })
 

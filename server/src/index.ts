@@ -15,7 +15,34 @@ import cors from '@fastify/cors'
 import { Store } from './store.ts'
 import { broadcast, subscribe } from './bus.ts'
 import { seedTree } from '../../shared/seed.ts'
-import type { Tree } from '../../shared/tree.ts'
+import type { SubtreeSpec, Tree } from '../../shared/tree.ts'
+
+/**
+ * Validate an untrusted nested outline into a SubtreeSpec. Each node must have a
+ * string `text` and, optionally, an array of the same shape. Returns null with a
+ * reason on the first violation so the caller can send a usable 400.
+ */
+function parseSubtree(input: unknown): { nodes: SubtreeSpec[] } | { error: string } {
+  const walk = (val: unknown, path: string): SubtreeSpec[] | string => {
+    if (!Array.isArray(val)) return `${path} must be an array of nodes`
+    const out: SubtreeSpec[] = []
+    for (let i = 0; i < val.length; i++) {
+      const n = val[i] as Record<string, unknown>
+      if (typeof n !== 'object' || n === null) return `${path}[${i}] must be an object`
+      if (typeof n.text !== 'string') return `${path}[${i}].text must be a string`
+      const spec: SubtreeSpec = { text: n.text }
+      if (n.children !== undefined) {
+        const kids = walk(n.children, `${path}[${i}].children`)
+        if (typeof kids === 'string') return kids
+        if (kids.length) spec.children = kids
+      }
+      out.push(spec)
+    }
+    return out
+  }
+  const nodes = walk(input, 'nodes')
+  return typeof nodes === 'string' ? { error: nodes } : { nodes }
+}
 
 const here = dirname(fileURLToPath(import.meta.url))
 // DB lives next to the repo root by default; override with ANSA_DB for tests.
@@ -91,6 +118,30 @@ app.post<{ Body: { parentId: string | null; text?: string } }>('/api/nodes', asy
   }
   const { tree, id } = store.addChild(parentId, text ?? '')
   return { tree: emit(tree, req), id }
+})
+
+// Graft a whole nested subtree in one write. parentId null makes a new project
+// (root); a parent id nests it under an existing task. Returns the created ids
+// depth-first, first id being the subtree's own root.
+app.post<{ Body: { parentId?: string | null; nodes?: unknown } }>('/api/nodes/subtree', async (req, reply) => {
+  const { parentId = null, nodes } = req.body ?? {}
+  if (parentId !== null && typeof parentId !== 'string') {
+    return reply.code(400).send({ error: 'parentId must be a string or null' })
+  }
+  const parsed = parseSubtree(nodes)
+  if ('error' in parsed) return reply.code(400).send({ error: parsed.error })
+  if (parsed.nodes.length === 0) return reply.code(400).send({ error: 'nodes must have at least one node' })
+  // A new project is a single root. Extra top-level nodes would each become
+  // their own project — almost never what "make a new project" means — so
+  // require exactly one and let its children carry the rest of the tree.
+  if (parentId === null && parsed.nodes.length !== 1) {
+    return reply.code(400).send({
+      error:
+        'A new project needs exactly one top-level node (the project itself); put the rest under its children. To add several tasks to an existing project, pass its id as parentId.',
+    })
+  }
+  const { tree, ids } = store.addSubtree(parentId, parsed.nodes)
+  return { tree: emit(tree, req), ids }
 })
 
 app.patch<{ Params: { id: string }; Body: { text?: string; done?: boolean; pinned?: boolean } }>(
