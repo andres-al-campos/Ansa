@@ -695,7 +695,7 @@ export default function Outliner({ initial }: { initial: Tree }) {
         <button className="brand" onClick={() => setScope(null)} title="Home — all projects">
           Ansa
         </button>
-        <p className="tagline">one thing at a time</p>
+        <p className="tagline">One thing at a time</p>
 
         {sections.pinned.length > 0 && (
           <>
