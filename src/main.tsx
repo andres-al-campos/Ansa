@@ -1,13 +1,14 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import Outliner from './Outliner'
-import { seedTree } from './seed'
+import { seedTree } from '@shared/seed'
 import { loadTree } from './storage'
 import './index.css'
 
-// A saved tree wins; the seed is only for a first-ever visit (or unreadable
-// storage). Falling back to the seed rather than an empty list keeps a fresh
-// browser from opening onto a blank screen.
+// First paint only. The server (SQLite) is the source of truth and the app
+// adopts its tree the moment the SSE stream connects; this localStorage cache
+// (or the seed, on a first-ever visit) just avoids a blank frame before that
+// first message arrives, and is what shows if the server is unreachable.
 const initial = loadTree() ?? seedTree()
 
 createRoot(document.getElementById('root')!).render(

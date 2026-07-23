@@ -5,7 +5,7 @@
  * valid tree is ignored rather than allowed to crash the app on boot.
  */
 
-import type { Node, Tree } from './tree'
+import type { Node, Tree } from '@shared/tree'
 
 const KEY = 'ansa.tree.v1'
 

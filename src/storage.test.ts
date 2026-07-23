@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { exportTree, parseTree } from './storage'
-import { seedTree } from './seed'
+import { seedTree } from '@shared/seed'
 
 describe('parseTree', () => {
   it('round-trips a real tree through export', () => {

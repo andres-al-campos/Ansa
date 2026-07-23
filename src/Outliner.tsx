@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { exportTree, parseTree, saveTree } from './storage'
+import { EVENTS_URL, ORIGIN, putTree } from './api'
 import {
   addChild,
   byId,
@@ -18,7 +19,7 @@ import {
   toggleCollapsed,
   type NodeId,
   type Tree,
-} from './tree'
+} from '@shared/tree'
 
 // Row geometry, kept together so the indent and the nesting guides can't drift
 // apart. INDENT is the px added per depth level; GUIDE_X0 is where a depth-0
@@ -149,9 +150,65 @@ export default function Outliner({ initial }: { initial: Tree }) {
 
   useEffect(() => () => window.clearTimeout(wormTimer.current), [])
 
-  // Persist on every change. localStorage writes are synchronous and cheap at
-  // this size; if the tree ever outgrows that, debounce here.
-  useEffect(() => saveTree(tree), [tree])
+  // Persist on every change. The server (SQLite) is the source of truth;
+  // localStorage is kept as an offline cache so a reload with the server down
+  // still shows the last state instead of a blank screen. The very first render
+  // carries the initial tree we were handed, so skip saving it back untouched.
+  const firstSave = useRef(true)
+  useEffect(() => {
+    saveTree(tree)
+    if (firstSave.current) {
+      firstSave.current = false
+      return
+    }
+    void putTree(tree)
+  }, [tree])
+
+  // Subscribe to server changes over SSE. The stream sends the current tree on
+  // connect (so this also handles the initial load from the shared truth) and
+  // then pushes the new tree after every write from anyone — a human in another
+  // tab, or a Claude on the MCP. The browser writes over REST as before; this
+  // is the one-way "something changed" channel back.
+  //
+  // Two things keep a local edit from being disturbed:
+  //  - The broadcast carries the origin that caused it; we ignore the echo of
+  //    our own writes (they're already in `present`).
+  //  - While the user is mid-edit or dragging we don't apply an incoming tree;
+  //    we stash it and adopt it the moment they're idle, so nothing is yanked
+  //    out from under them and no external change is lost.
+  const busyRef = useRef(false)
+  busyRef.current = editing !== null || dragId !== null
+  const pending = useRef<Tree | null>(null)
+  const adopt = (next: Tree) => {
+    firstSave.current = true // adopting isn't a change to push back
+    setHistory((h) => ({ ...h, present: next }))
+  }
+  const adoptRef = useRef(adopt)
+  adoptRef.current = adopt
+
+  useEffect(() => {
+    const es = new EventSource(EVENTS_URL)
+    es.onmessage = (e) => {
+      const { tree: next, origin } = JSON.parse(e.data) as { tree: Tree; origin: string | null }
+      if (origin === ORIGIN) return // our own echo — already applied locally
+      if (busyRef.current) {
+        pending.current = next // hold until the user is idle
+        return
+      }
+      adoptRef.current(next)
+    }
+    return () => es.close()
+  }, [])
+
+  // When the user finishes an edit or drag, apply anything that arrived while
+  // they were busy.
+  useEffect(() => {
+    if (!busyRef.current && pending.current) {
+      const next = pending.current
+      pending.current = null
+      adoptRef.current(next)
+    }
+  }, [editing, dragId])
 
   // Cmd/Ctrl+Z undo, +Shift+Z (or Ctrl+Y) redo. Skipped while editing a label,
   // so the text field keeps its own native undo. Refs keep the listener stable.
