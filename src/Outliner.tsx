@@ -445,24 +445,25 @@ export default function Outliner({ initial }: { initial: Tree }) {
     if (!hoverId) return lit
     const hoverIdx = rows.findIndex((r) => r.id === hoverId)
     if (hoverIdx < 0) return lit
-    // The hovered row's spine: root … self. The guide at column d sits under
-    // spine[d]'s bullet and should connect it down to the hovered row. The rows
-    // that segment passes through are spine[d+1] and its descendants that lie
-    // at or above the hovered row — i.e. the run of rows under the spine's own
-    // child at that level, not every cousin sharing the shallower ancestor.
+    // The hovered row's spine: root … self, as a full-tree lineage. A row's
+    // `depth` is measured from the *scope*, though, so column d maps to the
+    // absolute lineage index `base + d` — otherwise, when zoomed in, the guide
+    // columns line up against the wrong ancestors and cousins under a different
+    // parent light up by mistake.
+    const base = scope ? lineageOf(tree, scope).length : 0
     const spine = lineageOf(tree, hoverId) // root … self
     for (let idx = 0; idx <= hoverIdx; idx++) {
       const row = rows[idx]
       const rowSpine = lineageOf(tree, row.id)
-      for (let d = 0; d < row.depth && d + 1 < spine.length; d++) {
+      for (let d = 0; d < row.depth && base + d + 1 < spine.length; d++) {
         // Lit only when this row descends from the spine's child at column d.
-        if (rowSpine[d + 1] && rowSpine[d + 1].id === spine[d + 1].id) {
+        if (rowSpine[base + d + 1] && rowSpine[base + d + 1].id === spine[base + d + 1].id) {
           lit.add(`${row.id}:${d}`)
         }
       }
     }
     return lit
-  }, [hoverId, rows, tree])
+  }, [hoverId, rows, tree, scope])
 
   // One progress figure for the whole view: leaves done under the current
   // scope, or across every project at "Everything".
