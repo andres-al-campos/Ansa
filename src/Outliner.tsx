@@ -128,6 +128,17 @@ function TrashIcon() {
   )
 }
 
+// Three dots: the row's overflow menu, holding pin and delete.
+function MoreIcon() {
+  return (
+    <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden focusable="false">
+      <circle cx="3.2" cy="8" r="1.3" fill="currentColor" />
+      <circle cx="8" cy="8" r="1.3" fill="currentColor" />
+      <circle cx="12.8" cy="8" r="1.3" fill="currentColor" />
+    </svg>
+  )
+}
+
 export default function Outliner({ initial }: { initial: Tree }) {
   // Undo/redo is a snapshot history: the whole tree is one immutable value, so
   // a step is just the previous value. `commit` replaces the tree and records
@@ -174,6 +185,10 @@ export default function Outliner({ initial }: { initial: Tree }) {
   // The landing card whose delete is armed: its trash can has flipped to a
   // confirm ✓ with a cancel ✕ beside it. Only one card can be armed at a time.
   const [confirmDelete, setConfirmDelete] = useState<NodeId | null>(null)
+  // The sidebar row whose ⋯ overflow menu is open (pin + delete), and whether
+  // its Delete item has been armed into its two-step "Delete? ✓ ✕" confirm.
+  const [menuOpen, setMenuOpen] = useState<NodeId | null>(null)
+  const [menuArmed, setMenuArmed] = useState(false)
   /** ids currently running the worm, with their ripple index */
   const [worm, setWorm] = useState<Map<NodeId, number>>(new Map())
   const wormTimer = useRef<number | undefined>(undefined)
@@ -199,6 +214,26 @@ export default function Outliner({ initial }: { initial: Tree }) {
   const justDragged = useRef(false)
 
   useEffect(() => () => window.clearTimeout(wormTimer.current), [])
+
+  // Close the sidebar ⋯ menu on any outside click or Escape, resetting its
+  // armed-delete step so it never reopens mid-confirm.
+  const closeMenu = () => {
+    setMenuOpen(null)
+    setMenuArmed(false)
+  }
+  useEffect(() => {
+    if (menuOpen === null) return
+    const onDown = (e: MouseEvent) => {
+      if (!(e.target as HTMLElement).closest('.row-menu, .row-more')) closeMenu()
+    }
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && closeMenu()
+    document.addEventListener('mousedown', onDown)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onDown)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [menuOpen])
 
   // Persist on every change. The server (SQLite) is the source of truth;
   // localStorage is kept as an offline cache so a reload with the server down
@@ -525,6 +560,7 @@ export default function Outliner({ initial }: { initial: Tree }) {
     const node = byId(tree, id)
     if (!node) return
     setTree(setPinned(tree, id, !node.pinned))
+    closeMenu()
   }
 
   // Actually delete a project and everything under it. Confirmation happens in
@@ -534,6 +570,7 @@ export default function Outliner({ initial }: { initial: Tree }) {
     if (!byId(tree, id)) return
     if (scope === id) setScope(null)
     setConfirmDelete(null)
+    closeMenu()
     setTree(removeNode(tree, id))
   }
 
@@ -589,19 +626,71 @@ export default function Outliner({ initial }: { initial: Tree }) {
           {projectList(tree).map((node) => {
             // The active project is the root of the current scope's lineage.
             const active = scope !== null && lineage[0]?.id === node.id
+            const open = menuOpen === node.id
             return (
-              <li key={node.id} className={active ? 'here' : ''}>
+              <li key={node.id} className={(active ? 'here' : '') + (open ? ' menuing' : '')}>
                 <button className="proj" onClick={() => setScope(node.id)}>
                   {node.text || 'Untitled'}
                 </button>
+                {/* A pinned project shows a small pin at rest so the state reads
+                    without opening the menu; the ⋯ holds the actions. */}
+                {node.pinned && !open && (
+                  <span className="pin-badge" aria-hidden>
+                    <PinIcon filled />
+                  </span>
+                )}
                 <button
-                  className={'pin' + (node.pinned ? ' on' : '')}
-                  onClick={() => togglePin(node.id)}
-                  aria-label={node.pinned ? 'Unpin project' : 'Pin project'}
-                  title={node.pinned ? 'Unpin' : 'Pin to top'}
+                  className="row-more"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    setMenuArmed(false)
+                    setMenuOpen(open ? null : node.id)
+                  }}
+                  aria-label="Project actions"
+                  aria-haspopup="menu"
+                  aria-expanded={open}
+                  title="More"
                 >
-                  <PinIcon filled={!!node.pinned} />
+                  <MoreIcon />
                 </button>
+                {open && (
+                  <div className="row-menu" role="menu">
+                    <button className="row-menu-item" role="menuitem" onClick={() => togglePin(node.id)}>
+                      <PinIcon filled={!!node.pinned} />
+                      <span>{node.pinned ? 'Unpin' : 'Pin to top'}</span>
+                    </button>
+                    {menuArmed ? (
+                      // Two-step, in place — no popup. The row swaps to a confirm.
+                      <div className="row-menu-confirm">
+                        <span>Delete?</span>
+                        <button
+                          className="rmc-yes"
+                          role="menuitem"
+                          onClick={() => deleteProject(node.id)}
+                          aria-label="Confirm delete"
+                        >
+                          ✓
+                        </button>
+                        <button
+                          className="rmc-no"
+                          onClick={() => setMenuArmed(false)}
+                          aria-label="Cancel delete"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        className="row-menu-item danger"
+                        role="menuitem"
+                        onClick={() => setMenuArmed(true)}
+                      >
+                        <TrashIcon />
+                        <span>Delete</span>
+                      </button>
+                    )}
+                  </div>
+                )}
               </li>
             )
           })}
