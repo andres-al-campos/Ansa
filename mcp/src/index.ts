@@ -91,6 +91,46 @@ server.registerTool(
   },
 )
 
+// A nested outline the model can hand over in one call. Recursive, so it can
+// describe parents, children and grandchildren to any depth at once.
+type SubtreeInput = { text: string; children?: SubtreeInput[] }
+const subtreeNode: z.ZodType<SubtreeInput> = z.lazy(() =>
+  z.object({
+    text: z.string().describe('The task title'),
+    children: z.array(subtreeNode).optional().describe('Nested sub-tasks, same shape, any depth'),
+  }),
+)
+
+server.registerTool(
+  'add_subtree',
+  {
+    title: 'Add a whole subtree at once',
+    description:
+      'Create many tasks in one call from a nested outline — parents, children, grandchildren, any depth. ' +
+      'Omit parentId (or pass null) to start a brand-new project: pass exactly one top-level node (the project ' +
+      'itself) with the rest of the tree under its children. Pass a parent id to graft the subtree under an ' +
+      'existing task, where several top-level nodes are fine. Use this instead of many add_task calls whenever ' +
+      'you already know the shape. Returns the created ids depth-first (the first id is the subtree root — the new project when parentId is null).',
+    inputSchema: {
+      parentId: z
+        .string()
+        .nullable()
+        .optional()
+        .describe('Parent node id to graft under, or null/omitted to create a new top-level project'),
+      nodes: z.array(subtreeNode).min(1).describe('The nested outline to create, as [{ text, children? }]'),
+    },
+  },
+  async ({ parentId, nodes }) => {
+    const res = await api('/api/nodes/subtree', {
+      method: 'POST',
+      body: JSON.stringify({ parentId: parentId ?? null, nodes }),
+    })
+    const ids = res.ids as string[]
+    const label = parentId ? `Grafted ${ids.length} tasks under ${parentId}` : `Created a new project with ${ids.length} tasks`
+    return text(`${label} (root ${ids[0]}).\n\n${renderOutline(res.tree)}`)
+  },
+)
+
 server.registerTool(
   'rename_task',
   {
