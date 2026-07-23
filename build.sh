@@ -11,6 +11,25 @@ cd "$(dirname "$0")"
 
 APP_PORT=5173
 API_PORT=4000
+APP_URL="http://localhost:${APP_PORT}"
+
+# Set ANSA_NO_OPEN=1 to skip auto-opening the browser (e.g. on a headless box).
+OPEN_BROWSER=${ANSA_NO_OPEN:-}
+
+# Print a URL as a terminal hyperlink (OSC 8) so it's clickable, falling back to
+# plain text on terminals that don't support it — they just show the URL.
+link() {
+  printf '\033]8;;%s\033\\%s\033]8;;\033\\' "$1" "$1"
+}
+
+# Open a URL in the default browser, best-effort across platforms.
+open_url() {
+  if command -v open >/dev/null 2>&1; then
+    open "$1"                       # macOS
+  elif command -v xdg-open >/dev/null 2>&1; then
+    xdg-open "$1" >/dev/null 2>&1   # Linux
+  fi
+}
 
 # Dependencies: install only when node_modules is missing, so a normal run is fast.
 if [ ! -d node_modules ]; then
@@ -59,15 +78,31 @@ until curl -sf "http://127.0.0.1:${API_PORT}/api/tree" >/dev/null 2>&1; do
 done
 echo "Server is up."
 
-echo "Starting app on http://localhost:${APP_PORT} …"
+echo "Starting app on ${APP_URL} …"
 npm run dev &
 pids+=($!)
 
+# Wait for Vite to actually serve before opening a browser at it, so the tab
+# doesn't land on a connection error. Bail if the app process dies meanwhile.
+until curl -sf "${APP_URL}" >/dev/null 2>&1; do
+  sleep 0.3
+  if ! kill -0 "${pids[1]}" 2>/dev/null; then
+    echo "App failed to start. Check the output above." >&2
+    exit 1
+  fi
+done
+
 echo ""
 echo "Ansa is running:"
-echo "  app  →  http://localhost:${APP_PORT}"
-echo "  api  →  http://127.0.0.1:${API_PORT}"
+printf '  app  →  %s\n' "$(link "${APP_URL}")"
+printf '  api  →  %s\n' "$(link "http://127.0.0.1:${API_PORT}")"
 echo ""
+
+if [ -z "$OPEN_BROWSER" ]; then
+  echo "Opening ${APP_URL} …"
+  open_url "${APP_URL}"
+fi
+
 echo "Press Ctrl-C to stop both."
 
 # Block until either child exits, then let the trap stop the other. Polled
