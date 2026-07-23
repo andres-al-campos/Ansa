@@ -526,6 +526,14 @@ export default function Outliner({ initial }: { initial: Tree }) {
     setEditing(null)
   }
 
+  // Renaming the scope title. Unlike a row, an emptied title is kept as-is —
+  // clearing a whole project's name shouldn't delete the project.
+  function commitTitle(id: NodeId, text: string) {
+    const trimmed = text.trim()
+    if (trimmed) setTree(setText(tree, id, trimmed))
+    setEditing(null)
+  }
+
   /**
    * Tab/Shift-Tab while editing. Commit the live text first so the reparent
    * doesn't discard it, then re-nest and keep the row in edit mode.
@@ -762,26 +770,41 @@ export default function Outliner({ initial }: { initial: Tree }) {
       </aside>
 
       <main className="main">
-        {scopeNode && editing === scopeNode.id ? (
-          <input
-            className="scope-title scope-title-input"
-            autoFocus
-            defaultValue={scopeNode.text}
-            onBlur={(e) => commitEdit(scopeNode.id, e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') e.currentTarget.blur()
-              else if (e.key === 'Escape') setEditing(null)
-            }}
-          />
-        ) : (
-          <h1
-            className={'scope-title' + (scopeNode ? ' editable' : '')}
-            onClick={() => scopeNode && setEditing(scopeNode.id)}
-            title={scopeNode ? 'Click to rename' : undefined}
-          >
-            {scopeNode ? scopeNode.text || 'Untitled' : 'Projects'}
-          </h1>
-        )}
+        <h1
+          className={'scope-title' + (scopeNode ? ' editable' : '')}
+          contentEditable={scopeNode ? editing === scopeNode.id : false}
+          suppressContentEditableWarning
+          ref={(el) => {
+            // On entering edit, drop the caret at the end of the existing text.
+            if (el && scopeNode && editing === scopeNode.id && document.activeElement !== el) {
+              el.focus()
+              const range = document.createRange()
+              range.selectNodeContents(el)
+              range.collapse(false)
+              const sel = window.getSelection()
+              sel?.removeAllRanges()
+              sel?.addRange(range)
+            }
+          }}
+          onClick={() => scopeNode && editing !== scopeNode.id && setEditing(scopeNode.id)}
+          onBlur={(e) => {
+            if (scopeNode && editing === scopeNode.id) commitTitle(scopeNode.id, e.currentTarget.textContent ?? '')
+          }}
+          onKeyDown={(e) => {
+            if (editing !== scopeNode?.id) return
+            if (e.key === 'Enter') {
+              e.preventDefault()
+              e.currentTarget.blur()
+            } else if (e.key === 'Escape') {
+              e.preventDefault()
+              if (scopeNode) e.currentTarget.textContent = scopeNode.text || 'Untitled'
+              setEditing(null)
+            }
+          }}
+          title={scopeNode ? 'Click to rename' : undefined}
+        >
+          {scopeNode ? scopeNode.text || 'Untitled' : 'Projects'}
+        </h1>
 
         {scope === null ? (
           <p className="scope-meta">Pick a project, or start a new one</p>
