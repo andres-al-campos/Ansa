@@ -100,13 +100,14 @@ button { font: inherit; color: inherit; }
 .brand {
   display: inline-block;
   font-family: Georgia, 'Iowan Old Style', serif;
-  font-size: 23px;
+  font-size: 30px;
+  letter-spacing: 0.01em;
   color: var(--brass);
   background: none;
   border: none;
   padding: 0;
   cursor: pointer;
-  margin: 0 0 2px;
+  margin: 0 0 3px;
   transition: color 0.12s ease;
 }
 .brand:hover { filter: brightness(1.15); }
