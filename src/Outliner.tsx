@@ -417,15 +417,14 @@ export default function Outliner({ initial }: { initial: Tree }) {
     const { tree: next, completed } = setDone(tree, id, willComplete)
     setTree(next)
 
-    // Ripple only what this click actually finished. `completed` lists the
-    // ancestors that flipped to done, bottom-up, so the last entry is the
-    // topmost one — the whole subtree under it is exactly what just became
-    // complete. Nothing flipped above? Then it's just this node's subtree.
-    // Completing a small branch worms that branch; completing the last leaf of
-    // a whole project worms the whole project, so it reads as the bigger event.
-    // Un-checking never worms.
-    if (willComplete) {
-      const topId = completed.length ? completed[completed.length - 1] : id
+    // The worm is the reward for *finishing* something, so it fires only when a
+    // parent just flipped to done — not on every individual tick. Ticking a lone
+    // leaf that doesn't close out its group stays quiet; the payoff is saved for
+    // the moment a branch actually completes. `completed` lists the ancestors
+    // that flipped, bottom-up, so the last entry is the topmost — its whole
+    // subtree is exactly what just became complete. Un-checking never worms.
+    if (willComplete && completed.length) {
+      const topId = completed[completed.length - 1]
       const inSubtree = new Set(subtreeOf(next, topId).map((n) => n.id))
       inSubtree.add(topId)
 
