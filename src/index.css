@@ -309,7 +309,7 @@ body:has(.row.gap-slot) { cursor: grabbing; }
   border-radius: 50%;
   background: var(--edge);
 }
-.bullet.leaf::after { background: var(--edge); }
+.bullet.leaf::after { background: var(--ink-faint); }
 .bullet:hover::before { background: var(--brass-soft); }
 
 .check {
