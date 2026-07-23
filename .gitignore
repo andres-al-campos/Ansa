@@ -14,3 +14,8 @@ npm-debug.log*
 .vite/
 coverage/
 *.tsbuildinfo
+
+# Local SQLite database (source of truth lives per-machine, not in git)
+ansa.db
+ansa.db-shm
+ansa.db-wal
