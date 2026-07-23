@@ -5,7 +5,6 @@
   --edge: #dce1e8;
   --edge-soft: #e9edf2;
   --guide: #c7cdd7;
-  --guide-lit: #8a93a3;
   /* Bullet: a dim outer ring with a brighter inner dot, so the dot reads as the
    * mark and the ring is just a quiet halo. Hover lifts both a notch, neutral —
    * no brand colour on a resting structural element. */
@@ -36,7 +35,6 @@
     --edge: #2a303b;
     --edge-soft: #222831;
     --guide: #3a4150;
-    --guide-lit: #6a7382;
     /* Dark: dim ring, brighter dot. The ring sits just above the guide lines so
      * it never out-shouts the label; the dot carries the eye. */
     --bullet-ring: #3f4756;
@@ -523,9 +521,7 @@ button { font: inherit; color: inherit; }
   width: 1px;
   background: var(--guide);
   pointer-events: none;
-  transition: background 0.12s ease;
 }
-.guide.lit { background: var(--guide-lit); }
 
 .bullet {
   width: 16px;

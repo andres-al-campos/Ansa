@@ -190,9 +190,6 @@ export default function Outliner({ initial }: { initial: Tree }) {
   // ------------------------------------------------------------ drag state
   const [dragId, setDragId] = useState<NodeId | null>(null)
   const [drop, setDrop] = useState<DropTarget | null>(null)
-  // The row the pointer is over, so its lineage guides can light up as a trace
-  // back to the parent. null when the pointer isn't over any row.
-  const [hoverId, setHoverId] = useState<NodeId | null>(null)
   // Pointer position, so the drag "card" can follow it. null when not dragging.
   const [ghostAt, setGhostAt] = useState<{ x: number; y: number } | null>(null)
   // The long-press timer, and where the finger first went down, so a small
@@ -434,36 +431,6 @@ export default function Outliner({ initial }: { initial: Tree }) {
     () => visibleRows(tree, scope, leafOnly, hideDone, dragId),
     [tree, scope, leafOnly, hideDone, dragId],
   )
-
-  // Lineage trace: the guide segments that spell out the hovered row's path
-  // back to the root, so hovering a deep row lights the whole spine up to its
-  // parents. Keyed "rowId:depth" — a guide at column d in some row lights when
-  // it shares the hovered row's ancestor at that column and sits in the visible
-  // span between that ancestor and the hovered row.
-  const litGuides = useMemo(() => {
-    const lit = new Set<string>()
-    if (!hoverId) return lit
-    const hoverIdx = rows.findIndex((r) => r.id === hoverId)
-    if (hoverIdx < 0) return lit
-    // The hovered row's spine: root … self, as a full-tree lineage. A row's
-    // `depth` is measured from the *scope*, though, so column d maps to the
-    // absolute lineage index `base + d` — otherwise, when zoomed in, the guide
-    // columns line up against the wrong ancestors and cousins under a different
-    // parent light up by mistake.
-    const base = scope ? lineageOf(tree, scope).length : 0
-    const spine = lineageOf(tree, hoverId) // root … self
-    for (let idx = 0; idx <= hoverIdx; idx++) {
-      const row = rows[idx]
-      const rowSpine = lineageOf(tree, row.id)
-      for (let d = 0; d < row.depth && base + d + 1 < spine.length; d++) {
-        // Lit only when this row descends from the spine's child at column d.
-        if (rowSpine[base + d + 1] && rowSpine[base + d + 1].id === spine[base + d + 1].id) {
-          lit.add(`${row.id}:${d}`)
-        }
-      }
-    }
-    return lit
-  }, [hoverId, rows, tree, scope])
 
   // One progress figure for the whole view: leaves done under the current
   // scope, or across every project at "Everything".
@@ -974,22 +941,14 @@ export default function Outliner({ initial }: { initial: Tree }) {
                     ...(wormDelay !== undefined ? { ['--worm-delay' as string]: `${wormDelay}ms` } : {}),
                   } as React.CSSProperties
                 }
-                onPointerEnter={() => setHoverId(id)}
-                onPointerLeave={() => setHoverId((cur) => (cur === id ? null : cur))}
               >
                 {/* Nesting guides: one vertical line per level of ancestry, so
-                    you can read what belongs under what without counting indent.
-                    Segments on the hovered row's lineage light up as a trace. */}
+                    you can read what belongs under what without counting indent. */}
                 {!flat &&
                   depth > 0 &&
                   Array.from({ length: depth }, (_, d) => (
                     // Each line sits under the bullet of the ancestor at depth d.
-                    <span
-                      key={d}
-                      className={'guide' + (litGuides.has(`${id}:${d}`) ? ' lit' : '')}
-                      style={{ left: GUIDE_X0 + d * INDENT }}
-                      aria-hidden
-                    />
+                    <span key={d} className="guide" style={{ left: GUIDE_X0 + d * INDENT }} aria-hidden />
                   ))}
 
                 <button
