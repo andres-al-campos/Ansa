@@ -6,6 +6,13 @@
   --edge-soft: #e9edf2;
   --guide: #c7cdd7;
   --guide-lit: #8a93a3;
+  /* Bullet: a dim outer ring with a brighter inner dot, so the dot reads as the
+   * mark and the ring is just a quiet halo. Hover lifts both a notch, neutral —
+   * no brand colour on a resting structural element. */
+  --bullet-ring: #cdd3dc;
+  --bullet-dot: #8a93a3;
+  --bullet-ring-hover: #b7bfca;
+  --bullet-dot-hover: #6c7686;
   --ink: #181d28;
   --ink-mid: #525a69;
   --ink-faint: #8a93a3;
@@ -28,6 +35,12 @@
     --edge-soft: #222831;
     --guide: #3a4150;
     --guide-lit: #6a7382;
+    /* Dark: dim ring, brighter dot. The ring sits just above the guide lines so
+     * it never out-shouts the label; the dot carries the eye. */
+    --bullet-ring: #3f4756;
+    --bullet-dot: #7c8698;
+    --bullet-ring-hover: #545d6e;
+    --bullet-dot-hover: #9aa4b5;
     --ink: #e7eaf0;
     --ink-mid: #98a1b0;
     --ink-faint: #6a7382;
@@ -432,17 +445,21 @@ body:has(.row.gap-slot) { cursor: grabbing; }
   position: absolute;
   inset: 5px;
   border-radius: 50%;
-  background: var(--ink-faint);
+  background: var(--bullet-dot);
+  transition: background 0.12s ease;
 }
 .bullet.parent::before {
   content: '';
   position: absolute;
   inset: 0;
   border-radius: 50%;
-  background: var(--ink-ghost);
+  background: var(--bullet-ring);
+  transition: background 0.12s ease;
 }
-.bullet.leaf::after { background: var(--ink-faint); }
-.bullet:hover::before { background: var(--brass-soft); }
+.bullet.leaf::after { background: var(--bullet-dot); }
+/* Hover lifts ring and dot a neutral notch — no brand tint on a structural mark. */
+.bullet:hover::before { background: var(--bullet-ring-hover); }
+.bullet:hover::after { background: var(--bullet-dot-hover); }
 
 .check {
   width: 15px;
