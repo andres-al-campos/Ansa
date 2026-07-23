@@ -435,13 +435,17 @@ export default function Outliner({ initial }: { initial: Tree }) {
     setTree(next)
 
     // The worm is the reward for *finishing* something, so it fires only when a
-    // parent just flipped to done — not on every individual tick. Ticking a lone
-    // leaf that doesn't close out its group stays quiet; the payoff is saved for
-    // the moment a branch actually completes. `completed` lists the ancestors
-    // that flipped, bottom-up, so the last entry is the topmost — its whole
-    // subtree is exactly what just became complete. Un-checking never worms.
-    if (willComplete && completed.length) {
-      const topId = completed[completed.length - 1]
+    // group closes out — not on every individual tick. A lone leaf that doesn't
+    // complete its parent stays quiet; the payoff is saved for the moment a
+    // branch actually finishes. Two ways a click finishes a branch: it ticks a
+    // parent, completing that whole subtree at once, or it's the last leaf that
+    // flips an ancestor to done. `completed` lists only the ancestors that
+    // flipped, never the clicked node, so check the click for children too.
+    // The topmost completed root is the highest flipped ancestor, else the
+    // clicked parent itself. Un-checking never worms.
+    const clickedIsParent = childrenOf(tree, id).length > 0
+    if (willComplete && (completed.length || clickedIsParent)) {
+      const topId = completed.length ? completed[completed.length - 1] : id
       const inSubtree = new Set(subtreeOf(next, topId).map((n) => n.id))
       inSubtree.add(topId)
 

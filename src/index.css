@@ -659,13 +659,18 @@ body:has(.row.gap-slot) { cursor: grabbing; }
   66% { transform: translateX(-2px); }
   100% { transform: translateX(0); }
 }
-.row.worm {
+/* Wiggle the row's contents, not the row. The nesting guides are absolutely
+ * positioned children of .row, so animating .row itself would drag the lines
+ * along with it — the structure would appear to sway. Targeting everything
+ * except the guides keeps the lines dead still while the bullet, check and
+ * label ripple. */
+.row.worm > :not(.guide) {
   animation: worm 0.4s ease-in-out;
   animation-delay: var(--worm-delay, 0ms);
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .row.worm { animation: none; }
+  .row.worm > :not(.guide) { animation: none; }
   .pbar i { transition: none; }
   .twisty { transition: none; }
 }
