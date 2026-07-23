@@ -623,6 +623,10 @@ body:has(.row.gap-slot) { cursor: grabbing; }
   border: 1px solid var(--brass);
   border-radius: 6px;
   padding: 5px 9px;
+  /* The roomy padding makes the input taller than a display row, which drops
+     its text below the checkbox. Pull the box up so its text lines up with the
+     checkbox the way the static label does. */
+  margin-top: -4px;
 }
 /* The brass border is the whole affordance; the global focus-visible ring on
    top of it reads as a doubled outline, so drop it for the in-place editor. */
