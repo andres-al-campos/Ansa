@@ -320,6 +320,24 @@ button { font: inherit; color: inherit; }
   font-size: 9px;
   line-height: 2.2;
   transition: transform 0.15s ease;
+  /* Sit above the nesting guides so the triangle knocks the line out behind
+     it rather than floating on top of it. */
+  position: relative;
+  z-index: 1;
+}
+/* The knockout chip: a slug of row-coloured background centred on the twisty,
+   so a guide line passing under it is cleanly interrupted. Only needed when
+   the row is hovered — that's the only time both the guides and the triangle
+   are visible, and the row background is --sunk then. */
+.row:hover .twisty::before {
+  content: '';
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  left: -3px;
+  right: -3px;
+  background: var(--sunk);
+  z-index: -1;
 }
 .twisty:hover { color: var(--ink); }
 .twisty.hidden { visibility: hidden; }
