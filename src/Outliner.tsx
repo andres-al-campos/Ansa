@@ -504,6 +504,16 @@ export default function Outliner({ initial }: { initial: Tree }) {
     setTree(setPinned(tree, id, !node.pinned))
   }
 
+  // Deleting a whole project takes everything under it, so it always confirms.
+  function deleteProject(id: NodeId) {
+    const node = byId(tree, id)
+    if (!node) return
+    const name = node.text.trim() || 'this project'
+    if (!window.confirm(`Delete “${name}” and everything under it? This can't be undone from here.`)) return
+    if (scope === id) setScope(null)
+    setTree(removeNode(tree, id))
+  }
+
   // Download the whole tree as a JSON file — the backup / hand-off format.
   function handleExport() {
     const blob = new Blob([exportTree(tree)], { type: 'application/json' })
@@ -675,20 +685,36 @@ export default function Outliner({ initial }: { initial: Tree }) {
               const prog = progressOf(tree, p.id)
               const open = prog.total - prog.done
               return (
-                <button key={p.id} className="proj-card" onClick={() => setScope(p.id)}>
-                  <div className="proj-card-head">
-                    <span className="proj-card-title">{p.text || 'Untitled'}</span>
-                    {p.pinned && <span className="proj-card-pin" aria-label="Pinned">★</span>}
-                  </div>
-                  <div className={'pbar' + (prog.pct === 100 ? ' complete' : '')}>
-                    <i style={{ width: `${prog.pct}%` }} />
-                  </div>
-                  <span className="proj-card-meta">
-                    {prog.pct === 100
-                      ? 'All done'
-                      : `${open} ${open === 1 ? 'thing' : 'things'} left · ${prog.pct}%`}
-                  </span>
-                </button>
+                <div key={p.id} className="proj-card">
+                  {/* The card body is the zoom-in target; the delete ✕ sits over
+                      it as its own control so the two clicks never collide. */}
+                  <button className="proj-card-open" onClick={() => setScope(p.id)}>
+                    <span className="proj-card-head">
+                      <span className="proj-card-title">{p.text || 'Untitled'}</span>
+                      {p.pinned && (
+                        <span className="proj-card-pin" aria-label="Pinned">
+                          <PinIcon filled />
+                        </span>
+                      )}
+                    </span>
+                    <span className={'pbar' + (prog.pct === 100 ? ' complete' : '')}>
+                      <i style={{ width: `${prog.pct}%` }} />
+                    </span>
+                    <span className="proj-card-meta">
+                      {prog.pct === 100
+                        ? 'All done'
+                        : `${open} ${open === 1 ? 'thing' : 'things'} left · ${prog.pct}%`}
+                    </span>
+                  </button>
+                  <button
+                    className="proj-card-del"
+                    onClick={() => deleteProject(p.id)}
+                    aria-label={`Delete ${p.text || 'this project'}`}
+                    title="Delete project"
+                  >
+                    ✕
+                  </button>
+                </div>
               )
             })}
             <button className="proj-card new" onClick={newProject}>
