@@ -175,19 +175,14 @@ export function newId(): NodeId {
   return `n${Date.now().toString(36)}${seq.toString(36)}`
 }
 
-/** Append a child to `parentId`, after any existing siblings. */
+/**
+ * Append one child to `parentId`, after any existing siblings. A thin wrapper
+ * over addSubtree — a single node is just a one-entry outline — so both paths
+ * share the same ordering and id logic.
+ */
 export function addChild(tree: Tree, parentId: NodeId | null, text: string): { tree: Tree; id: NodeId } {
-  const siblings = childrenOf(tree, parentId)
-  const node: Node = {
-    id: newId(),
-    parentId,
-    text,
-    done: false,
-    order: siblings.length ? siblings[siblings.length - 1].order + 1 : 0,
-    collapsed: false,
-    createdAt: Date.now(),
-  }
-  return { tree: [...tree, node], id: node.id }
+  const { tree: next, ids } = addSubtree(tree, parentId, [{ text }])
+  return { tree: next, id: ids[0] }
 }
 
 /**
