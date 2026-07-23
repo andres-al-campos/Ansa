@@ -167,17 +167,6 @@ button { font: inherit; color: inherit; }
   white-space: nowrap;
 }
 .rail.projects li.here .proj { background: none; }
-/* Pin badge: the at-rest marker for a pinned project. Hidden while the row is
- * hovered so it doesn't sit under the ⋯ that slides in over the same corner. */
-.rail.projects .pin-badge {
-  flex: none;
-  display: flex;
-  align-items: center;
-  padding: 4px 6px;
-  color: var(--brass);
-  line-height: 1;
-}
-.rail.projects li:hover .pin-badge { display: none; }
 
 /* The ⋯ trigger: quiet, revealed on hover or held open while its menu is up. */
 .rail.projects .row-more {

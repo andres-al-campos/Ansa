@@ -10,10 +10,12 @@ import {
   isLeaf,
   leavesUnder,
   lineageOf,
+  markOpened,
   moveNode,
   outdent,
   progressOf,
   projectList,
+  projectSections,
   removeNode,
   roots,
   setDone,
@@ -180,6 +182,15 @@ export default function Outliner({ initial }: { initial: Tree }) {
 
   const [scope, setScope] = useState<NodeId | null>(null)
   const [leafOnly, setLeafOnly] = useState(false)
+
+  // Enter a project: scope into it and stamp it as just-opened so it rises in
+  // Recents. Only roots carry the stamp, and it's written without a history
+  // checkpoint — visiting a project isn't an edit you'd want to undo.
+  function openProject(id: NodeId) {
+    setScope(id)
+    const root = lineageOf(tree, id)[0]?.id ?? id
+    setPresent(markOpened(tree, root))
+  }
   const [hideDone, setHideDone] = useState(false)
   const [editing, setEditing] = useState<NodeId | null>(null)
   // The landing card whose delete is armed: its trash can has flipped to a
@@ -609,6 +620,71 @@ export default function Outliner({ initial }: { initial: Tree }) {
 
   const lineage = scope ? lineageOf(tree, scope) : []
 
+  // Sidebar projects, split into Pinned and Recent (most-recently-opened first).
+  const sections = projectSections(tree)
+
+  // One sidebar project row: the name plus a ⋯ menu holding pin and delete.
+  // Shared by both the Pinned and Recent lists.
+  const projectRow = (node: (typeof sections.recents)[number]) => {
+    const active = scope !== null && lineage[0]?.id === node.id
+    const open = menuOpen === node.id
+    return (
+      <li key={node.id} className={(active ? 'here' : '') + (open ? ' menuing' : '')}>
+        <button className="proj" onClick={() => openProject(node.id)}>
+          {node.text || 'Untitled'}
+        </button>
+        <button
+          className="row-more"
+          onClick={(e) => {
+            e.stopPropagation()
+            setMenuArmed(false)
+            setMenuOpen(open ? null : node.id)
+          }}
+          aria-label="Project actions"
+          aria-haspopup="menu"
+          aria-expanded={open}
+          title="More"
+        >
+          <MoreIcon />
+        </button>
+        {open && (
+          <div className="row-menu" role="menu">
+            <button className="row-menu-item" role="menuitem" onClick={() => togglePin(node.id)}>
+              <PinIcon filled={!!node.pinned} />
+              <span>{node.pinned ? 'Unpin' : 'Pin to top'}</span>
+            </button>
+            {menuArmed ? (
+              // Two-step, in place — no popup. The row swaps to a confirm.
+              <div className="row-menu-confirm">
+                <span>Delete?</span>
+                <button
+                  className="rmc-yes"
+                  role="menuitem"
+                  onClick={() => deleteProject(node.id)}
+                  aria-label="Confirm delete"
+                >
+                  ✓
+                </button>
+                <button className="rmc-no" onClick={() => setMenuArmed(false)} aria-label="Cancel delete">
+                  ✕
+                </button>
+              </div>
+            ) : (
+              <button
+                className="row-menu-item danger"
+                role="menuitem"
+                onClick={() => setMenuArmed(true)}
+              >
+                <TrashIcon />
+                <span>Delete</span>
+              </button>
+            )}
+          </div>
+        )}
+      </li>
+    )
+  }
+
   // The card that follows the pointer while dragging: just the grabbed item,
   // shown collapsed — never its children, even when dragging a parent.
   const dragNode = dragId ? byId(tree, dragId) : undefined
@@ -619,81 +695,18 @@ export default function Outliner({ initial }: { initial: Tree }) {
         <button className="brand" onClick={() => setScope(null)} title="Home — all projects">
           Ansa
         </button>
-        <p className="tagline">the handle of a thing</p>
+        <p className="tagline">one thing at a time</p>
 
-        <p className="sect">Projects</p>
+        {sections.pinned.length > 0 && (
+          <>
+            <p className="sect">Pinned</p>
+            <ol className="rail projects">{sections.pinned.map(projectRow)}</ol>
+          </>
+        )}
+
+        <p className="sect">{sections.pinned.length > 0 ? 'Recent' : 'Projects'}</p>
         <ol className="rail projects">
-          {projectList(tree).map((node) => {
-            // The active project is the root of the current scope's lineage.
-            const active = scope !== null && lineage[0]?.id === node.id
-            const open = menuOpen === node.id
-            return (
-              <li key={node.id} className={(active ? 'here' : '') + (open ? ' menuing' : '')}>
-                <button className="proj" onClick={() => setScope(node.id)}>
-                  {node.text || 'Untitled'}
-                </button>
-                {/* A pinned project shows a small pin at rest so the state reads
-                    without opening the menu; the ⋯ holds the actions. */}
-                {node.pinned && !open && (
-                  <span className="pin-badge" aria-hidden>
-                    <PinIcon filled />
-                  </span>
-                )}
-                <button
-                  className="row-more"
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    setMenuArmed(false)
-                    setMenuOpen(open ? null : node.id)
-                  }}
-                  aria-label="Project actions"
-                  aria-haspopup="menu"
-                  aria-expanded={open}
-                  title="More"
-                >
-                  <MoreIcon />
-                </button>
-                {open && (
-                  <div className="row-menu" role="menu">
-                    <button className="row-menu-item" role="menuitem" onClick={() => togglePin(node.id)}>
-                      <PinIcon filled={!!node.pinned} />
-                      <span>{node.pinned ? 'Unpin' : 'Pin to top'}</span>
-                    </button>
-                    {menuArmed ? (
-                      // Two-step, in place — no popup. The row swaps to a confirm.
-                      <div className="row-menu-confirm">
-                        <span>Delete?</span>
-                        <button
-                          className="rmc-yes"
-                          role="menuitem"
-                          onClick={() => deleteProject(node.id)}
-                          aria-label="Confirm delete"
-                        >
-                          ✓
-                        </button>
-                        <button
-                          className="rmc-no"
-                          onClick={() => setMenuArmed(false)}
-                          aria-label="Cancel delete"
-                        >
-                          ✕
-                        </button>
-                      </div>
-                    ) : (
-                      <button
-                        className="row-menu-item danger"
-                        role="menuitem"
-                        onClick={() => setMenuArmed(true)}
-                      >
-                        <TrashIcon />
-                        <span>Delete</span>
-                      </button>
-                    )}
-                  </div>
-                )}
-              </li>
-            )
-          })}
+          {sections.recents.map(projectRow)}
           <li className="new-proj">
             <button onClick={newProject}>+ New project</button>
           </li>
@@ -804,7 +817,7 @@ export default function Outliner({ initial }: { initial: Tree }) {
                 >
                   {/* The card body is the zoom-in target; the delete control sits
                       over it on its own so the two clicks never collide. */}
-                  <button className="proj-card-open" onClick={() => setScope(p.id)}>
+                  <button className="proj-card-open" onClick={() => openProject(p.id)}>
                     <span className="proj-card-head">
                       <span className="proj-card-title">{p.text || 'Untitled'}</span>
                       {p.pinned && (
