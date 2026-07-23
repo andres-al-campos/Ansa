@@ -20,6 +20,14 @@ import {
   type Tree,
 } from './tree'
 
+// Row geometry, kept together so the indent and the nesting guides can't drift
+// apart. INDENT is the px added per depth level; GUIDE_X0 is where a depth-0
+// bullet's centre sits, so a guide for ancestor depth d lands at GUIDE_X0 +
+// d*INDENT — directly under that ancestor's bullet.
+const ROW_PAD = 6
+const INDENT = 28
+const GUIDE_X0 = 37
+
 /**
  * Where a dragged node would land relative to the row under the pointer.
  * 'return' is the item's own vacated slot — drop there to put it back untouched.
@@ -520,7 +528,7 @@ export default function Outliner({ initial }: { initial: Tree }) {
                   key={id}
                   data-id={id}
                   className={'row gap-slot' + (drop?.id === id ? ' drop-return' : '')}
-                  style={{ paddingLeft: 6 + depth * 22 } as React.CSSProperties}
+                  style={{ paddingLeft: ROW_PAD + depth * INDENT } as React.CSSProperties}
                   aria-hidden
                 />
               )
@@ -562,7 +570,7 @@ export default function Outliner({ initial }: { initial: Tree }) {
                 }
                 style={
                   {
-                    paddingLeft: flat ? 6 : 6 + depth * 22,
+                    paddingLeft: flat ? ROW_PAD : ROW_PAD + depth * INDENT,
                     ...(wormIndex !== undefined ? { ['--worm-i' as string]: wormIndex } : {}),
                   } as React.CSSProperties
                 }
@@ -572,9 +580,8 @@ export default function Outliner({ initial }: { initial: Tree }) {
                 {!flat &&
                   depth > 0 &&
                   Array.from({ length: depth }, (_, d) => (
-                    // Each line sits under the bullet of the ancestor at depth d
-                    // (bullet centre of a depth-0 row is 37px in; step is 22px).
-                    <span key={d} className="guide" style={{ left: 37 + d * 22 }} aria-hidden />
+                    // Each line sits under the bullet of the ancestor at depth d.
+                    <span key={d} className="guide" style={{ left: GUIDE_X0 + d * INDENT }} aria-hidden />
                   ))}
 
                 <button
@@ -631,7 +638,9 @@ export default function Outliner({ initial }: { initial: Tree }) {
                     />
                   ) : (
                     <div className="label" onClick={() => setEditing(id)}>
-                      {node.text || <span style={{ color: 'var(--ink-ghost)' }}>Untitled</span>}
+                      <span className="label-text" title={node.text || undefined}>
+                        {node.text || <span style={{ color: 'var(--ink-ghost)' }}>Untitled</span>}
+                      </span>
                       {chip && <span className="chip">{chip}</span>}
                     </div>
                   )}
