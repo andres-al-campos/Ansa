@@ -97,24 +97,7 @@ function visibleRows(
   return out
 }
 
-// A pushpin standing straight up-and-down (needle pointing down), not the
-// diagonal thumbtack. Inherits currentColor so the sidebar's rest/hover/active
-// states drive it, and stays monochrome rather than pulling in an emoji.
-function PinIcon({ filled }: { filled: boolean }) {
-  return (
-    <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden focusable="false">
-      <path
-        d="M5 2h6a.7.7 0 0 1 0 1.4h-.5l.6 4.3a3 3 0 0 1 1.6 2.3.7.7 0 0 1-.7.7H8.7V15a.7.7 0 0 1-1.4 0v-4.3H3.4a.7.7 0 0 1-.7-.7 3 3 0 0 1 1.6-2.3l.6-4.3H5A.7.7 0 0 1 5 2Z"
-        fill={filled ? 'currentColor' : 'none'}
-        stroke="currentColor"
-        strokeWidth="1.1"
-        strokeLinejoin="round"
-      />
-    </svg>
-  )
-}
-
-// A plain trash can. Monochrome, inherits currentColor like the pin.
+// A plain trash can. Monochrome, inherits currentColor.
 function TrashIcon() {
   return (
     <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden focusable="false">
@@ -130,7 +113,7 @@ function TrashIcon() {
   )
 }
 
-// Three dots: the row's overflow menu, holding pin and delete.
+// Three dots: the row's overflow menu, holding rename, pin and delete.
 function MoreIcon() {
   return (
     <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden focusable="false">
@@ -649,8 +632,18 @@ export default function Outliner({ initial }: { initial: Tree }) {
         </button>
         {open && (
           <div className="row-menu" role="menu">
+            <button
+              className="row-menu-item"
+              role="menuitem"
+              onClick={() => {
+                openProject(node.id)
+                setEditing(node.id)
+                closeMenu()
+              }}
+            >
+              <span>Rename</span>
+            </button>
             <button className="row-menu-item" role="menuitem" onClick={() => togglePin(node.id)}>
-              <PinIcon filled={!!node.pinned} />
               <span>{node.pinned ? 'Unpin' : 'Pin to top'}</span>
             </button>
             {menuArmed ? (
@@ -675,7 +668,6 @@ export default function Outliner({ initial }: { initial: Tree }) {
                 role="menuitem"
                 onClick={() => setMenuArmed(true)}
               >
-                <TrashIcon />
                 <span>Delete</span>
               </button>
             )}
@@ -769,28 +761,47 @@ export default function Outliner({ initial }: { initial: Tree }) {
       </aside>
 
       <main className="main">
-        <nav className="crumbs" aria-label="Breadcrumb">
-          <button className={scope ? '' : 'cur'} onClick={() => setScope(null)}>
-            Projects
-          </button>
-          {lineage.map((node) => (
-            <span key={node.id} style={{ display: 'contents' }}>
-              <span className="sep">›</span>
-              <button className={node.id === scope ? 'cur' : ''} onClick={() => setScope(node.id)}>
-                {node.text || 'Untitled'}
-              </button>
-            </span>
-          ))}
-        </nav>
+        {scopeNode && editing === scopeNode.id ? (
+          <input
+            className="scope-title scope-title-input"
+            autoFocus
+            defaultValue={scopeNode.text}
+            onBlur={(e) => commitEdit(scopeNode.id, e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') e.currentTarget.blur()
+              else if (e.key === 'Escape') setEditing(null)
+            }}
+          />
+        ) : (
+          <h1
+            className={'scope-title' + (scopeNode ? ' editable' : '')}
+            onClick={() => scopeNode && setEditing(scopeNode.id)}
+            title={scopeNode ? 'Click to rename' : undefined}
+          >
+            {scopeNode ? scopeNode.text || 'Untitled' : 'Projects'}
+          </h1>
+        )}
 
-        <h1 className="scope-title">{scopeNode ? scopeNode.text : 'Projects'}</h1>
-        <p className="scope-meta">
-          {scope === null
-            ? 'Pick a project, or start a new one'
-            : leafOnly
-              ? `${openLeafCount} doable ${openLeafCount === 1 ? 'thing' : 'things'} in here`
-              : 'Everything under this'}
-        </p>
+        {scope === null ? (
+          <p className="scope-meta">Pick a project, or start a new one</p>
+        ) : (
+          <nav className="scope-meta crumbs" aria-label="Breadcrumb">
+            <button onClick={() => setScope(null)}>Projects</button>
+            {lineage.map((node) => (
+              <span key={node.id} style={{ display: 'contents' }}>
+                <span className="sep">›</span>
+                <button className={node.id === scope ? 'cur' : ''} onClick={() => setScope(node.id)}>
+                  {node.text || 'Untitled'}
+                </button>
+              </span>
+            ))}
+            {leafOnly && (
+              <span className="crumb-count">
+                · {openLeafCount} doable {openLeafCount === 1 ? 'thing' : 'things'}
+              </span>
+            )}
+          </nav>
+        )}
 
         {scope !== null && scopeProgress.total > 0 && (
           <div className={'scope-progress' + (scopeProgress.pct === 100 ? ' complete' : '')}>
@@ -820,11 +831,6 @@ export default function Outliner({ initial }: { initial: Tree }) {
                   <button className="proj-card-open" onClick={() => openProject(p.id)}>
                     <span className="proj-card-head">
                       <span className="proj-card-title">{p.text || 'Untitled'}</span>
-                      {p.pinned && (
-                        <span className="proj-card-pin" aria-label="Pinned">
-                          <PinIcon filled />
-                        </span>
-                      )}
                     </span>
                     <span className={'pbar' + (prog.pct === 100 ? ' complete' : '')}>
                       <i style={{ width: `${prog.pct}%` }} />
