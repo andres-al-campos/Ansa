@@ -136,9 +136,15 @@ export default function Outliner({ initial }: { initial: Tree }) {
   })
   const tree = history.present
 
-  /** Record a new tree as an undoable checkpoint. */
-  function commit(next: Tree) {
-    setHistory((h) => (next === h.present ? h : { past: [...h.past, h.present], present: next, future: [] }))
+  /** Record a new tree as an undoable checkpoint. Accepts either the next tree
+   *  or an updater that derives it from the current tree, so two edits fired in
+   *  the same handler (rename, then add a sibling) compose off the latest state
+   *  instead of racing on a stale closure value. */
+  function commit(next: Tree | ((prev: Tree) => Tree)) {
+    setHistory((h) => {
+      const value = typeof next === 'function' ? (next as (prev: Tree) => Tree)(h.present) : next
+      return value === h.present ? h : { past: [...h.past, h.present], present: value, future: [] }
+    })
   }
   /** Replace the tree *without* a checkpoint — for undo/redo themselves. */
   function setPresent(next: Tree) {
@@ -489,8 +495,24 @@ export default function Outliner({ initial }: { initial: Tree }) {
   function commitEdit(id: NodeId, text: string) {
     const trimmed = text.trim()
     // An emptied row is a deletion — matches how outliners behave.
-    setTree(trimmed ? setText(tree, id, trimmed) : removeNode(tree, id))
-    setEditing(null)
+    setTree((prev) => (trimmed ? setText(prev, id, trimmed) : removeNode(prev, id)))
+    // Only clear editing if we're still on this row. A blur fired *because*
+    // Enter already moved editing to a fresh sibling must not yank it back.
+    setEditing((cur) => (cur === id ? null : cur))
+  }
+
+  // Enter while editing: commit the current text and open a fresh empty sibling
+  // to type into, as one tree value. The just-blurred input's commitEdit is
+  // guarded (it only clears editing while still on its own row) so it can't drop
+  // the new sibling, and the new input is keyed by id, so it mounts empty and
+  // focused rather than reusing the old input's DOM node and its text.
+  function commitAndAddSibling(id: NodeId, text: string) {
+    const trimmed = text.trim()
+    const parentId = byId(tree, id)?.parentId ?? scope
+    const renamed = trimmed ? setText(tree, id, trimmed) : removeNode(tree, id)
+    const { tree: next, id: newId } = addChild(renamed, parentId, '')
+    setTree(next)
+    setEditing(newId)
   }
 
   // Renaming the scope title. Unlike a row, an emptied title is kept as-is —
@@ -506,8 +528,10 @@ export default function Outliner({ initial }: { initial: Tree }) {
    * doesn't discard it, then re-nest and keep the row in edit mode.
    */
   function reindent(id: NodeId, text: string, dir: 'in' | 'out') {
-    const withText = setText(tree, id, text.trim())
-    setTree(dir === 'in' ? indent(withText, id) : outdent(withText, id))
+    setTree((prev) => {
+      const withText = setText(prev, id, text.trim())
+      return dir === 'in' ? indent(withText, id) : outdent(withText, id)
+    })
   }
 
   function addSibling(afterId: NodeId | null) {
@@ -986,14 +1010,18 @@ export default function Outliner({ initial }: { initial: Tree }) {
                 <div className="body">
                   {editing === id ? (
                     <input
+                      // Key by node id so moving edit focus to a new row (e.g.
+                      // Enter → new sibling) remounts a fresh input: without it
+                      // React reuses the same DOM node and keeps the prior row's
+                      // typed text, since defaultValue only applies on mount.
+                      key={id}
                       className="label-input"
                       autoFocus
                       defaultValue={node.text}
                       onBlur={(e) => commitEdit(id, e.target.value)}
                       onKeyDown={(e) => {
                         if (e.key === 'Enter') {
-                          commitEdit(id, e.currentTarget.value)
-                          addSibling(id)
+                          commitAndAddSibling(id, e.currentTarget.value)
                         } else if (e.key === 'Escape') {
                           setEditing(null)
                         } else if (e.key === 'Tab' && !leafOnly) {
