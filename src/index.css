@@ -94,12 +94,22 @@ button { font: inherit; color: inherit; }
   overflow-y: auto;
 }
 
+/* The wordmark doubles as the home link back to the Projects landing. All
+ * brass — the black-on-gold reads as "this work matters", and one solid colour
+ * beats the old half-and-half split. */
 .brand {
+  display: inline-block;
   font-family: Georgia, 'Iowan Old Style', serif;
-  font-size: 18px;
+  font-size: 23px;
+  color: var(--brass);
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
   margin: 0 0 2px;
+  transition: color 0.12s ease;
 }
-.brand span { color: var(--brass); }
+.brand:hover { filter: brightness(1.15); }
 
 .tagline {
   font-size: 10.5px;

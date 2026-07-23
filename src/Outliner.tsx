@@ -579,9 +579,9 @@ export default function Outliner({ initial }: { initial: Tree }) {
   return (
     <div className="app">
       <aside className="side">
-        <p className="brand">
-          An<span>sa</span>
-        </p>
+        <button className="brand" onClick={() => setScope(null)} title="Home — all projects">
+          Ansa
+        </button>
         <p className="tagline">the handle of a thing</p>
 
         <p className="sect">Projects</p>
