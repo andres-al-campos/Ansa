@@ -372,7 +372,7 @@ button { font: inherit; color: inherit; }
   line-height: 1.25;
   letter-spacing: -0.01em;
   padding: 0 5px;
-  margin-bottom: 4px;
+  margin-bottom: 8px;
 }
 .scope-title.editable { cursor: text; border-radius: 6px; }
 .scope-title.editable:hover { background: var(--edge-soft); }
@@ -385,7 +385,7 @@ button { font: inherit; color: inherit; }
   outline: none;
   cursor: text;
 }
-.scope-meta { font-size: 12px; color: var(--ink-ghost); margin-bottom: 22px; }
+.scope-meta { font-size: 12px; color: var(--ink-ghost); margin-bottom: 14px; }
 .scope-progress { padding-left: 5px; }
 /* When the meta line carries the breadcrumb, keep the crumb sizing but let it
    flow inline with the count suffix. */
@@ -634,7 +634,7 @@ body:has(.row.gap-slot) { cursor: grabbing; }
   display: flex;
   align-items: center;
   gap: 10px;
-  margin-bottom: 24px;
+  margin-bottom: 14px;
 }
 .pbar {
   height: 4px;
