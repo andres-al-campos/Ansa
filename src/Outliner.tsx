@@ -3,6 +3,7 @@ import { exportTree, parseTree, saveTree } from './storage'
 import { EVENTS_URL, ORIGIN, putTree } from './api'
 import {
   addChild,
+  adoptFollowing,
   byId,
   childrenOf,
   indent,
@@ -600,7 +601,14 @@ export default function Outliner({ initial }: { initial: Tree }) {
   function reindent(id: NodeId, text: string, dir: 'in' | 'out') {
     setTree((prev) => {
       const withText = setText(prev, id, text.trim())
-      return dir === 'in' ? indent(withText, id) : outdent(withText, id)
+      if (dir === 'in') return indent(withText, id)
+      // Outdenting a top-level task (parent is a project root) would otherwise
+      // fling it up to the root and turn it into its own project. Instead, keep
+      // it in place and pull the rows below it in as its children.
+      const node = byId(withText, id)
+      const parent = node ? byId(withText, node.parentId ?? '') : undefined
+      if (parent && parent.parentId === null) return adoptFollowing(withText, id)
+      return outdent(withText, id)
     })
   }
 
