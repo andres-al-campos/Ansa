@@ -560,6 +560,18 @@ export default function Outliner({ initial }: { initial: Tree }) {
     setEditing(null)
   }
 
+  // Enter on the title commits the name and drops straight into a first task, so
+  // naming a fresh project flows on into filling it. Both edits fold into one
+  // tree so the added child isn't lost, and the id is taken outside setTree to
+  // stay stable under React's double-invoked updaters.
+  function commitTitleAndAddTask(id: NodeId, text: string) {
+    const trimmed = text.trim()
+    const named = trimmed ? setText(tree, id, trimmed) : tree
+    const { tree: next, id: childId } = addChild(named, id, '')
+    setTree(next)
+    setEditing(childId)
+  }
+
   /**
    * Tab/Shift-Tab while editing. Commit the live text first so the reparent
    * doesn't discard it, then re-nest and keep the row in edit mode.
@@ -867,7 +879,7 @@ export default function Outliner({ initial }: { initial: Tree }) {
             if (editing !== scopeNode?.id) return
             if (e.key === 'Enter') {
               e.preventDefault()
-              e.currentTarget.blur()
+              if (scopeNode) commitTitleAndAddTask(scopeNode.id, e.currentTarget.textContent ?? '')
             } else if (e.key === 'Escape') {
               e.preventDefault()
               if (scopeNode) e.currentTarget.textContent = scopeNode.text || 'Untitled'
