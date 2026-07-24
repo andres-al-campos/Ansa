@@ -574,11 +574,49 @@ export default function Outliner({ initial }: { initial: Tree }) {
     setEditing(null)
   }
 
+  // Up/Down while editing: hop edit focus to the previous/next row in the
+  // visible, flattened order — the same list that's on screen, so it steps past
+  // collapsed subtrees and skips hidden rows. Commit the current text first
+  // (empty row is removed, like a blur), then land on the neighbour. At either
+  // end there's nowhere to go, so it just commits and stays put.
+  function moveEdit(id: NodeId, text: string, dir: 'up' | 'down') {
+    const i = rows.findIndex((r) => r.id === id)
+    const target = rows[dir === 'up' ? i - 1 : i + 1]
+    const trimmed = text.trim()
+    // Only touch the tree when the row actually changed: an emptied row is
+    // removed, edited text is committed. Navigating past an unchanged row must
+    // not push a no-op onto the undo history.
+    if (trimmed === '') setTree((prev) => removeNode(prev, id))
+    else if (trimmed !== byId(tree, id)?.text) setTree((prev) => setText(prev, id, trimmed))
+    if (target) setEditing(target.id)
+    else setEditing((cur) => (cur === id ? null : cur))
+  }
+
+  // Escape while editing: back out without committing. A row that was never
+  // given any text is a just-started node, so cancelling should remove it
+  // rather than leave an empty row behind; a row with existing text just stops
+  // editing and keeps what was already there.
+  function cancelEdit(id: NodeId) {
+    if (byId(tree, id)?.text.trim() === '') setTree(removeNode(tree, id))
+    setEditing(null)
+  }
+
   // Renaming the scope title. Unlike a row, an emptied title is kept as-is —
   // clearing a whole project's name shouldn't delete the project.
   function commitTitle(id: NodeId, text: string) {
     const trimmed = text.trim()
     if (trimmed) setTree(setText(tree, id, trimmed))
+    setEditing(null)
+  }
+
+  // Escape on the title. A brand-new project still has an empty name, so
+  // cancelling removes the whole project; renaming an existing one just backs
+  // out and keeps the old name.
+  function cancelTitle(id: NodeId) {
+    if (byId(tree, id)?.text.trim() === '') {
+      setTree(removeNode(tree, id))
+      setScope(null)
+    }
     setEditing(null)
   }
 
@@ -930,8 +968,12 @@ export default function Outliner({ initial }: { initial: Tree }) {
               if (scopeNode) commitTitleAndAddTask(scopeNode.id, e.currentTarget.textContent ?? '')
             } else if (e.key === 'Escape') {
               e.preventDefault()
-              if (scopeNode) e.currentTarget.textContent = scopeNode.text || 'Untitled'
-              setEditing(null)
+              if (scopeNode) {
+                // Restore the display text before backing out, so a blur that
+                // fires on the way can't re-commit the abandoned edit.
+                e.currentTarget.textContent = scopeNode.text || 'Untitled'
+                cancelTitle(scopeNode.id)
+              }
             }
           }}
           title={scopeNode ? 'Click to rename' : undefined}
@@ -1202,7 +1244,7 @@ export default function Outliner({ initial }: { initial: Tree }) {
                           e.preventDefault()
                           deleteRow(id)
                         } else if (e.key === 'Escape') {
-                          setEditing(null)
+                          cancelEdit(id)
                         } else if (e.key === 'Tab' && !leafOnly) {
                           // Reparenting is incoherent in the flattened leaf view.
                           e.preventDefault()
@@ -1213,6 +1255,12 @@ export default function Outliner({ initial }: { initial: Tree }) {
                           // doesn't drop it.
                           e.preventDefault()
                           reorderWithText(id, e.currentTarget.value, e.key === 'ArrowUp' ? 'up' : 'down')
+                        } else if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+                          // Plain Up/Down hops edit focus between rows. Rows are
+                          // single-line, so the arrows have no in-line caret job
+                          // to preempt.
+                          e.preventDefault()
+                          moveEdit(id, e.currentTarget.value, e.key === 'ArrowUp' ? 'up' : 'down')
                         }
                       }}
                     />
