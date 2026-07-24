@@ -795,7 +795,7 @@ export default function Outliner({ initial }: { initial: Tree }) {
           <label>
             <input type="checkbox" checked={leafOnly} onChange={(e) => setLeafOnly(e.target.checked)} />
             <span>
-              Only what&rsquo;s doable
+              Show only leaf tasks
               <span className="fine">
                 Hides anything with subtasks. Applies inside{' '}
                 <span className="scopename">{scopeNode ? scopeNode.text : 'the current project'}</span>{' '}
