@@ -167,13 +167,14 @@ button { font: inherit; color: inherit; }
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  cursor: grab;
 }
 .rail.projects li.here .proj { background: none; }
 
-/* Drag-to-reorder. The dragged row dims; a brass line marks where it will land,
-   drawn on the hovered row's near edge. */
+/* Drag-to-reorder. The row is a click-to-open button at rest — no grab cursor
+   advertising the drag; it's there to find. Only the active drag shows grabbing.
+   The dragged row dims; a brass line marks where it will land. */
 .rail.projects li.lifting { opacity: 0.4; }
+.rail.projects li.lifting .proj { cursor: grabbing; }
 .rail.projects li.drop-before::before,
 .rail.projects li.drop-after::after {
   content: '';
