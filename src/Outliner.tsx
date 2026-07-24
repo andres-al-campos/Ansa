@@ -918,11 +918,41 @@ export default function Outliner({ initial }: { initial: Tree }) {
             )}
             {projectList(tree).map((p) => {
               const prog = progressOf(tree, p.id)
+              const over =
+                sideOver?.id === p.id ? (sideOver.after ? ' drop-after' : ' drop-before') : ''
+              const lifting = sideDrag === p.id ? ' lifting' : ''
               return (
                 <div
                   key={p.id}
-                  className={'proj-card' + (confirmDelete === p.id ? ' arming' : '')}
+                  className={
+                    'proj-card' + (confirmDelete === p.id ? ' arming' : '') + over + lifting
+                  }
                   onMouseLeave={() => setConfirmDelete((cur) => (cur === p.id ? null : cur))}
+                  draggable
+                  onDragStart={(e) => {
+                    e.dataTransfer.effectAllowed = 'move'
+                    e.dataTransfer.setData('text/plain', p.id)
+                    sideDragRef.current = p.id
+                    setSideDrag(p.id)
+                  }}
+                  onDragOver={(e) => {
+                    const dragging = sideDragRef.current
+                    if (!dragging || dragging === p.id) return
+                    e.preventDefault()
+                    // Cards flow left-to-right, so the drop side is horizontal.
+                    const r = e.currentTarget.getBoundingClientRect()
+                    setSideOver({ id: p.id, after: e.clientX > r.left + r.width / 2 })
+                  }}
+                  onDrop={(e) => {
+                    e.preventDefault()
+                    const r = e.currentTarget.getBoundingClientRect()
+                    dropProject(p.id, e.clientX > r.left + r.width / 2)
+                  }}
+                  onDragEnd={() => {
+                    sideDragRef.current = null
+                    setSideDrag(null)
+                    setSideOver(null)
+                  }}
                 >
                   {/* The card body is the zoom-in target; the delete control sits
                       over it on its own so the two clicks never collide. */}

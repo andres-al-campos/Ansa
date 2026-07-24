@@ -700,6 +700,22 @@ body:has(.row.gap-slot) { cursor: grabbing; }
   transition: border-color 0.12s ease, transform 0.12s ease;
 }
 .proj-card:hover { border-color: var(--brass); transform: translateY(-1px); }
+
+/* Drag-to-reorder, matching the sidebar. Cards flow left-to-right, so the drop
+   marker is a vertical brass line on the near side edge. */
+.proj-card.lifting { opacity: 0.4; }
+.proj-card.drop-before::before,
+.proj-card.drop-after::after {
+  content: '';
+  position: absolute;
+  top: 6px;
+  bottom: 6px;
+  width: 2px;
+  border-radius: 1px;
+  background: var(--brass);
+}
+.proj-card.drop-before::before { left: -7px; }
+.proj-card.drop-after::after { right: -7px; }
 /* The clickable body fills the card; the frame/border lives on the wrapper so
  * the delete ✕ can overlay without being part of the navigation hit area. */
 .proj-card-open {
