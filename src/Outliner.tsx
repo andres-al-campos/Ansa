@@ -791,7 +791,7 @@ export default function Outliner({ initial }: { initial: Tree }) {
           <label>
             <input type="checkbox" checked={leafOnly} onChange={(e) => setLeafOnly(e.target.checked)} />
             <span>
-              Show only leaf tasks
+              Hide parent tasks
               <span className="fine">
                 Hides anything with subtasks. Applies inside{' '}
                 <span className="scopename">{scopeNode ? scopeNode.text : 'the current project'}</span>{' '}
@@ -802,7 +802,7 @@ export default function Outliner({ initial }: { initial: Tree }) {
           <label>
             <input type="checkbox" checked={hideDone} onChange={(e) => setHideDone(e.target.checked)} />
             <span>
-              Hide finished
+              Hide completed tasks
               <span className="fine">Completed items drop out of the list.</span>
             </span>
           </label>
