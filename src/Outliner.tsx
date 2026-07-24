@@ -206,6 +206,17 @@ export default function Outliner({ initial }: { initial: Tree }) {
   treeRef.current = tree
   const dragIdRef = useRef<NodeId | null>(null)
   dragIdRef.current = dragId
+
+  // Sidebar project reordering. Projects are a flat, hand-ordered list, so this
+  // is a plain reorder — no nesting — kept separate from the tree's pointer drag
+  // above. `sideDrag` is the project being dragged; `sideOver` is the row it's
+  // hovering, with a side telling us whether to land before or after it.
+  const [sideDrag, setSideDrag] = useState<NodeId | null>(null)
+  const [sideOver, setSideOver] = useState<{ id: NodeId; after: boolean } | null>(null)
+  // Read by dragover/drop, which can fire before React has committed the state
+  // set in dragstart.
+  const sideDragRef = useRef<NodeId | null>(null)
+  sideDragRef.current = sideDrag
   // Set when a press turns into a drag, so the bullet's click (which fires on
   // release) doesn't also zoom. Cleared by that click.
   const justDragged = useRef(false)
@@ -598,6 +609,21 @@ export default function Outliner({ initial }: { initial: Tree }) {
     setTree(removeNode(tree, id))
   }
 
+  // Land a dragged project before or after the row it was dropped on. Index is
+  // measured against the full root list (minus the dragged one) so a move across
+  // the Pinned/Projects split still lands where the pointer is.
+  function dropProject(overId: NodeId, after: boolean) {
+    const dragging = sideDragRef.current
+    sideDragRef.current = null
+    setSideDrag(null)
+    setSideOver(null)
+    if (!dragging || dragging === overId) return
+    const order = roots(tree).filter((r) => r.id !== dragging)
+    const pos = order.findIndex((r) => r.id === overId)
+    if (pos < 0) return
+    setTree(moveNode(tree, dragging, null, after ? pos + 1 : pos))
+  }
+
   // Download the whole tree as a JSON file — the backup / hand-off format.
   function handleExport() {
     const blob = new Blob([exportTree(tree)], { type: 'application/json' })
@@ -638,11 +664,41 @@ export default function Outliner({ initial }: { initial: Tree }) {
 
   // One sidebar project row: the name plus a ⋯ menu holding pin and delete.
   // Shared by both the Pinned and Recent lists.
-  const projectRow = (node: (typeof sections.recents)[number]) => {
+  const projectRow = (node: (typeof sections.unpinned)[number]) => {
     const active = scope !== null && lineage[0]?.id === node.id
     const open = menuOpen === node.id
+    const over = sideOver?.id === node.id ? (sideOver.after ? ' drop-after' : ' drop-before') : ''
+    const lifting = sideDrag === node.id ? ' lifting' : ''
     return (
-      <li key={node.id} className={(active ? 'here' : '') + (open ? ' menuing' : '')}>
+      <li
+        key={node.id}
+        className={(active ? 'here' : '') + (open ? ' menuing' : '') + over + lifting}
+        draggable
+        onDragStart={(e) => {
+          e.dataTransfer.effectAllowed = 'move'
+          // Firefox needs data set for a drag to start at all.
+          e.dataTransfer.setData('text/plain', node.id)
+          sideDragRef.current = node.id
+          setSideDrag(node.id)
+        }}
+        onDragOver={(e) => {
+          const dragging = sideDragRef.current
+          if (!dragging || dragging === node.id) return
+          e.preventDefault()
+          const r = e.currentTarget.getBoundingClientRect()
+          setSideOver({ id: node.id, after: e.clientY > r.top + r.height / 2 })
+        }}
+        onDrop={(e) => {
+          e.preventDefault()
+          const r = e.currentTarget.getBoundingClientRect()
+          dropProject(node.id, e.clientY > r.top + r.height / 2)
+        }}
+        onDragEnd={() => {
+          sideDragRef.current = null
+          setSideDrag(null)
+          setSideOver(null)
+        }}
+      >
         <button className="proj" onClick={() => openProject(node.id)}>
           {node.text || 'Untitled'}
         </button>
@@ -726,9 +782,9 @@ export default function Outliner({ initial }: { initial: Tree }) {
           </>
         )}
 
-        <p className="sect">{sections.pinned.length > 0 ? 'Recent' : 'Projects'}</p>
+        <p className="sect">Projects</p>
         <ol className="rail projects">
-          {sections.recents.map(projectRow)}
+          {sections.unpinned.map(projectRow)}
           <li className="new-proj">
             <button onClick={newProject}>+ New project</button>
           </li>
@@ -827,9 +883,7 @@ export default function Outliner({ initial }: { initial: Tree }) {
           {scopeNode ? scopeNode.text || 'Untitled' : 'Projects'}
         </h1>
 
-        {scope === null ? (
-          <p className="scope-meta">Pick a project, or start a new one</p>
-        ) : (
+        {scope === null ? null : (
           <nav className="scope-meta crumbs" aria-label="Breadcrumb">
             <button onClick={() => setScope(null)}>Projects</button>
             {lineage.map((node) => (

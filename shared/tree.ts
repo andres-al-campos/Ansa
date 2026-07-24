@@ -265,24 +265,25 @@ export function markOpened(tree: Tree, id: NodeId, at: number = Date.now()): Tre
 
 /**
  * Projects for the sidebar, split into two sections:
- *  - pinned: the favourited roots, kept in their own sibling order.
- *  - recents: everything else, most-recently-opened first. A project never
- *    opened falls back to its creation time, so a fresh list still has an order.
- * The two are disjoint — a pinned project shows only under Pinned.
+ *  - pinned: the favourited roots, in manual order.
+ *  - unpinned: everything else, also in manual order.
+ * Both follow the tree's own `order`; the two are disjoint — a pinned project
+ * shows only under Pinned.
  */
-export function projectSections(tree: Tree): { pinned: Node[]; recents: Node[] } {
+export function projectSections(tree: Tree): { pinned: Node[]; unpinned: Node[] } {
+  // `roots` is already in the tree's own manual order (by `order`). Projects are
+  // a list you arrange by hand — dragging rewrites `order`, and a new project
+  // appends at the end — so the sidebar keeps that order rather than re-sorting.
   const rs = roots(tree)
   const pinned = rs.filter((r) => r.pinned)
-  const recents = rs
-    .filter((r) => !r.pinned)
-    .sort((a, b) => (b.lastOpenedAt ?? b.createdAt) - (a.lastOpenedAt ?? a.createdAt))
-  return { pinned, recents }
+  const unpinned = rs.filter((r) => !r.pinned)
+  return { pinned, unpinned }
 }
 
-/** Flat list of every project — pinned first, then recents. */
+/** Flat list of every project — pinned first, then the rest in manual order. */
 export function projectList(tree: Tree): Node[] {
-  const { pinned, recents } = projectSections(tree)
-  return [...pinned, ...recents]
+  const { pinned, unpinned } = projectSections(tree)
+  return [...pinned, ...unpinned]
 }
 
 /** True when `maybeAncestor` is at or above `id` — used to block cyclic moves. */
