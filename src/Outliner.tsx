@@ -324,12 +324,33 @@ export default function Outliner({ initial }: { initial: Tree }) {
   undoRef.current = undo
   const redoRef = useRef(redo)
   redoRef.current = redo
+  // The global key handler mounts once; these refs keep it reading current state.
+  const scopeRef = useRef(scope)
+  scopeRef.current = scope
+  const leafOnlyRef = useRef(leafOnly)
+  leafOnlyRef.current = leafOnly
+  const addSiblingRef = useRef(addSibling)
+  addSiblingRef.current = addSibling
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null
+      const inField =
+        !!target &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.isContentEditable)
+
+      // Enter with nothing focused is a shortcut for a new task in the current
+      // scope — the same as clicking "+ add a subtask", but from the keyboard.
+      if (e.key === 'Enter' && !inField && scopeRef.current !== null && !leafOnlyRef.current) {
+        e.preventDefault()
+        addSiblingRef.current(null)
+        return
+      }
+
       if (!(e.metaKey || e.ctrlKey)) return
       const k = e.key.toLowerCase()
-      const target = e.target as HTMLElement | null
-      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA')) return
+      if (inField) return
       if (k === 'z' && !e.shiftKey) {
         e.preventDefault()
         undoRef.current()
