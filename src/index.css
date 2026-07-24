@@ -483,7 +483,9 @@ button { font: inherit; color: inherit; }
   left: var(--drop-x, 6px);
   width: 6px;
   height: 6px;
-  margin-left: -2px;
+  /* Centre the dot on the nesting guide (and so on the bullet above it): the
+   * guide sits at --drop-x, so pull the 6px dot back by half its width. */
+  margin-left: -3px;
   border-radius: 50%;
   background: var(--bar);
 }
@@ -584,11 +586,11 @@ button { font: inherit; color: inherit; }
   /* Hold-to-drag must not scroll the page under the finger on touch. */
   touch-action: none;
 }
-/* Once a drag is live the ghost card is what you're "holding", so hide the OS
- * cursor — the grabbing hand otherwise sits right on the insertion line's head
- * dot and blocks the indent it's meant to show. (Hold-to-drag is a power-user
- * gesture, so no grab cursor advertises it on bullets at rest either.) */
-body:has(.row.gap-slot) { cursor: none; }
+/* Once a drag is live the ghost card is what you're "holding", so drop the grab
+ * cursor for a plain arrow — the grabbing hand's fat palm sat right on the
+ * insertion line's head dot and hid the indent it marks. (Hold-to-drag is a
+ * power-user gesture, so no grab cursor advertises it on bullets at rest.) */
+body:has(.row.gap-slot) { cursor: default; }
 .bullet::after {
   content: '';
   position: absolute;
