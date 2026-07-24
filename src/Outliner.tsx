@@ -232,6 +232,14 @@ export default function Outliner({ initial }: { initial: Tree }) {
     }
   }, [menuOpen])
 
+  // The first paint comes from the localStorage cache, which may be stale — the
+  // server could hold newer nodes this tab has never seen. Until we've adopted
+  // the server's authoritative tree at least once (the SSE stream sends it on
+  // connect), a local edit must not be pushed back: a whole-tree PUT off the
+  // stale cache would wipe those unseen server nodes. `synced` flips true on the
+  // first adopt, opening the write path.
+  const synced = useRef(false)
+
   // Persist on every change. The server (SQLite) is the source of truth;
   // localStorage is kept as an offline cache so a reload with the server down
   // still shows the last state instead of a blank screen. The very first render
@@ -243,6 +251,8 @@ export default function Outliner({ initial }: { initial: Tree }) {
       firstSave.current = false
       return
     }
+    // Don't clobber the server with the unverified cache before first sync.
+    if (!synced.current) return
     void putTree(tree)
   }, [tree])
 
@@ -263,6 +273,7 @@ export default function Outliner({ initial }: { initial: Tree }) {
   const pending = useRef<Tree | null>(null)
   const adopt = (next: Tree) => {
     firstSave.current = true // adopting isn't a change to push back
+    synced.current = true // the server's tree is now in hand; writes are safe
     setHistory((h) => ({ ...h, present: next }))
   }
   const adoptRef = useRef(adopt)
@@ -273,7 +284,11 @@ export default function Outliner({ initial }: { initial: Tree }) {
     es.onmessage = (e) => {
       const { tree: next, origin } = JSON.parse(e.data) as { tree: Tree; origin: string | null }
       if (origin === ORIGIN) return // our own echo — already applied locally
-      if (busyRef.current) {
+      // Adopt the server's tree even mid-edit until we've synced once: that
+      // first message is the authoritative baseline, and it must land before
+      // any write so a stale-cache edit can't be pushed over newer server data.
+      // After that, hold incoming trees while the user is busy as usual.
+      if (busyRef.current && synced.current) {
         pending.current = next // hold until the user is idle
         return
       }
