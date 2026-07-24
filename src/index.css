@@ -646,7 +646,7 @@ body:has(.row.gap-slot) { cursor: grabbing; }
   color: var(--ink);
   border: 1px solid var(--brass);
   border-radius: 6px;
-  padding: 5px 9px;
+  padding: 5px 6px;
   /* The roomy padding makes the input taller than a display row, which drops
      its text below the checkbox. Pull the box up so its text lines up with the
      checkbox the way the static label does. */
