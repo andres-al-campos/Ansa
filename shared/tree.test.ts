@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   addChild,
   addSubtree,
+  adoptFollowing,
   childrenOf,
   indent,
   isAncestor,
@@ -291,6 +292,38 @@ describe('indent / outdent', () => {
     t = outdent(t, 'g2') // back beside g1 under gather
     expect(t.find((n) => n.id === 'g2')!.parentId).toBe('gather')
     expect(childrenOf(t, 'gather').map((n) => n.id)).toEqual(['g1', 'g2', 'g3'])
+  })
+})
+
+describe('adoptFollowing', () => {
+  it('nests every following sibling under the node, in order', () => {
+    // g1 pulls its two following siblings (g2, g3) in as its children.
+    const t = adoptFollowing(fixture(), 'g1')
+    expect(childrenOf(t, 'gather').map((n) => n.id)).toEqual(['g1'])
+    expect(childrenOf(t, 'g1').map((n) => n.id)).toEqual(['g2', 'g3'])
+  })
+
+  it('appends after any existing children', () => {
+    // p1 already has p1a, p1b; adopting pulls p2 in after them.
+    const t = adoptFollowing(fixture(), 'p1')
+    expect(childrenOf(t, 'forms').map((n) => n.id)).toEqual(['p1'])
+    expect(childrenOf(t, 'p1').map((n) => n.id)).toEqual(['p1a', 'p1b', 'p2'])
+  })
+
+  it('moves whole subtrees, keeping their descendants', () => {
+    const t = adoptFollowing(fixture(), 'p1')
+    // p2's own children ride along.
+    expect(childrenOf(t, 'p2').map((n) => n.id)).toEqual(['p2a', 'p2b'])
+  })
+
+  it('is a no-op for the last sibling', () => {
+    const t = fixture()
+    expect(adoptFollowing(t, 'g3')).toEqual(t)
+  })
+
+  it('is a no-op for an unknown id', () => {
+    const t = fixture()
+    expect(adoptFollowing(t, 'nope')).toEqual(t)
   })
 })
 

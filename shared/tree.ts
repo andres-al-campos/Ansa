@@ -355,3 +355,23 @@ export function outdent(tree: Tree, id: NodeId): Tree {
   const parentIndex = uncles.findIndex((u) => u.id === parent.id)
   return moveNode(tree, id, parent.parentId, parentIndex + 1)
 }
+
+/**
+ * Nest every following sibling under this node, in order, appended after any
+ * children it already has. The node itself stays put. This is what Shift-Tab
+ * does when a row can't outdent any further: rather than escaping its level,
+ * it pulls the rows below it in as its own subtree.
+ */
+export function adoptFollowing(tree: Tree, id: NodeId): Tree {
+  const node = byId(tree, id)
+  if (!node) return tree
+  const siblings = childrenOf(tree, node.parentId)
+  const i = siblings.findIndex((s) => s.id === id)
+  if (i < 0) return tree
+  const following = siblings.slice(i + 1)
+  if (following.length === 0) return tree
+  return following.reduce(
+    (acc, sib) => moveNode(acc, sib.id, id, childrenOf(acc, id).length),
+    tree,
+  )
+}
