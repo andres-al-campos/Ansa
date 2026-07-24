@@ -432,21 +432,27 @@ button { font: inherit; color: inherit; }
 /* ---- drag & drop ---- */
 
 /* The lifted item collapses to an empty slot the size of a row: its children
- * are hidden and the list closes up, leaving plain empty space where it was.
- * It stays transparent at rest (no box edges reading as stray lines) and only
- * shows itself when it's the active "drop back here" target. */
+ * are hidden and the list closes up, leaving a marked gap where it was. The
+ * gap stays faintly outlined for the whole drag so "put it back here" is always
+ * findable, and fills in solid when it's the active drop target. */
 .row.gap-slot {
   height: 16px;
   padding-top: 0;
   padding-bottom: 0;
   border-radius: 4px;
+  /* Always faintly present during a drag, so the "put it back" spot never
+     disappears. A dashed edge at reduced opacity reads as a placeholder, not a
+     real drop line. */
   background: transparent;
+  box-shadow: inset 0 0 0 1px var(--brass);
+  opacity: 0.5;
 }
 .row.gap-slot:hover { background: transparent; }
-/* Hovering the gap: it lights up to say "release to leave it here". */
+/* Hovering the gap: it fills in solid to say "release to leave it here". */
 .row.gap-slot.drop-return {
   background: var(--brass-soft);
   box-shadow: inset 0 0 0 1.5px var(--brass);
+  opacity: 1;
 }
 
 /* Drop *into*: the whole row lights up as the container you'd nest under. */
