@@ -611,6 +611,25 @@ export default function Outliner({ initial }: { initial: Tree }) {
     setEditing(id)
   }
 
+  // Alt+Up/Down: shuffle a row one place among its own siblings. moveNode indexes
+  // into the sibling list with the row itself removed, so 'up' inserts at i-1 and
+  // 'down' at i+1; at either end it's a no-op. Returns the reordered tree (or the
+  // input unchanged) so callers can fold it into a larger update.
+  function shuffleSibling(t: Tree, id: NodeId, dir: 'up' | 'down'): Tree {
+    const node = byId(t, id)
+    if (!node) return t
+    const siblings = childrenOf(t, node.parentId)
+    const i = siblings.findIndex((s) => s.id === id)
+    const to = dir === 'up' ? i - 1 : i + 1
+    if (to < 0 || to >= siblings.length) return t
+    return moveNode(t, id, node.parentId, to)
+  }
+
+  // Commit the live input text, then reorder, in one tree so neither is lost.
+  function reorderWithText(id: NodeId, text: string, dir: 'up' | 'down') {
+    setTree((prev) => shuffleSibling(setText(prev, id, text.trim()), id, dir))
+  }
+
   // Start a new project: a fresh root, scoped into and put straight into edit
   // so you name it in place.
   function newProject() {
@@ -1180,6 +1199,12 @@ export default function Outliner({ initial }: { initial: Tree }) {
                           // Reparenting is incoherent in the flattened leaf view.
                           e.preventDefault()
                           reindent(id, e.currentTarget.value, e.shiftKey ? 'out' : 'in')
+                        } else if (e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+                          // Reorder within siblings, keeping the row in edit mode.
+                          // Commit the live text in the same update so the reorder
+                          // doesn't drop it.
+                          e.preventDefault()
+                          reorderWithText(id, e.currentTarget.value, e.key === 'ArrowUp' ? 'up' : 'down')
                         }
                       }}
                     />
