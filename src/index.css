@@ -167,8 +167,25 @@ button { font: inherit; color: inherit; }
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  cursor: grab;
 }
 .rail.projects li.here .proj { background: none; }
+
+/* Drag-to-reorder. The dragged row dims; a brass line marks where it will land,
+   drawn on the hovered row's near edge. */
+.rail.projects li.lifting { opacity: 0.4; }
+.rail.projects li.drop-before::before,
+.rail.projects li.drop-after::after {
+  content: '';
+  position: absolute;
+  left: 4px;
+  right: 4px;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--brass);
+}
+.rail.projects li.drop-before::before { top: -1px; }
+.rail.projects li.drop-after::after { bottom: -1px; }
 
 /* The ⋯ trigger: quiet, revealed on hover or held open while its menu is up. */
 .rail.projects .row-more {
@@ -375,12 +392,12 @@ button { font: inherit; color: inherit; }
   padding: 0 5px;
   margin-bottom: 8px;
 }
-.scope-title.editable { cursor: text; border-radius: 4px; }
+.scope-title.editable { cursor: text; border-radius: 6px; }
 .scope-title.editable:hover { background: var(--edge-soft); }
 /* Editing happens in place on the same <h1> via contentEditable, so the text
    never shifts between display and edit. The box is a box-shadow, not a border,
    so it adds no height and doesn't nudge the text — matching the same boxed,
-   4px-radius brass field the task rows use (.label-input). */
+   6px-radius brass field the task rows use (.label-input). */
 .scope-title.editable[contenteditable='true'] {
   box-shadow: inset 0 0 0 1px var(--brass);
   outline: none;
@@ -622,7 +639,7 @@ body:has(.row.gap-slot) { cursor: grabbing; }
   background: var(--panel);
   color: var(--ink);
   border: 1px solid var(--brass);
-  border-radius: 4px;
+  border-radius: 6px;
   padding: 5px 9px;
   /* The roomy padding makes the input taller than a display row, which drops
      its text below the checkbox. Pull the box up so its text lines up with the
