@@ -418,8 +418,10 @@ export default function Outliner({ initial }: { initial: Tree }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dragId, drop])
 
-  // Bullet pointerdown: arm a long-press. A move beyond a few px before it
-  // fires cancels it (that was a scroll or a click), otherwise the drag begins.
+  // Bullet pointerdown: arm the drag on a short hold. A quick press-and-release
+  // beats the timer and stays a click (zoom in); a move beyond a few px before it
+  // fires cancels it (that was a scroll). The hold is brief so drag feels
+  // immediate without hijacking the tap.
   function onBulletPointerDown(e: React.PointerEvent, id: NodeId) {
     if (leafOnly) return // structure isn't shown in the flattened view
     const startX = e.clientX
@@ -431,7 +433,7 @@ export default function Outliner({ initial }: { initial: Tree }) {
       setDragId(id)
       setDrop(null)
       if (p) setGhostAt({ x: p.x, y: p.y })
-    }, 350)
+    }, 120)
     press.current = { id, x: startX, y: startY, timer }
 
     const cancelIfMoved = (ev: PointerEvent) => {
