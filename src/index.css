@@ -584,9 +584,11 @@ button { font: inherit; color: inherit; }
   /* Hold-to-drag must not scroll the page under the finger on touch. */
   touch-action: none;
 }
-/* The grab cursor only shows once a drag is actually live — hold-to-drag is a
- * power-user gesture, not something to advertise on every bullet at rest. */
-body:has(.row.gap-slot) { cursor: grabbing; }
+/* Once a drag is live the ghost card is what you're "holding", so hide the OS
+ * cursor — the grabbing hand otherwise sits right on the insertion line's head
+ * dot and blocks the indent it's meant to show. (Hold-to-drag is a power-user
+ * gesture, so no grab cursor advertises it on bullets at rest either.) */
+body:has(.row.gap-slot) { cursor: none; }
 .bullet::after {
   content: '';
   position: absolute;
