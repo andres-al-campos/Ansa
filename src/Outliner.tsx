@@ -533,11 +533,16 @@ export default function Outliner({ initial }: { initial: Tree }) {
   // Delete a row and land the cursor on the previous visible row, so clearing a
   // task out with the keyboard flows straight on rather than dead-ending. With
   // no previous row (it was the first), just leave edit mode.
-  function deleteRow(id: NodeId) {
+  // `stepBack` moves edit focus to the previous row after deleting. Enter passes
+  // it (one deliberate keypress, one step). Backspace does not: a held Backspace
+  // would otherwise chain-delete row after row and could wipe a whole project,
+  // so it deletes the empty row and drops out of edit mode, making you re-enter
+  // to continue.
+  function deleteRow(id: NodeId, stepBack: boolean) {
     const idx = rows.findIndex((r) => r.id === id)
     const prev = idx > 0 ? rows[idx - 1].id : null
     setTree(removeNode(tree, id))
-    setEditing(prev)
+    setEditing(stepBack ? prev : null)
   }
 
   // Renaming the scope title. Unlike a row, an emptied title is kept as-is —
@@ -859,7 +864,6 @@ export default function Outliner({ initial }: { initial: Tree }) {
             )}
             {projectList(tree).map((p) => {
               const prog = progressOf(tree, p.id)
-              const open = prog.total - prog.done
               return (
                 <div
                   key={p.id}
@@ -878,7 +882,7 @@ export default function Outliner({ initial }: { initial: Tree }) {
                     <span className="proj-card-meta">
                       {prog.pct === 100
                         ? 'All done'
-                        : `${open} ${open === 1 ? 'thing' : 'things'} left · ${prog.pct}%`}
+                        : `${prog.done} of ${prog.total} done (${prog.pct}%)`}
                     </span>
                   </button>
                   {/* Delete confirms in place. The trash can arms on the first
@@ -1049,14 +1053,14 @@ export default function Outliner({ initial }: { initial: Tree }) {
                         if (e.key === 'Enter') {
                           // Enter on an empty row deletes it and steps back,
                           // rather than spawning yet another empty sibling.
-                          if (empty) deleteRow(id)
+                          if (empty) deleteRow(id, true)
                           else commitAndAddSibling(id, e.currentTarget.value)
                         } else if (e.key === 'Backspace' && empty) {
-                          // Backspace at the start of an empty row removes it and
-                          // moves the cursor to the previous row — the outliner
-                          // counterpart to Enter adding one.
+                          // Backspace on an empty row removes it but drops out of
+                          // edit mode rather than stepping into the previous row,
+                          // so a held key can't chain-delete the whole project.
                           e.preventDefault()
-                          deleteRow(id)
+                          deleteRow(id, false)
                         } else if (e.key === 'Escape') {
                           setEditing(null)
                         } else if (e.key === 'Tab' && !leafOnly) {
