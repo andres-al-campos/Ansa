@@ -390,8 +390,13 @@ button { font: inherit; color: inherit; }
   font-size: 26px;
   line-height: 1.25;
   letter-spacing: -0.01em;
-  padding: 0 5px;
-  margin-bottom: 8px;
+  /* Padding so the editing box never crowds the text — a touch less top/bottom,
+     since the serif's line-height already pads it vertically. Only the vertical
+     margin is pulled back (the box is inset and adds no height); the horizontal
+     margin is left to the shared `margin-inline: auto` above, so the title stays
+     in the centred column and its 6px inset lines up with the crumb. */
+  padding: 4px 6px;
+  margin-block: -4px 3px;
 }
 .scope-title.editable { cursor: text; border-radius: 6px; }
 .scope-title.editable:hover { background: var(--edge-soft); }
