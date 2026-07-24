@@ -466,6 +466,11 @@ button { font: inherit; color: inherit; }
  * edge starts at --drop-x — the indent of the level the pointer picked — so the
  * line lines up under that depth's nesting guide and previews where the row
  * lands. A dot at the line's head marks the new bullet's position. */
+/* The line overflows its row's box (top/bottom -1px) into the neighbouring row,
+ * which paints later in DOM order and would clip the protruding half. Lift the
+ * whole drop row so its line sits above its neighbours. */
+.row.drop-before,
+.row.drop-after { z-index: 1; }
 .row.drop-before::before,
 .row.drop-after::before {
   content: '';
