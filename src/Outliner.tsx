@@ -6,7 +6,9 @@ import {
   adoptFollowing,
   byId,
   childrenOf,
+  depthAtGap,
   indent,
+  insertAtDepth,
   isAncestor,
   isLeaf,
   leavesUnder,
@@ -46,11 +48,17 @@ const WORM_CAP = 1000
 /**
  * Where a dragged node would land relative to the row under the pointer.
  * 'return' is the item's own vacated slot — drop there to put it back untouched.
+ * 'into' nests as the hovered row's first child. 'before'/'after' insert in a
+ * gap; there `depth` is the level the pointer picked (via its X), so the same
+ * gap can mean "sibling of the row above", "child of it", or any shallower
+ * ancestor level — the insertion line's indent shows which.
  */
 type DropMode = 'before' | 'after' | 'into' | 'return'
 interface DropTarget {
   id: NodeId
   mode: DropMode
+  /** For 'before'/'after': the chosen indent level to insert at. */
+  depth?: number
 }
 
 interface VisibleRow {
@@ -368,10 +376,18 @@ export default function Outliner({ initial }: { initial: Tree }) {
   // three bands (top quarter = before, middle = into, bottom quarter = after).
   // Hovering the lifted item's own slot returns 'return' — drop there to put it
   // back untouched. Descendants aren't rendered mid-drag, so cycles can't arise.
-  function hitTest(clientY: number): DropTarget | null {
+  //
+  // The middle band of a row is 'into' (nest as its first child). The top and
+  // bottom quarters are insertion *gaps*; there the pointer's X picks a depth,
+  // because a gap can mean several things — a gap below a deep child could drop
+  // at that child's level, or outdent to any shallower ancestor level, or (if
+  // the row above can take children) nest one deeper. depthAtGap works out the
+  // legal range for the gap and clamps X into it.
+  function hitTest(clientX: number, clientY: number): DropTarget | null {
     const dragging = dragIdRef.current
     if (!dragging) return null
     const t = treeRef.current
+    const visible = rowsRef.current
     const rowEls = document.querySelectorAll<HTMLElement>('.row[data-id]')
     for (const el of rowEls) {
       const id = el.dataset.id!
@@ -383,8 +399,39 @@ export default function Outliner({ initial }: { initial: Tree }) {
       // into one if it somehow is.
       if (isAncestor(t, dragging, id)) return null
       const rel = (clientY - r.top) / r.height
-      const mode: DropMode = rel < 0.25 ? 'before' : rel > 0.75 ? 'after' : 'into'
-      return { id, mode }
+      if (rel >= 0.25 && rel <= 0.75) return { id, mode: 'into' }
+
+      // An insertion gap. Name the rows that bound it: `above` sits just over
+      // the gap, `below` just under. The top quarter is the gap above this row
+      // (above = previous visible row); the bottom quarter is the gap below it.
+      // The lifted item still holds a slim slot in `visible`; skip past it when
+      // naming neighbours, or its old depth would wrongly bound the drop.
+      const i = visible.findIndex((v) => v.id === id)
+      const prev = (k: number) => {
+        for (let j = k; j >= 0; j--) if (visible[j].id !== dragging) return visible[j]
+        return undefined
+      }
+      const next = (k: number) => {
+        for (let j = k; j < visible.length; j++) if (visible[j].id !== dragging) return visible[j]
+        return undefined
+      }
+      const above = rel < 0.25 ? prev(i - 1) : prev(i)
+      const below = rel < 0.25 ? next(i) : next(i + 1)
+      // depthAtGap measures X from the row's own left edge, where the nesting
+      // guides live (GUIDE_X0 + d*INDENT); clientX is viewport-absolute, so
+      // rebase it onto the row.
+      const depth = depthAtGap(
+        clientX - r.left,
+        above ? above.depth : null,
+        below ? below.depth : null,
+        GUIDE_X0,
+        INDENT,
+      )
+      // Anchor to the row above the gap when there is one, inserting after it;
+      // at the very top there's no row above, so anchor before the first row.
+      return above
+        ? { id: above.id, mode: 'after', depth }
+        : { id: below!.id, mode: 'before', depth }
     }
     return null
   }
@@ -411,11 +458,13 @@ export default function Outliner({ initial }: { initial: Tree }) {
       let next = moveNode(t, dragging, target.id, 0)
       if (node.collapsed) next = toggleCollapsed(next, target.id)
       setTree(next)
+    } else if (target.mode === 'before') {
+      // Only fires at the very top of the list: insert above the first row, at
+      // the picked depth (which can't nest, since there's no row above).
+      setTree(insertAtDepth(t, dragging, node.id, target.depth ?? 0, 'before', scope))
     } else {
-      const siblings = childrenOf(t, node.parentId).filter((n) => n.id !== dragging)
-      const pos = siblings.findIndex((n) => n.id === target.id)
-      const index = target.mode === 'before' ? pos : pos + 1
-      setTree(moveNode(t, dragging, node.parentId, index))
+      // 'after': insert below `node` (the row above the gap) at the chosen depth.
+      setTree(insertAtDepth(t, dragging, node.id, target.depth ?? 0, 'after', scope))
     }
   }
 
@@ -424,7 +473,7 @@ export default function Outliner({ initial }: { initial: Tree }) {
     if (!dragId) return
     const onMove = (e: PointerEvent) => {
       e.preventDefault()
-      setDrop(hitTest(e.clientY))
+      setDrop(hitTest(e.clientX, e.clientY))
       setGhostAt({ x: e.clientX, y: e.clientY })
     }
     const onUp = () => finishDrag()
@@ -487,6 +536,9 @@ export default function Outliner({ initial }: { initial: Tree }) {
     () => visibleRows(tree, scope, leafOnly, hideDone, dragId),
     [tree, scope, leafOnly, hideDone, dragId],
   )
+  // The global drag handler reads the visible list without re-subscribing.
+  const rowsRef = useRef(rows)
+  rowsRef.current = rows
 
   // One progress figure for the whole view: leaves done under the current
   // scope, or across every project at "Everything".
@@ -1156,6 +1208,12 @@ export default function Outliner({ initial }: { initial: Tree }) {
               : ''
 
             const dropHere = drop?.id === id ? drop.mode : null
+            // The insertion line starts under the guide of its chosen depth, so
+            // its indent previews exactly where the row will land.
+            const dropIndent =
+              (dropHere === 'before' || dropHere === 'after') && drop?.depth !== undefined
+                ? GUIDE_X0 + drop.depth * INDENT
+                : null
 
             return (
               <div
@@ -1174,6 +1232,7 @@ export default function Outliner({ initial }: { initial: Tree }) {
                   {
                     paddingLeft: flat ? ROW_PAD : ROW_PAD + depth * INDENT,
                     ...(wormDelay !== undefined ? { ['--worm-delay' as string]: `${wormDelay}ms` } : {}),
+                    ...(dropIndent !== null ? { ['--drop-x' as string]: `${dropIndent}px` } : {}),
                   } as React.CSSProperties
                 }
               >

@@ -4,7 +4,9 @@ import {
   addSubtree,
   adoptFollowing,
   childrenOf,
+  depthAtGap,
   indent,
+  insertAtDepth,
   isAncestor,
   isLeaf,
   leavesUnder,
@@ -375,5 +377,79 @@ describe('moveNode', () => {
     const t = fixture()
     // g2 is at index 1 among gather's children; moving it to index 1 keeps order.
     expect(childrenOf(moveNode(t, 'g2', 'gather', 1), 'gather').map((n) => n.id)).toEqual(['g1', 'g2', 'g3'])
+  })
+})
+
+// The drop indicator's X → indent level. Guides sit at GUIDE_X0 + d*INDENT;
+// use the same numbers the UI does so the maths is exercised end to end.
+const GUIDE_X0 = 32
+const INDENT = 24
+const guideX = (d: number) => GUIDE_X0 + d * INDENT
+
+describe('depthAtGap', () => {
+  it('rounds the pointer X to the nearest indent stop', () => {
+    // Gap between a depth-2 row above and a depth-0 row below.
+    expect(depthAtGap(guideX(0), 2, 0, GUIDE_X0, INDENT)).toBe(0)
+    expect(depthAtGap(guideX(1), 2, 0, GUIDE_X0, INDENT)).toBe(1)
+    expect(depthAtGap(guideX(2), 2, 0, GUIDE_X0, INDENT)).toBe(2)
+  })
+
+  it('lets you nest one level under the row above, no deeper', () => {
+    // Above is depth 1, so the deepest legal drop is depth 2.
+    expect(depthAtGap(guideX(9), 1, 0, GUIDE_X0, INDENT)).toBe(2)
+  })
+
+  it('will not go shallower than the row below', () => {
+    // Below is depth 1: even dragging far left clamps to 1.
+    expect(depthAtGap(GUIDE_X0 - 200, 2, 1, GUIDE_X0, INDENT)).toBe(1)
+  })
+
+  it('at the top of the list (no row above) cannot nest', () => {
+    // maxD is the first row's own depth; here the first row is depth 0.
+    expect(depthAtGap(guideX(5), null, 0, GUIDE_X0, INDENT)).toBe(0)
+  })
+
+  it('at the end of the list (no row below) can drop to depth 0', () => {
+    expect(depthAtGap(GUIDE_X0 - 200, 2, null, GUIDE_X0, INDENT)).toBe(0)
+    expect(depthAtGap(guideX(3), 2, null, GUIDE_X0, INDENT)).toBe(3)
+  })
+})
+
+describe('insertAtDepth', () => {
+  // Scope is `taxes`; anchor `p2b1` gives the deepest chain:
+  // [forms(0), p2(1), p2b(2), p2b1(3)]. Dragging f1 after p2b1 at each depth
+  // should land it beside a different ancestor on that path.
+  it('deepest depth nests under the anchor itself', () => {
+    const t = insertAtDepth(fixture(), 'f1', 'p2b1', 4, 'after', 'taxes')
+    expect(childrenOf(t, 'p2b1').map((n) => n.id)).toEqual(['f1'])
+  })
+
+  it('one level up sits beside the anchor among its siblings', () => {
+    const t = insertAtDepth(fixture(), 'f1', 'p2b1', 3, 'after', 'taxes')
+    expect(childrenOf(t, 'p2b').map((n) => n.id)).toEqual(['p2b1', 'f1', 'p2b2'])
+  })
+
+  it('an intermediate depth lands after the branch on the path', () => {
+    const t = insertAtDepth(fixture(), 'f1', 'p2b1', 1, 'after', 'taxes')
+    expect(childrenOf(t, 'forms').map((n) => n.id)).toEqual(['p1', 'p2', 'f1'])
+  })
+
+  it('depth 0 lands among the scope\'s own children', () => {
+    const t = insertAtDepth(fixture(), 'f1', 'p2b1', 0, 'after', 'taxes')
+    expect(childrenOf(t, 'taxes').map((n) => n.id)).toEqual(['gather', 'forms', 'f1'])
+  })
+
+  it("'before' inserts on the near side of the row on the path", () => {
+    // Anchor g2 under scope taxes: chain [gather(0), g2(1)]. Before at depth 1
+    // slots ahead of g2 among gather's children.
+    const t = insertAtDepth(fixture(), 'f1', 'g2', 1, 'before', 'taxes')
+    expect(childrenOf(t, 'gather').map((n) => n.id)).toEqual(['g1', 'f1', 'g2', 'g3'])
+  })
+
+  it('handles a null scope (root-level list)', () => {
+    // No scope: chain is the whole lineage. Anchor g2 → [taxes(0), gather(1), g2(2)].
+    // Depth 0 drops beside taxes among the roots.
+    const t = insertAtDepth(fixture(), 'f1', 'g2', 0, 'after', null)
+    expect(roots(t).map((n) => n.id)).toEqual(['taxes', 'f1', 'flat'])
   })
 })

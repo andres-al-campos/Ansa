@@ -462,19 +462,35 @@ button { font: inherit; color: inherit; }
 }
 .row.drop-into .bullet::before { background: var(--brass); }
 
-/* Drop *between*: an insertion line at the row's top or bottom edge. */
+/* Drop *between*: an insertion line at the row's top or bottom edge. Its left
+ * edge starts at --drop-x — the indent of the level the pointer picked — so the
+ * line lines up under that depth's nesting guide and previews where the row
+ * lands. A dot at the line's head marks the new bullet's position. */
 .row.drop-before::before,
 .row.drop-after::before {
   content: '';
   position: absolute;
-  left: 6px;
+  left: var(--drop-x, 6px);
   right: 6px;
   height: 2px;
   background: var(--bar);
   border-radius: 1px;
 }
+.row.drop-before::after,
+.row.drop-after::after {
+  content: '';
+  position: absolute;
+  left: var(--drop-x, 6px);
+  width: 6px;
+  height: 6px;
+  margin-left: -2px;
+  border-radius: 50%;
+  background: var(--bar);
+}
 .row.drop-before::before { top: -1px; }
 .row.drop-after::before { bottom: -1px; }
+.row.drop-before::after { top: -3px; }
+.row.drop-after::after { bottom: -3px; }
 
 /* The card carried under the pointer: the grabbed item alone, lifted off. */
 .drag-ghost {

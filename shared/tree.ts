@@ -375,3 +375,64 @@ export function adoptFollowing(tree: Tree, id: NodeId): Tree {
     tree,
   )
 }
+
+/**
+ * The indent level a drop lands at, given the pointer's X and the rows framing
+ * the gap. The pointer's horizontal position picks the level: rounding to the
+ * nearest nesting guide. It's clamped so you can nest at most one level deeper
+ * than the row above, and no shallower than the row below.
+ *
+ * `guideX0` is the X of depth-0 guide, `indent` the px per level. Depths are
+ * scope-relative, matching visibleRows.
+ */
+export function depthAtGap(
+  clientX: number,
+  aboveDepth: number | null,
+  belowDepth: number | null,
+  guideX0: number,
+  indent: number,
+): number {
+  const maxD = aboveDepth !== null ? aboveDepth + 1 : belowDepth !== null ? belowDepth : 0
+  const minD = belowDepth !== null ? belowDepth : 0
+  const raw = Math.round((clientX - guideX0) / indent)
+  return Math.max(minD, Math.min(maxD, raw))
+}
+
+/**
+ * Resolve a depth-aware drop into a concrete move. `anchorId` is the visible row
+ * on the far side of the gap (the row below for a 'before' drop, the row above
+ * for 'after'); `depth` is the chosen scope-relative indent from depthAtGap.
+ *
+ * Walking the anchor's lineage from the scope down gives the chain of possible
+ * parents. A depth past the end of that chain means "nest under the anchor
+ * itself"; otherwise the parent is the ancestor at that depth, and the moved
+ * node slots in beside the chain member on the path.
+ */
+export function insertAtDepth(
+  tree: Tree,
+  dragging: NodeId,
+  anchorId: NodeId,
+  depth: number,
+  side: 'before' | 'after',
+  scope: NodeId | null,
+): Tree {
+  const full = lineageOf(tree, anchorId)
+  const scopeIdx = scope ? full.findIndex((n) => n.id === scope) : -1
+  const chain = full.slice(scopeIdx + 1)
+  const nestUnderAnchor = depth >= chain.length
+  const newParentId = nestUnderAnchor
+    ? anchorId
+    : depth === 0
+      ? scope
+      : chain[depth - 1].id
+  const kids = childrenOf(tree, newParentId).filter((n) => n.id !== dragging)
+  let index: number
+  if (nestUnderAnchor) {
+    index = kids.length
+  } else {
+    const onPath = chain[depth].id
+    const pos = kids.findIndex((n) => n.id === onPath)
+    index = side === 'before' ? pos : pos + 1
+  }
+  return moveNode(tree, dragging, newParentId, index)
+}
