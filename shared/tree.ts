@@ -179,9 +179,19 @@ export function newId(): NodeId {
  * Append one child to `parentId`, after any existing siblings. A thin wrapper
  * over addSubtree — a single node is just a one-entry outline — so both paths
  * share the same ordering and id logic.
+ *
+ * `id` is optional and exists for replayed ops: the client mints the id, sends
+ * it, and the server reuses it, so both sides name the new node identically.
+ * Left out, a fresh one is minted as before.
  */
-export function addChild(tree: Tree, parentId: NodeId | null, text: string): { tree: Tree; id: NodeId } {
-  const { tree: next, ids } = addSubtree(tree, parentId, [{ text }])
+export function addChild(
+  tree: Tree,
+  parentId: NodeId | null,
+  text: string,
+  id?: NodeId,
+  now?: number,
+): { tree: Tree; id: NodeId } {
+  const { tree: next, ids } = addSubtree(tree, parentId, [{ text }], id ? [id] : undefined, now)
   return { tree: next, id: ids[0] }
 }
 
@@ -204,15 +214,26 @@ export interface SubtreeSpec {
  * the spec, so the caller can address the new nodes without re-reading the tree.
  * The first id is the root of the grafted subtree — the new project's id when
  * parentId was null.
+ *
+ * `withIds` and `now` exist for replayed ops. Minting ids and reading the clock
+ * are the only two things here that don't derive from the inputs, so a client
+ * and the server applying the same op would otherwise disagree on both. Passing
+ * them makes the graft a pure function of its arguments; omitting them keeps the
+ * original behaviour.
  */
 export function addSubtree(
   tree: Tree,
   parentId: NodeId | null,
   nodes: SubtreeSpec[],
+  withIds?: NodeId[],
+  now: number = Date.now(),
 ): { tree: Tree; ids: NodeId[] } {
   const added: Node[] = []
   const ids: NodeId[] = []
-  const now = Date.now()
+  // Ids to reuse, taken in the same depth-first order `ids` is returned in, so a
+  // replayed op names every node exactly as the originating client did. Running
+  // past the end (or omitting them) falls back to minting.
+  let nextGiven = 0
 
   const walk = (pid: NodeId | null, specs: SubtreeSpec[]) => {
     // Land after every existing sibling: start past the highest order already
@@ -222,7 +243,7 @@ export function addSubtree(
     const start = siblings.reduce((max, n) => Math.max(max, n.order + 1), 0)
     specs.forEach((spec, i) => {
       const node: Node = {
-        id: newId(),
+        id: withIds?.[nextGiven++] ?? newId(),
         parentId: pid,
         text: spec.text,
         done: false,
