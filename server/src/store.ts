@@ -13,6 +13,7 @@
  */
 
 import Database from 'better-sqlite3'
+import { applyOp, type Op } from '../../shared/ops.ts'
 import {
   addChild,
   addSubtree,
@@ -153,6 +154,19 @@ export class Store {
 
   markOpened(id: NodeId): Tree {
     return this.replace(markOpened(this.load(), id))
+  }
+
+  /**
+   * Apply a client op against the *current* stored tree.
+   *
+   * This is the write path that makes concurrent edits safe: the op is replayed
+   * on whatever the tree is now, not on the snapshot the client held when it
+   * made the change. Two clients editing different branches therefore both land,
+   * where a whole-tree write would have let the later one erase the earlier.
+   */
+  applyOp(op: Op): { tree: Tree; completed: NodeId[] } {
+    const { tree, completed } = applyOp(this.load(), op)
+    return { tree: this.replace(tree), completed }
   }
 
   /** Overwrite the whole tree — used by import and by first-run seeding. */

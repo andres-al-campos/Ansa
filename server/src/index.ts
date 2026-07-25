@@ -3,9 +3,14 @@
  * single write path for the tree. The React app and the MCP server are both
  * just clients of this REST API, so there is exactly one source of truth.
  *
- * Endpoints mirror the atomic tree operations one-to-one. Every mutating
- * response returns the full new tree, so a client can replace its state without
- * a second round-trip or any client-side merging.
+ * Two write paths, both landing in the same place. `POST /api/ops` takes a named
+ * operation and replays it against the current tree — this is what the app uses,
+ * and it's what makes concurrent edits from a person and a Claude interleave
+ * rather than overwrite. The `/api/nodes` routes are the same operations exposed
+ * one-per-endpoint for the MCP, where a REST shape is the friendlier interface.
+ *
+ * Every mutating response returns the full new tree, so a client can replace its
+ * state without a second round-trip or any client-side merging.
  */
 
 import { fileURLToPath } from 'node:url'
@@ -13,6 +18,7 @@ import { dirname, resolve } from 'node:path'
 import Fastify from 'fastify'
 import cors from '@fastify/cors'
 import { Store } from './store.ts'
+import { parseOp } from '../../shared/ops.ts'
 import { broadcast, subscribe } from './bus.ts'
 import { seedTree } from '../../shared/seed.ts'
 import type { SubtreeSpec, Tree } from '../../shared/tree.ts'
@@ -175,6 +181,18 @@ app.post<{ Params: { id: string }; Body: { parentId: string | null; index: numbe
 app.post<{ Params: { id: string } }>('/api/nodes/:id/toggle-collapsed', async (req) => ({
   tree: emit(store.toggleCollapsed(req.params.id), req),
 }))
+
+// The app's write path. Takes a named operation rather than a tree, and applies
+// it to whatever the stored tree is *now* — so two clients writing at once
+// interleave as two ops instead of racing whole-document overwrites. One op is
+// one broadcast, which also keeps multi-move ops like adoptFollowing atomic on
+// every other tab. The fine-grained /api/nodes routes below stay for the MCP.
+app.post<{ Body: { op?: unknown } }>('/api/ops', async (req, reply) => {
+  const parsed = parseOp(req.body?.op ?? req.body)
+  if ('error' in parsed) return reply.code(400).send({ error: parsed.error })
+  const { tree, completed } = store.applyOp(parsed.op)
+  return { tree: emit(tree, req), completed }
+})
 
 app.put<{ Body: { tree: unknown } }>('/api/tree', async (req, reply) => {
   const { tree } = req.body ?? {}
