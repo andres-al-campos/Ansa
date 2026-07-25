@@ -651,11 +651,17 @@ export default function Outliner({ initial }: { initial: Tree }) {
     setEditing(null)
   }
 
-  // Enter on the title commits the name and drops straight into a first task, so
-  // naming a fresh project flows on into filling it. Both edits fold into one
-  // tree so the added child isn't lost, and the id is taken outside setTree to
-  // stay stable under React's double-invoked updaters.
+  // Enter on the title. An empty project flows straight on into its first task,
+  // since naming it and filling it are one motion. Once it has children that
+  // would be a surprise — you came to rename it — so Enter just saves and steps
+  // out, and a second Enter (now on an unchanged title) adds a task as before.
+  // Both edits fold into one tree so the added child isn't lost, and the id is
+  // taken outside setTree to stay stable under React's double-invoked updaters.
   function commitTitleAndAddTask(id: NodeId, text: string) {
+    if (childrenOf(tree, id).length > 0) {
+      commitTitle(id, text)
+      return
+    }
     const trimmed = text.trim()
     const named = trimmed ? setText(tree, id, trimmed) : tree
     const childId = newId()
