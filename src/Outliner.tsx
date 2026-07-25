@@ -1,13 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { exportTree, parseTree, saveTree } from './storage'
-import { EVENTS_URL, ORIGIN, putTree } from './api'
+import { putTree } from './api'
+import { useOutlinerSync } from './useOutlinerSync'
+import { applyOp, type Op } from '@shared/ops'
 import {
   addChild,
-  adoptFollowing,
   byId,
   childrenOf,
   depthAtGap,
-  indent,
   insertAtDepth,
   isAncestor,
   isLeaf,
@@ -15,7 +15,7 @@ import {
   lineageOf,
   markOpened,
   moveNode,
-  outdent,
+  newId,
   progressOf,
   projectList,
   projectSections,
@@ -148,16 +148,26 @@ export default function Outliner({ initial }: { initial: Tree }) {
   /** Record a new tree as an undoable checkpoint. Accepts either the next tree
    *  or an updater that derives it from the current tree, so two edits fired in
    *  the same handler (rename, then add a sibling) compose off the latest state
-   *  instead of racing on a stale closure value. */
-  function commit(next: Tree | ((prev: Tree) => Tree)) {
+   *  instead of racing on a stale closure value.
+   *
+   *  The trailing ops describe the same change for the server. The tree is
+   *  applied locally so the UI never waits, and the ops are replayed server-side
+   *  against whatever the shared tree is by then — that pairing is what lets
+   *  this tab and a Claude on the MCP edit at once without overwriting each
+   *  other. Pass them in the order they should land. */
+  function commit(next: Tree | ((prev: Tree) => Tree), ...ops: Op[]) {
     setHistory((h) => {
       const value = typeof next === 'function' ? (next as (prev: Tree) => Tree)(h.present) : next
       return value === h.present ? h : { past: [...h.past, h.present], present: value, future: [] }
     })
+    syncRef.current?.send(...ops)
   }
-  /** Replace the tree *without* a checkpoint — for undo/redo themselves. */
-  function setPresent(next: Tree) {
+  /** Replace the tree *without* a checkpoint — for undo/redo themselves, and
+   *  for changes that persist but aren't edits you'd want to undo (folding a
+   *  row, stamping a project as opened). Those still send their op. */
+  function setPresent(next: Tree, ...ops: Op[]) {
     setHistory((h) => ({ ...h, present: next }))
+    syncRef.current?.send(...ops)
   }
   // Everything that used to call setTree still checkpoints, unchanged.
   const setTree = commit
@@ -187,7 +197,10 @@ export default function Outliner({ initial }: { initial: Tree }) {
   function openProject(id: NodeId) {
     setScope(id)
     const root = lineageOf(tree, id)[0]?.id ?? id
-    setPresent(markOpened(tree, root))
+    // The timestamp travels with the op so the server stores the same instant
+    // this tab did, rather than whenever the write happened to arrive.
+    const at = Date.now()
+    setPresent(markOpened(tree, root, at), { op: 'markOpened', id: root, at })
   }
   const [hideDone, setHideDone] = useState(false)
   const [editing, setEditing] = useState<NodeId | null>(null)
@@ -252,80 +265,22 @@ export default function Outliner({ initial }: { initial: Tree }) {
     }
   }, [menuOpen])
 
-  // The first paint comes from the localStorage cache, which may be stale — the
-  // server could hold newer nodes this tab has never seen. Until we've adopted
-  // the server's authoritative tree at least once (the SSE stream sends it on
-  // connect), a local edit must not be pushed back: a whole-tree PUT off the
-  // stale cache would wipe those unseen server nodes. `synced` flips true on the
-  // first adopt, opening the write path.
-  const synced = useRef(false)
-
-  // Persist on every change. The server (SQLite) is the source of truth;
-  // localStorage is kept as an offline cache so a reload with the server down
-  // still shows the last state instead of a blank screen. The very first render
-  // carries the initial tree we were handed, so skip saving it back untouched.
-  const firstSave = useRef(true)
+  // Keep the offline cache current. The server (SQLite) is the source of truth;
+  // localStorage just means a reload with the server down shows the last state
+  // instead of a blank screen.
   useEffect(() => {
     saveTree(tree)
-    if (firstSave.current) {
-      firstSave.current = false
-      return
-    }
-    // Don't clobber the server with the unverified cache before first sync.
-    if (!synced.current) return
-    void putTree(tree)
   }, [tree])
 
-  // Subscribe to server changes over SSE. The stream sends the current tree on
-  // connect (so this also handles the initial load from the shared truth) and
-  // then pushes the new tree after every write from anyone — a human in another
-  // tab, or a Claude on the MCP. The browser writes over REST as before; this
-  // is the one-way "something changed" channel back.
-  //
-  // Two things keep a local edit from being disturbed:
-  //  - The broadcast carries the origin that caused it; we ignore the echo of
-  //    our own writes (they're already in `present`).
-  //  - While the user is mid-edit or dragging we don't apply an incoming tree;
-  //    we stash it and adopt it the moment they're idle, so nothing is yanked
-  //    out from under them and no external change is lost.
-  const busyRef = useRef(false)
-  busyRef.current = editing !== null || dragId !== null
-  const pending = useRef<Tree | null>(null)
-  const adopt = (next: Tree) => {
-    firstSave.current = true // adopting isn't a change to push back
-    synced.current = true // the server's tree is now in hand; writes are safe
-    setHistory((h) => ({ ...h, present: next }))
-  }
-  const adoptRef = useRef(adopt)
-  adoptRef.current = adopt
-
-  useEffect(() => {
-    const es = new EventSource(EVENTS_URL)
-    es.onmessage = (e) => {
-      const { tree: next, origin } = JSON.parse(e.data) as { tree: Tree; origin: string | null }
-      if (origin === ORIGIN) return // our own echo — already applied locally
-      // Adopt the server's tree even mid-edit until we've synced once: that
-      // first message is the authoritative baseline, and it must land before
-      // any write so a stale-cache edit can't be pushed over newer server data.
-      // After that, hold incoming trees while the user is busy as usual.
-      if (busyRef.current && synced.current) {
-        pending.current = next // hold until the user is idle
-        return
-      }
-      adoptRef.current(next)
-    }
-    return () => es.close()
-  }, [])
-
-  // When the user finishes an edit or drag, apply anything that arrived while
-  // they were busy.
-  useEffect(() => {
-    if (!busyRef.current && pending.current) {
-      const next = pending.current
-      pending.current = null
-      adoptRef.current(next)
-    }
-  }, [editing, dragId])
+  // The server side of the same tree: ships our ops out, brings other people's
+  // changes in. Held in a ref because `commit` (defined above, and called from
+  // handlers all over this component) needs to reach it.
+  const sync = useOutlinerSync({
+    busy: editing !== null || dragId !== null,
+    onAdopt: (next) => setHistory((h) => ({ ...h, present: next })),
+  })
+  const syncRef = useRef(sync)
+  syncRef.current = sync
 
   // Cmd/Ctrl+Z undo, +Shift+Z (or Ctrl+Y) redo. Skipped while editing a label,
   // so the text field keeps its own native undo. Refs keep the listener stable.
@@ -454,17 +409,29 @@ export default function Outliner({ initial }: { initial: Tree }) {
     if (!node) return
 
     if (target.mode === 'into') {
-      // Nest as the first child; open the parent so the move is visible.
+      // Nest as the first child; open the parent so the move is visible. That's
+      // two ops — the move, then the unfold — in that order.
       let next = moveNode(t, dragging, target.id, 0)
-      if (node.collapsed) next = toggleCollapsed(next, target.id)
-      setTree(next)
-    } else if (target.mode === 'before') {
-      // Only fires at the very top of the list: insert above the first row, at
-      // the picked depth (which can't nest, since there's no row above).
-      setTree(insertAtDepth(t, dragging, node.id, target.depth ?? 0, 'before', scope))
+      const ops: Op[] = [{ op: 'moveNode', id: dragging, parentId: target.id, index: 0 }]
+      if (node.collapsed) {
+        next = toggleCollapsed(next, target.id)
+        ops.push({ op: 'toggleCollapsed', id: target.id })
+      }
+      setTree(next, ...ops)
     } else {
-      // 'after': insert below `node` (the row above the gap) at the chosen depth.
-      setTree(insertAtDepth(t, dragging, node.id, target.depth ?? 0, 'after', scope))
+      // An insertion gap. 'before' only fires at the very top of the list
+      // (nothing above to nest under); 'after' inserts below the row above the
+      // gap. Both land at the depth the pointer picked.
+      const side = target.mode === 'before' ? 'before' : 'after'
+      const depth = target.depth ?? 0
+      setTree(insertAtDepth(t, dragging, node.id, depth, side, scope), {
+        op: 'insertAtDepth',
+        id: dragging,
+        anchorId: node.id,
+        depth,
+        side,
+        scope,
+      })
     }
   }
 
@@ -556,7 +523,7 @@ export default function Outliner({ initial }: { initial: Tree }) {
     if (!node) return
     const willComplete = !node.done
     const { tree: next, completed } = setDone(tree, id, willComplete)
-    setTree(next)
+    setTree(next, { op: 'setDone', id, done: willComplete })
 
     // The worm is the reward for *finishing* something, so it fires only when a
     // group closes out — not on every individual tick. A lone leaf that doesn't
@@ -597,7 +564,10 @@ export default function Outliner({ initial }: { initial: Tree }) {
   function commitEdit(id: NodeId, text: string) {
     const trimmed = text.trim()
     // An emptied row is a deletion — matches how outliners behave.
-    setTree((prev) => (trimmed ? setText(prev, id, trimmed) : removeNode(prev, id)))
+    setTree(
+      (prev) => (trimmed ? setText(prev, id, trimmed) : removeNode(prev, id)),
+      trimmed ? { op: 'setText', id, text: trimmed } : { op: 'removeNode', id },
+    )
     // Only clear editing if we're still on this row. A blur fired *because*
     // Enter already moved editing to a fresh sibling must not yank it back.
     setEditing((cur) => (cur === id ? null : cur))
@@ -612,9 +582,17 @@ export default function Outliner({ initial }: { initial: Tree }) {
     const trimmed = text.trim()
     const parentId = byId(tree, id)?.parentId ?? scope
     const renamed = trimmed ? setText(tree, id, trimmed) : removeNode(tree, id)
-    const { tree: next, id: newId } = addChild(renamed, parentId, '')
-    setTree(next)
-    setEditing(newId)
+    // Mint the id and timestamp here and hand both to the op, so the server
+    // creates the same node rather than one of its own with a different id.
+    const childId = newId()
+    const at = Date.now()
+    const { tree: next } = addChild(renamed, parentId, '', childId, at)
+    setTree(
+      next,
+      trimmed ? { op: 'setText', id, text: trimmed } : { op: 'removeNode', id },
+      { op: 'addChild', id: childId, parentId, text: '', at },
+    )
+    setEditing(childId)
   }
 
   // Deleting an empty row always drops out of edit mode rather than stepping
@@ -622,7 +600,7 @@ export default function Outliner({ initial }: { initial: Tree }) {
   // otherwise chain-delete row after row and could wipe a whole project; making
   // you re-enter to continue puts a deliberate keypress between each deletion.
   function deleteRow(id: NodeId) {
-    setTree(removeNode(tree, id))
+    setTree(removeNode(tree, id), { op: 'removeNode', id })
     setEditing(null)
   }
 
@@ -638,8 +616,9 @@ export default function Outliner({ initial }: { initial: Tree }) {
     // Only touch the tree when the row actually changed: an emptied row is
     // removed, edited text is committed. Navigating past an unchanged row must
     // not push a no-op onto the undo history.
-    if (trimmed === '') setTree((prev) => removeNode(prev, id))
-    else if (trimmed !== byId(tree, id)?.text) setTree((prev) => setText(prev, id, trimmed))
+    if (trimmed === '') setTree((prev) => removeNode(prev, id), { op: 'removeNode', id })
+    else if (trimmed !== byId(tree, id)?.text)
+      setTree((prev) => setText(prev, id, trimmed), { op: 'setText', id, text: trimmed })
     if (target) setEditing(target.id)
     else setEditing((cur) => (cur === id ? null : cur))
   }
@@ -649,7 +628,7 @@ export default function Outliner({ initial }: { initial: Tree }) {
   // rather than leave an empty row behind; a row with existing text just stops
   // editing and keeps what was already there.
   function cancelEdit(id: NodeId) {
-    if (byId(tree, id)?.text.trim() === '') setTree(removeNode(tree, id))
+    if (byId(tree, id)?.text.trim() === '') setTree(removeNode(tree, id), { op: 'removeNode', id })
     setEditing(null)
   }
 
@@ -657,7 +636,7 @@ export default function Outliner({ initial }: { initial: Tree }) {
   // clearing a whole project's name shouldn't delete the project.
   function commitTitle(id: NodeId, text: string) {
     const trimmed = text.trim()
-    if (trimmed) setTree(setText(tree, id, trimmed))
+    if (trimmed) setTree(setText(tree, id, trimmed), { op: 'setText', id, text: trimmed })
     setEditing(null)
   }
 
@@ -666,7 +645,7 @@ export default function Outliner({ initial }: { initial: Tree }) {
   // out and keeps the old name.
   function cancelTitle(id: NodeId) {
     if (byId(tree, id)?.text.trim() === '') {
-      setTree(removeNode(tree, id))
+      setTree(removeNode(tree, id), { op: 'removeNode', id })
       setScope(null)
     }
     setEditing(null)
@@ -679,8 +658,12 @@ export default function Outliner({ initial }: { initial: Tree }) {
   function commitTitleAndAddTask(id: NodeId, text: string) {
     const trimmed = text.trim()
     const named = trimmed ? setText(tree, id, trimmed) : tree
-    const { tree: next, id: childId } = addChild(named, id, '')
-    setTree(next)
+    const childId = newId()
+    const at = Date.now()
+    const { tree: next } = addChild(named, id, '', childId, at)
+    const ops: Op[] = trimmed ? [{ op: 'setText', id, text: trimmed }] : []
+    ops.push({ op: 'addChild', id: childId, parentId: id, text: '', at })
+    setTree(next, ...ops)
     setEditing(childId)
   }
 
@@ -689,23 +672,32 @@ export default function Outliner({ initial }: { initial: Tree }) {
    * doesn't discard it, then re-nest and keep the row in edit mode.
    */
   function reindent(id: NodeId, text: string, dir: 'in' | 'out') {
-    setTree((prev) => {
-      const withText = setText(prev, id, text.trim())
-      if (dir === 'in') return indent(withText, id)
+    const trimmed = text.trim()
+    const withText = setText(tree, id, trimmed)
+    // Which structural op applies depends on where the row sits, so decide it
+    // once here and use it for both the local tree and the wire — deriving it
+    // twice would risk the two disagreeing.
+    let structural: Op
+    if (dir === 'in') {
+      structural = { op: 'indent', id }
+    } else {
       // Outdenting a top-level task (parent is a project root) would otherwise
       // fling it up to the root and turn it into its own project. Instead, keep
       // it in place and pull the rows below it in as its children.
       const node = byId(withText, id)
       const parent = node ? byId(withText, node.parentId ?? '') : undefined
-      if (parent && parent.parentId === null) return adoptFollowing(withText, id)
-      return outdent(withText, id)
-    })
+      structural = parent && parent.parentId === null ? { op: 'adoptFollowing', id } : { op: 'outdent', id }
+    }
+    const { tree: next } = applyOp(withText, structural)
+    setTree(next, { op: 'setText', id, text: trimmed }, structural)
   }
 
   function addSibling(afterId: NodeId | null) {
     const parentId = afterId ? (byId(tree, afterId)?.parentId ?? null) : scope
-    const { tree: next, id } = addChild(tree, parentId, '')
-    setTree(next)
+    const id = newId()
+    const at = Date.now()
+    const { tree: next } = addChild(tree, parentId, '', id, at)
+    setTree(next, { op: 'addChild', id, parentId, text: '', at })
     setEditing(id)
   }
 
@@ -724,15 +716,28 @@ export default function Outliner({ initial }: { initial: Tree }) {
   }
 
   // Commit the live input text, then reorder, in one tree so neither is lost.
+  // shuffleSibling works out the destination slot internally; the op needs that
+  // same index, so resolve it here and send an explicit move.
   function reorderWithText(id: NodeId, text: string, dir: 'up' | 'down') {
-    setTree((prev) => shuffleSibling(setText(prev, id, text.trim()), id, dir))
+    const trimmed = text.trim()
+    const withText = setText(tree, id, trimmed)
+    const node = byId(withText, id)
+    if (!node) return
+    const siblings = childrenOf(withText, node.parentId)
+    const to = siblings.findIndex((s) => s.id === id) + (dir === 'up' ? -1 : 1)
+    const ops: Op[] = [{ op: 'setText', id, text: trimmed }]
+    // At either end there's nowhere to go — commit the text and stop.
+    if (to >= 0 && to < siblings.length) ops.push({ op: 'moveNode', id, parentId: node.parentId, index: to })
+    setTree(shuffleSibling(withText, id, dir), ...ops)
   }
 
   // Start a new project: a fresh root, scoped into and put straight into edit
   // so you name it in place.
   function newProject() {
-    const { tree: next, id } = addChild(tree, null, '')
-    setTree(next)
+    const id = newId()
+    const at = Date.now()
+    const { tree: next } = addChild(tree, null, '', id, at)
+    setTree(next, { op: 'addChild', id, parentId: null, text: '', at })
     setScope(id)
     setEditing(id)
   }
@@ -740,7 +745,7 @@ export default function Outliner({ initial }: { initial: Tree }) {
   function togglePin(id: NodeId) {
     const node = byId(tree, id)
     if (!node) return
-    setTree(setPinned(tree, id, !node.pinned))
+    setTree(setPinned(tree, id, !node.pinned), { op: 'setPinned', id, pinned: !node.pinned })
     closeMenu()
   }
 
@@ -752,7 +757,7 @@ export default function Outliner({ initial }: { initial: Tree }) {
     if (scope === id) setScope(null)
     setConfirmDelete(null)
     closeMenu()
-    setTree(removeNode(tree, id))
+    setTree(removeNode(tree, id), { op: 'removeNode', id })
   }
 
   // Land a dragged project before or after the row it was dropped on. Index is
@@ -767,7 +772,13 @@ export default function Outliner({ initial }: { initial: Tree }) {
     const order = roots(tree).filter((r) => r.id !== dragging)
     const pos = order.findIndex((r) => r.id === overId)
     if (pos < 0) return
-    setTree(moveNode(tree, dragging, null, after ? pos + 1 : pos))
+    const index = after ? pos + 1 : pos
+    setTree(moveNode(tree, dragging, null, index), {
+      op: 'moveNode',
+      id: dragging,
+      parentId: null,
+      index,
+    })
   }
 
   // Download the whole tree as a JSON file — the backup / hand-off format.
@@ -798,7 +809,11 @@ export default function Outliner({ initial }: { initial: Tree }) {
       if (!window.confirm('Replace everything currently here with the imported list?')) return
       setScope(null)
       setEditing(null)
+      // Import is the one change that isn't an edit to the tree but a
+      // replacement of it, so it goes over the whole-tree route rather than as
+      // an op. Undoable locally all the same.
       setTree(next)
+      void putTree(next)
     }
     reader.readAsText(file)
   }
@@ -1247,7 +1262,7 @@ export default function Outliner({ initial }: { initial: Tree }) {
 
                 <button
                   className={'twisty' + (parent && !flat ? (node.collapsed ? '' : ' open') : ' hidden')}
-                  onClick={() => setPresent(toggleCollapsed(tree, id))}
+                  onClick={() => setPresent(toggleCollapsed(tree, id), { op: 'toggleCollapsed', id })}
                   aria-label={node.collapsed ? 'Expand' : 'Collapse'}
                   tabIndex={parent && !flat ? 0 : -1}
                 >
