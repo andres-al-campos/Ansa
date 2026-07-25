@@ -1,14 +1,19 @@
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { act, cleanup, render } from '@testing-library/react'
 import { seedTree } from '@shared/seed'
+import type { Op } from '@shared/ops'
 import type { Tree } from '@shared/tree'
 
-// Spy on the one write path. Everything else in the api module (EVENTS_URL,
-// ORIGIN) stays real so the component wires up exactly as in the app.
-const putTree = vi.fn(async () => true)
+// Spy on the write path. Everything else in the api module (EVENTS_URL, ORIGIN)
+// stays real so the component wires up exactly as in the app.
+const sendOp = vi.fn(async (_op: Op) => true)
+const putTree = vi.fn(async (_tree: Tree) => true)
+
+/** The op names sent so far, in order. */
+const sentOps = () => sendOp.mock.calls.map(([op]) => op.op)
 vi.mock('./api', async () => {
   const actual = await vi.importActual<typeof import('./api')>('./api')
-  return { ...actual, putTree }
+  return { ...actual, sendOp, putTree }
 })
 
 // A fake EventSource we drive by hand, so the test decides precisely when the
@@ -27,6 +32,7 @@ class FakeEventSource {
 }
 
 beforeEach(() => {
+  sendOp.mockClear()
   putTree.mockClear()
   live = null
   vi.stubGlobal('EventSource', FakeEventSource as unknown as typeof EventSource)
@@ -53,22 +59,46 @@ function toggleFirstTask(container: HTMLElement) {
   act(() => box.click())
 }
 
-test('a local edit before the first SSE sync is not pushed to the server', async () => {
+test('an edit before the first SSE sync is held, then sent once the server tree lands', async () => {
   const { default: Outliner } = await import('./Outliner')
   const { container } = render(<Outliner initial={seedTree()} />)
   scopeIntoProject(container)
 
-  // The stale-cache trap: edit lands before the server's tree has been adopted.
-  // A whole-tree PUT here could wipe server nodes this tab has never seen, so it
-  // must be suppressed.
+  // The stale-cache trap: the edit lands before the server's tree has been
+  // adopted, so we don't yet know the real baseline. Nothing goes out.
   toggleFirstTask(container)
+  expect(sendOp).not.toHaveBeenCalled()
+
+  // The server's authoritative tree arrives over SSE. The held ops are now safe
+  // to replay on top of it — they're kept, not dropped, and they go out in the
+  // order they were made. Opening the project is itself a change (it stamps the
+  // project as visited), so it queues ahead of the edit.
+  await act(async () => {
+    live!.emit(seedTree())
+  })
+  expect(sentOps()).toEqual(['markOpened', 'setDone'])
+
+  // Later edits go out as they happen.
+  await act(async () => {
+    toggleFirstTask(container)
+  })
+  expect(sentOps()).toEqual(['markOpened', 'setDone', 'setDone'])
+})
+
+test('the whole tree is never pushed for an ordinary edit', async () => {
+  const { default: Outliner } = await import('./Outliner')
+  const { container } = render(<Outliner initial={seedTree()} />)
+  scopeIntoProject(container)
+
+  await act(async () => {
+    live!.emit(seedTree())
+  })
+  await act(async () => {
+    toggleFirstTask(container)
+  })
+
+  // The regression guard: a whole-tree write is what made two clients editing at
+  // once clobber each other. Edits must travel as ops.
   expect(putTree).not.toHaveBeenCalled()
-
-  // The server's authoritative tree arrives over SSE. This is the baseline the
-  // tab adopts; from here writes are safe.
-  act(() => live!.emit(seedTree()))
-
-  // A later edit does persist.
-  toggleFirstTask(container)
-  expect(putTree).toHaveBeenCalledTimes(1)
+  expect(sendOp).toHaveBeenCalled()
 })
