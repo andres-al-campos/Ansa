@@ -1,0 +1,145 @@
+import { afterEach, beforeEach, expect, test, vi } from 'vitest'
+import { act, cleanup, fireEvent, render } from '@testing-library/react'
+import { seedTree } from '@shared/seed'
+
+// Editing is local-first, so none of this needs the server. Stub the write path
+// and the SSE stream so the component mounts without reaching for either.
+vi.mock('./api', async () => {
+  const actual = await vi.importActual<typeof import('./api')>('./api')
+  return { ...actual, sendOp: vi.fn(async () => true), putTree: vi.fn(async () => true) }
+})
+
+class SilentEventSource {
+  onmessage: ((e: { data: string }) => void) | null = null
+  constructor(public url: string) {}
+  close() {}
+}
+
+beforeEach(() => {
+  vi.stubGlobal('EventSource', SilentEventSource as unknown as typeof EventSource)
+  localStorage.clear()
+})
+
+afterEach(() => {
+  cleanup()
+  vi.unstubAllGlobals()
+})
+
+// Rows only render once scoped into a project.
+function scopeInto(container: HTMLElement, name: RegExp) {
+  const card = [...container.querySelectorAll('button.proj')].find((b) =>
+    name.test(b.textContent ?? ''),
+  ) as HTMLElement
+  act(() => card.click())
+}
+
+/**
+ * The visible row labels, top to bottom. A row being edited shows an input
+ * rather than its label, so read that instead — otherwise the row's other
+ * glyphs (the collapse caret) come back as its text.
+ */
+function labels(container: HTMLElement) {
+  return [...container.querySelectorAll('.row')].map((r) => {
+    const input = r.querySelector('input.label-input') as HTMLInputElement | null
+    return input ? input.value : (r.querySelector('.label')?.textContent ?? '').trim()
+  })
+}
+
+/** Click a row's label to start editing it, and hand back its input. */
+function editRow(container: HTMLElement, text: RegExp): HTMLInputElement {
+  const row = [...container.querySelectorAll('.row')].find((r) => text.test(r.textContent ?? ''))!
+  act(() => (row.querySelector('.label') as HTMLElement).click())
+  return container.querySelector('input.label-input') as HTMLInputElement
+}
+
+test('Enter opens the new row directly below the one being edited', async () => {
+  const { default: Outliner } = await import('./Outliner')
+  const { container } = render(<Outliner initial={seedTree()} />)
+  scopeInto(container, /flat/i)
+
+  expect(labels(container)).toEqual([
+    'Email the landlord about the boiler',
+    'Book a carpet clean',
+    'Replace the hallway bulb',
+  ])
+
+  // Enter on the *first* of three siblings. Appending would drop the new row
+  // at the bottom, far from where the caret was.
+  const input = editRow(container, /Email the landlord/)
+  act(() => {
+    fireEvent.change(input, { target: { value: 'Email the landlord about the boiler' } })
+    fireEvent.keyDown(input, { key: 'Enter' })
+  })
+
+  expect(labels(container)).toEqual([
+    'Email the landlord about the boiler',
+    '', // the fresh row, still empty and in edit mode
+    'Book a carpet clean',
+    'Replace the hallway bulb',
+  ])
+})
+
+test('Enter on the last row still appends', async () => {
+  const { default: Outliner } = await import('./Outliner')
+  const { container } = render(<Outliner initial={seedTree()} />)
+  scopeInto(container, /flat/i)
+
+  const input = editRow(container, /Replace the hallway bulb/)
+  act(() => {
+    fireEvent.change(input, { target: { value: 'Replace the hallway bulb' } })
+    fireEvent.keyDown(input, { key: 'Enter' })
+  })
+
+  expect(labels(container)).toEqual([
+    'Email the landlord about the boiler',
+    'Book a carpet clean',
+    'Replace the hallway bulb',
+    '',
+  ])
+})
+
+test('Enter on a never-named project backs out instead of leaving an Untitled one', async () => {
+  const { default: Outliner } = await import('./Outliner')
+  const { container } = render(<Outliner initial={seedTree()} />)
+
+  const add = [...container.querySelectorAll('button')].find((b) =>
+    /new project/i.test(b.textContent ?? ''),
+  ) as HTMLElement
+  act(() => add.click())
+  expect(container.querySelector('h1')?.textContent).toBe('Untitled')
+
+  // The title is in edit mode and still blank. Enter here should abandon the
+  // project, not commit it with an empty name and a blank first row.
+  const title = container.querySelector('h1[contenteditable="true"]') as HTMLElement
+  // jsdom leaves isContentEditable false whatever the attribute says, which
+  // would let the window-level "Enter adds a task" shortcut fire on a keypress
+  // the real browser routes only to the title.
+  Object.defineProperty(title, 'isContentEditable', { value: true })
+  act(() => fireEvent.keyDown(title, { key: 'Enter' }))
+
+  // Back out to the projects list, with no half-made project left behind.
+  expect(container.querySelector('h1')?.textContent).toBe('Projects')
+  expect(container.textContent).not.toContain('Untitled')
+})
+
+test('Enter on an empty row removes it rather than leaving an untitled one', async () => {
+  const { default: Outliner } = await import('./Outliner')
+  const { container } = render(<Outliner initial={seedTree()} />)
+  scopeInto(container, /flat/i)
+
+  // Make a fresh empty row, then press Enter again without typing into it.
+  const first = editRow(container, /Book a carpet clean/)
+  act(() => {
+    fireEvent.change(first, { target: { value: 'Book a carpet clean' } })
+    fireEvent.keyDown(first, { key: 'Enter' })
+  })
+  const blank = container.querySelector('input.label-input') as HTMLInputElement
+  act(() => fireEvent.keyDown(blank, { key: 'Enter' }))
+
+  // The empty row is gone, and no 'Untitled' placeholder was left behind.
+  expect(labels(container)).toEqual([
+    'Email the landlord about the boiler',
+    'Book a carpet clean',
+    'Replace the hallway bulb',
+  ])
+})
