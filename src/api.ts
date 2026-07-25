@@ -3,11 +3,13 @@
  * single source of truth; this app and the MCP are both just clients of it.
  *
  * The app computes mutations locally with the pure ops in shared/tree.ts (so
- * undo/redo and animations stay instant), then persists the whole tree with
- * `putTree`. `getTree` is used to load on start and to notice edits made
- * elsewhere — e.g. by a Claude driving the MCP.
+ * undo/redo and animations stay instant) and sends the *operation* with
+ * `sendOp`, which the server replays against its own tree. Changes made
+ * elsewhere — another tab, or a Claude driving the MCP — arrive over the SSE
+ * stream at EVENTS_URL rather than by polling.
  */
 
+import type { Op } from '@shared/ops'
 import type { Tree } from '@shared/tree'
 
 // Match the API host to the page's own hostname. Chrome treats `localhost` and
@@ -28,25 +30,38 @@ export const ORIGIN = `web-${Math.random().toString(36).slice(2, 10)}`
 
 export const EVENTS_URL = `${BASE}/api/events`
 
-/** Fetch the current tree, or null if the server can't be reached. */
-export async function getTree(): Promise<Tree | null> {
-  try {
-    const res = await fetch(`${BASE}/api/tree`)
-    if (!res.ok) return null
-    const data = (await res.json()) as { tree: Tree }
-    return data.tree
-  } catch {
-    return null
-  }
-}
-
-/** Persist the whole tree. Returns false if the save didn't reach the server. */
+/**
+ * Persist the whole tree. Returns false if the save didn't reach the server.
+ *
+ * Only import and seeding use this now — it overwrites the server's tree
+ * wholesale, so it's the right shape for "replace everything" and the wrong one
+ * for an edit. Ordinary edits go through `sendOp`.
+ */
 export async function putTree(tree: Tree): Promise<boolean> {
   try {
     const res = await fetch(`${BASE}/api/tree`, {
       method: 'PUT',
       headers: { 'content-type': 'application/json', 'x-ansa-origin': ORIGIN },
       body: JSON.stringify({ tree }),
+    })
+    return res.ok
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Send one operation. The server replays it against its current tree, so an op
+ * made against a slightly stale local tree still merges instead of clobbering.
+ * Returns false if it didn't reach the server, matching putTree's contract —
+ * the caller decides whether that's worth retrying.
+ */
+export async function sendOp(op: Op): Promise<boolean> {
+  try {
+    const res = await fetch(`${BASE}/api/ops`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-ansa-origin': ORIGIN },
+      body: JSON.stringify({ op }),
     })
     return res.ok
   } catch {
