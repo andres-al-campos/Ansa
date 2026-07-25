@@ -401,9 +401,8 @@ export default function Outliner({ initial }: { initial: Tree }) {
     return null
   }
 
-  function finishDrag() {
-    const dragging = dragIdRef.current
-    const target = drop
+  /** Drop the drag state without moving anything. */
+  function abortDrag() {
     setDragId(null)
     setDrop(null)
     setGhostAt(null)
@@ -411,6 +410,12 @@ export default function Outliner({ initial }: { initial: Tree }) {
     // after this release so it only guards the click that immediately follows,
     // never a later tap (the click may not even land on the dragged bullet).
     window.setTimeout(() => (justDragged.current = false), 0)
+  }
+
+  function finishDrag() {
+    const dragging = dragIdRef.current
+    const target = drop
+    abortDrag()
 
     if (!dragging || !target || dragging === target.id) return
 
@@ -455,13 +460,18 @@ export default function Outliner({ initial }: { initial: Tree }) {
       setGhostAt((g) => (g ? { ...g, x: e.clientX, y: e.clientY } : g))
     }
     const onUp = () => finishDrag()
+    // A cancel is the system taking the pointer away mid-drag — a second finger
+    // landing, the browser starting its own gesture, the window losing focus.
+    // The user never released over a target, so there's no drop to honour: the
+    // row stays where it was picked up.
+    const onCancel = () => abortDrag()
     window.addEventListener('pointermove', onMove, { passive: false })
     window.addEventListener('pointerup', onUp)
-    window.addEventListener('pointercancel', onUp)
+    window.addEventListener('pointercancel', onCancel)
     return () => {
       window.removeEventListener('pointermove', onMove)
       window.removeEventListener('pointerup', onUp)
-      window.removeEventListener('pointercancel', onUp)
+      window.removeEventListener('pointercancel', onCancel)
     }
     // finishDrag/hitTest read from refs, so this only needs to re-bind per drag.
     // eslint-disable-next-line react-hooks/exhaustive-deps
