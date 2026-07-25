@@ -620,12 +620,23 @@ export default function Outliner({ initial }: { initial: Tree }) {
     // creates the same node rather than one of its own with a different id.
     const childId = newId()
     const at = Date.now()
-    const { tree: next } = addChild(renamed, parentId, '', childId, at)
-    setTree(
-      next,
+    const { tree: added } = addChild(renamed, parentId, '', childId, at)
+    const ops: Op[] = [
       trimmed ? { op: 'setText', id, text: trimmed } : { op: 'removeNode', id },
       { op: 'addChild', id: childId, parentId, text: '', at },
-    )
+    ]
+    // addChild appends, which drops the new row at the bottom of the list — far
+    // from the caret when you pressed Enter halfway up a tree. Slot it directly
+    // after the current row instead. When that row was just removed for being
+    // empty it's no longer among the siblings, and appending is already right.
+    const siblings = childrenOf(added, parentId)
+    const index = siblings.findIndex((n) => n.id === id)
+    let next = added
+    if (index !== -1 && index + 1 !== siblings.length - 1) {
+      next = moveNode(added, childId, parentId, index + 1)
+      ops.push({ op: 'moveNode', id: childId, parentId, index: index + 1 })
+    }
+    setTree(next, ...ops)
     setEditing(childId)
   }
 
@@ -696,14 +707,27 @@ export default function Outliner({ initial }: { initial: Tree }) {
       commitTitle(id, text)
       return
     }
-    const trimmed = text.trim()
-    const named = trimmed ? setText(tree, id, trimmed) : tree
+    // "Untitled" is the placeholder an unnamed project renders, and the
+    // contenteditable hands it back as if it had been typed. Read it as the
+    // empty name it stands for.
+    const typed = text.trim() === 'Untitled' && byId(tree, id)?.text.trim() === '' ? '' : text
+    const trimmed = typed.trim()
+    // Enter on a project that was never named backs out of creating it, the
+    // same as Escape does. Committing here would leave an "Untitled" project
+    // holding one blank row, which is nobody's intent.
+    if (!trimmed) {
+      cancelTitle(id)
+      return
+    }
+    const named = setText(tree, id, trimmed)
     const childId = newId()
     const at = Date.now()
     const { tree: next } = addChild(named, id, '', childId, at)
-    const ops: Op[] = trimmed ? [{ op: 'setText', id, text: trimmed }] : []
-    ops.push({ op: 'addChild', id: childId, parentId: id, text: '', at })
-    setTree(next, ...ops)
+    setTree(
+      next,
+      { op: 'setText', id, text: trimmed },
+      { op: 'addChild', id: childId, parentId: id, text: '', at },
+    )
     setEditing(childId)
   }
 
