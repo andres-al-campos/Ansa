@@ -38,6 +38,13 @@ const ROW_PAD = 6
 const INDENT = 24
 const GUIDE_X0 = 32
 
+// Telling a click on a bullet apart from a drag of it. DRAG_SLOP is how far the
+// pointer may wander and still count as a click; past it, a mouse is dragging.
+// DRAG_HOLD is the fallback for pressing without moving, and has to sit clear of
+// how long a real click lasts (~80-150ms) or clicks arm drags by accident.
+const DRAG_SLOP = 5
+const DRAG_HOLD = 250
+
 // Completion worm: each row wiggles for WORM_RUN, offset from the previous by
 // WORM_STAGGER. On long waves the stagger tightens so the whole sweep clears
 // within WORM_CAP instead of crawling — same little wave, just faster.
@@ -219,7 +226,10 @@ export default function Outliner({ initial }: { initial: Tree }) {
   const [dragId, setDragId] = useState<NodeId | null>(null)
   const [drop, setDrop] = useState<DropTarget | null>(null)
   // Pointer position, so the drag "card" can follow it. null when not dragging.
-  const [ghostAt, setGhostAt] = useState<{ x: number; y: number } | null>(null)
+  // Where the ghost card sits, and the indent of the row it was lifted from.
+  // Depth travels with the position so the card can never paint a frame at the
+  // previous drag's indent — the two are only ever set together.
+  const [ghostAt, setGhostAt] = useState<{ x: number; y: number; depth: number } | null>(null)
   // The long-press timer, and where the finger first went down, so a small
   // move cancels the press (a tap-to-zoom) but a held press starts a drag.
   const press = useRef<{ id: NodeId; x: number; y: number; timer: number } | null>(null)
@@ -441,7 +451,8 @@ export default function Outliner({ initial }: { initial: Tree }) {
     const onMove = (e: PointerEvent) => {
       e.preventDefault()
       setDrop(hitTest(e.clientX, e.clientY))
-      setGhostAt({ x: e.clientX, y: e.clientY })
+      // Keep the depth from when the row was picked up; only the position moves.
+      setGhostAt((g) => (g ? { ...g, x: e.clientX, y: e.clientY } : g))
     }
     const onUp = () => finishDrag()
     window.addEventListener('pointermove', onMove, { passive: false })
@@ -456,29 +467,52 @@ export default function Outliner({ initial }: { initial: Tree }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dragId, drop])
 
-  // Bullet pointerdown: arm the drag on a short hold. A quick press-and-release
-  // beats the timer and stays a click (zoom in); a move beyond a few px before it
-  // fires cancels it (that was a scroll). The hold is brief so drag feels
-  // immediate without hijacking the tap.
+  // Bullet pointerdown: decide between a click (zoom into the row) and a drag.
+  //
+  // Movement is the signal. With the button already down, a pointer that has
+  // travelled DRAG_SLOP is dragging — there's nothing else it could be — so the
+  // drag arms immediately, with no wait at all. That's the reordering case, and
+  // it's the fast one.
+  //
+  // The timer is only for picking a row up without moving it. It has to clear
+  // the length of an ordinary click (~80-150ms) or clicks start arming drags,
+  // which is what made the bullets unclickable at 120ms.
+  //
+  // Touch is the exception: a moving finger is usually scrolling the list, not
+  // dragging a row, so there movement cancels and only the hold arms.
   function onBulletPointerDown(e: React.PointerEvent, id: NodeId) {
     if (leafOnly) return // structure isn't shown in the flattened view
     const startX = e.clientX
     const startY = e.clientY
-    const timer = window.setTimeout(() => {
+    const touch = e.pointerType === 'touch'
+
+    const arm = (x: number, y: number) => {
       const p = press.current
+      if (p) window.clearTimeout(p.timer)
       press.current = null
       justDragged.current = true // suppress the zoom-click that ends this press
       setDragId(id)
       setDrop(null)
-      if (p) setGhostAt({ x: p.x, y: p.y })
-    }, 120)
+      setGhostAt({ x, y, depth: rowsRef.current.find((r) => r.id === id)?.depth ?? 0 })
+    }
+
+    const timer = window.setTimeout(() => {
+      const p = press.current
+      if (p) arm(p.x, p.y)
+    }, DRAG_HOLD)
     press.current = { id, x: startX, y: startY, timer }
 
-    const cancelIfMoved = (ev: PointerEvent) => {
-      if (!press.current) return
-      if (Math.abs(ev.clientX - press.current.x) > 6 || Math.abs(ev.clientY - press.current.y) > 6) {
-        window.clearTimeout(press.current.timer)
+    const onMoved = (ev: PointerEvent) => {
+      const p = press.current
+      if (!p) return
+      if (Math.abs(ev.clientX - p.x) <= DRAG_SLOP && Math.abs(ev.clientY - p.y) <= DRAG_SLOP) return
+      // Past the slop radius. On a mouse or pen that means drag; on touch it
+      // means the list is being scrolled, so give up on the press instead.
+      if (touch) {
+        window.clearTimeout(p.timer)
         press.current = null
+      } else {
+        arm(ev.clientX, ev.clientY)
       }
     }
     const cleanup = () => {
@@ -486,10 +520,10 @@ export default function Outliner({ initial }: { initial: Tree }) {
         window.clearTimeout(press.current.timer)
         press.current = null
       }
-      window.removeEventListener('pointermove', cancelIfMoved)
+      window.removeEventListener('pointermove', onMoved)
       window.removeEventListener('pointerup', cleanup)
     }
-    window.addEventListener('pointermove', cancelIfMoved)
+    window.addEventListener('pointermove', onMoved)
     window.addEventListener('pointerup', cleanup)
   }
 
@@ -1369,7 +1403,14 @@ export default function Outliner({ initial }: { initial: Tree }) {
       {dragNode && ghostAt && (
         <div
           className="drag-ghost"
-          style={{ left: ghostAt.x + 12, top: ghostAt.y + 8 } as React.CSSProperties}
+          // Carry the indent the row had when it was picked up, so the card sits
+          // where the row sat instead of flush against the pointer.
+          style={
+            {
+              left: ghostAt.x + 12 + ghostAt.depth * INDENT,
+              top: ghostAt.y + 8,
+            } as React.CSSProperties
+          }
           aria-hidden
         >
           <span className={'bullet ' + (isLeaf(tree, dragNode.id) ? 'leaf' : 'parent')} />
