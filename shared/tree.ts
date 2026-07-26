@@ -449,7 +449,11 @@ export function insertAtDepth(
   const kids = childrenOf(tree, newParentId).filter((n) => n.id !== dragging)
   let index: number
   if (nestUnderAnchor) {
-    index = kids.length
+    // The gap that produced this drop sits directly *under* the anchor row, so
+    // the row lands at the top of its children — that's where the indicator was
+    // drawn. Appending would drop it past every existing child, somewhere the
+    // pointer never was, which reads as the row jumping on release.
+    index = 0
   } else {
     const onPath = chain[depth].id
     const pos = kids.findIndex((n) => n.id === onPath)

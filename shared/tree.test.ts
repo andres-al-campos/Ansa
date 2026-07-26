@@ -446,6 +446,21 @@ describe('insertAtDepth', () => {
     expect(childrenOf(t, 'gather').map((n) => n.id)).toEqual(['g1', 'f1', 'g2', 'g3'])
   })
 
+  it('nesting under an anchor that already has children lands first, not last', () => {
+    // The gap sits directly under `gather`, so the drop is visually just above
+    // g1 — the indicator draws there. Appending after g3 instead would put the
+    // row somewhere the pointer never was.
+    const t = insertAtDepth(fixture(), 'f1', 'gather', 1, 'after', 'taxes')
+    expect(childrenOf(t, 'gather').map((n) => n.id)).toEqual(['f1', 'g1', 'g2', 'g3'])
+  })
+
+  it('nesting under a collapsed anchor still lands first', () => {
+    // A collapsed parent hides its children, so there is no visible gap between
+    // them to aim at; first is the only position the gap can mean.
+    const t = insertAtDepth(fixture(), 'f2', 'p2b', 3, 'after', 'taxes')
+    expect(childrenOf(t, 'p2b').map((n) => n.id)).toEqual(['f2', 'p2b1', 'p2b2'])
+  })
+
   it('handles a null scope (root-level list)', () => {
     // No scope: chain is the whole lineage. Anchor g2 → [taxes(0), gather(1), g2(2)].
     // Depth 0 drops beside taxes among the roots.
