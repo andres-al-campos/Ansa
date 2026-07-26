@@ -1404,28 +1404,38 @@ export default function Outliner({ initial }: { initial: Tree }) {
                     <span key={d} className="guide" style={{ left: GUIDE_X0 + d * INDENT }} aria-hidden />
                   ))}
 
+                {/* The bullet folds the row and shows whether it's folded — one
+                    object for the state and the control that changes it. A leaf
+                    has nothing to fold, so its bullet is inert; zooming lives on
+                    the row's own control at the far right. */}
                 <button
-                  className={'twisty' + (parent && !flat ? (node.collapsed ? '' : ' open') : ' hidden')}
-                  onClick={() => setPresent(toggleCollapsed(tree, id), { op: 'toggleCollapsed', id })}
-                  aria-label={node.collapsed ? 'Expand' : 'Collapse'}
-                  tabIndex={parent && !flat ? 0 : -1}
-                >
-                  ▶
-                </button>
-
-                <button
-                  className={'bullet ' + (bulletParent ? 'parent' : 'leaf')}
+                  className={
+                    'bullet ' +
+                    (bulletParent ? 'parent' : 'leaf') +
+                    (node.collapsed && bulletParent && !flat ? ' collapsed' : '')
+                  }
                   onPointerDown={flat ? undefined : (e) => onBulletPointerDown(e, id)}
                   onClick={() => {
-                    // A press that became a drag must not also zoom.
+                    // A press that became a drag must not also fold the row.
                     if (justDragged.current) {
                       justDragged.current = false
                       return
                     }
-                    setScope(id)
+                    if (!parent || flat) return
+                    setPresent(toggleCollapsed(tree, id), { op: 'toggleCollapsed', id })
                   }}
-                  aria-label={`Zoom into ${node.text}`}
-                  title={flat ? 'Zoom in' : 'Zoom in — or hold to drag'}
+                  aria-expanded={parent && !flat ? !node.collapsed : undefined}
+                  aria-label={parent && !flat ? (node.collapsed ? 'Expand' : 'Collapse') : undefined}
+                  tabIndex={parent && !flat ? 0 : -1}
+                  title={
+                    parent && !flat
+                      ? node.collapsed
+                        ? 'Expand — or hold to drag'
+                        : 'Collapse — or hold to drag'
+                      : flat
+                        ? undefined
+                        : 'Hold to drag'
+                  }
                 />
 
                 <button
@@ -1491,6 +1501,14 @@ export default function Outliner({ initial }: { initial: Tree }) {
                     </div>
                   )}
                 </div>
+
+                {/* Zoom in. On row hover rather than always-on: it's the rare,
+                    deliberate action, and it carries no state that needs to be
+                    readable at rest. '›' is the descend-a-hierarchy convention
+                    (Finder columns, Notion), which is what zooming here is. */}
+                <button className="zoom" onClick={() => setScope(id)} aria-label={`Zoom into ${node.text}`} title="Zoom in">
+                  ›
+                </button>
               </div>
             )
           })}

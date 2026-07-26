@@ -49,10 +49,10 @@ function editRow(container: HTMLElement, text: RegExp): HTMLInputElement {
   return container.querySelector('input.label-input') as HTMLInputElement
 }
 
-/** Fold a row by clicking its collapse caret. */
+/** Fold a row by clicking its bullet, which is the collapse control. */
 function collapse(container: HTMLElement, text: RegExp) {
-  const caret = row(container, text).querySelector('.twisty') as HTMLElement
-  act(() => caret.click())
+  const bullet = row(container, text).querySelector('button.bullet') as HTMLElement
+  act(() => bullet.click())
 }
 
 test('Tab into a collapsed sibling keeps the row on screen', () => {

@@ -12,6 +12,9 @@
   --bullet-dot: #8a93a3;
   --bullet-ring-hover: #b7bfca;
   --bullet-dot-hover: #6c7686;
+  /* A collapsed row's halo: the same ring, weighted enough to read while
+   * scanning a long list rather than only when you look straight at it. */
+  --bullet-halo: #aab3c0;
   --ink: #181d28;
   --ink-mid: #525a69;
   --ink-faint: #8a93a3;
@@ -41,6 +44,9 @@
     --bullet-dot: #7c8698;
     --bullet-ring-hover: #545d6e;
     --bullet-dot-hover: #9aa4b5;
+    /* Light mode darkens the halo to gain weight; here the ring is already the
+     * dim end, so it has to brighten instead to read as "more underneath". */
+    --bullet-halo: #6b7688;
     --ink: #e7eaf0;
     --ink-mid: #98a1b0;
     --ink-faint: #6a7382;
@@ -532,47 +538,29 @@ button { font: inherit; color: inherit; }
   text-overflow: ellipsis;
 }
 
-.twisty {
-  width: 11px;
+/* Zoom into a row: revealed on row hover, at the far right so it's clear of the
+ * bullet and the nesting guides. Deliberately hover-only — zooming is the rare,
+ * deliberate action, and an indicator that must persist has no business here.
+ * The glyph is small; the button around it is the real target. */
+.zoom {
   flex: none;
+  margin-left: auto;
+  align-self: center;
   background: none;
   border: none;
-  padding: 0;
+  padding: 2px 5px;
+  border-radius: 5px;
   cursor: pointer;
   color: var(--ink-ghost);
-  font-size: 9px;
-  line-height: 2.2;
-  transition: transform 0.15s ease;
-  /* Sit above the nesting guides so the triangle knocks the line out behind
-     it rather than floating on top of it. Nudged 4px left so the triangle's
-     centre lands on the guide it's covering, not just beside it. */
-  position: relative;
-  left: -4px;
-  z-index: 1;
+  font-size: 14px;
+  line-height: 1;
+  opacity: 0;
+  transition: opacity 0.12s ease, color 0.12s ease, background 0.12s ease;
 }
-/* The knockout chip: a slug of row-coloured background centred on the twisty,
-   so a guide line passing under it is cleanly interrupted. Only needed when
-   the row is hovered — that's the only time both the guides and the triangle
-   are visible, and the row background is --sunk then. */
-.row:hover .twisty::before {
-  content: '';
-  position: absolute;
-  top: 2px;
-  bottom: 2px;
-  left: -3px;
-  right: -3px;
-  background: var(--sunk);
-  z-index: -1;
-}
-.twisty:hover { color: var(--ink); }
-.twisty.hidden { visibility: hidden; }
-.twisty.open { transform: rotate(90deg); }
-/* The triangle is quiet until you need it: hidden at rest, shown when the row
- * is hovered — except a collapsed row keeps it, so you can see there's more
- * folded underneath. */
-.twisty:not(.hidden) { opacity: 0; transition: opacity 0.12s ease, transform 0.15s ease; }
-.row:hover .twisty:not(.hidden),
-.row.collapsed .twisty:not(.hidden) { opacity: 1; }
+.row:hover .zoom { opacity: 1; }
+.zoom:hover { color: var(--ink); background: var(--edge-soft); }
+/* Keyboard focus must not depend on a hover that never comes. */
+.zoom:focus-visible { opacity: 1; }
 
 /* Vertical nesting guides, one per ancestor level, aligned under each parent
  * bullet. Calm but readable at rest; the segments on the hovered row's lineage
@@ -624,6 +612,19 @@ body:has(.row.gap-slot) { cursor: default; }
 /* Hover lifts ring and dot a neutral notch — no brand tint on a structural mark. */
 .bullet:hover::before { background: var(--bullet-ring-hover); }
 .bullet:hover::after { background: var(--bullet-dot-hover); }
+
+/* Collapsed: the ring thickens into a halo. The ring already means "has
+ * children", so weighting it is the second bit — "and they're hidden" — on the
+ * mark you're already reading. This is the convention Workflowy and Logseq both
+ * landed on, and putting it on the bullet means the indicator and the control
+ * that toggles it are the same object, rather than a signal that hides a
+ * separate hover-only arrow behind itself. */
+.bullet.collapsed::before { background: var(--bullet-halo); }
+.bullet.collapsed::after { inset: 5.5px; }
+/* A leaf has nothing to fold, so its bullet is inert — no pointer, no hover
+ * lift. The row's zoom control is still there for going into it. */
+.bullet.leaf { cursor: default; }
+.bullet.leaf:hover::after { background: var(--bullet-dot); }
 
 .check {
   width: 15px;
