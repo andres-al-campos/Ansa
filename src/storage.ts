@@ -1,8 +1,12 @@
 /**
  * Persistence: the whole tree lives in one localStorage key as JSON, and the
- * same JSON is what export/import hands around. There's no server and no
- * schema migration story yet, so loading is defensive — a blob that isn't a
- * valid tree is ignored rather than allowed to crash the app on boot.
+ * same JSON is what export/import hands around.
+ *
+ * The server owns the tree now (see api.ts); this is the offline cache and the
+ * boot value, so the app draws something before the first SSE frame lands. It's
+ * whatever this browser last saw, not the truth — the server's tree replaces it
+ * on connect. There's no schema migration story yet, so loading is defensive: a
+ * blob that isn't a valid tree is ignored rather than allowed to crash the app.
  */
 
 import type { Node, Tree } from '@shared/tree'
