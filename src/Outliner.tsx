@@ -626,21 +626,40 @@ export default function Outliner({ initial }: { initial: Tree }) {
     }
   }
 
+  /**
+   * Stop editing `id` — but only if it's still the row being edited.
+   *
+   * A late blur must never close a row that something else has since opened.
+   * Today the input is keyed by node id, so handing editing to a *new* row
+   * unmounts the old input and its blur never fires; this guard is belt to that
+   * braces, and it's the only thing standing if that keying ever changes.
+   * Cheap, and the alternative is losing the row you were just given.
+   */
+  function releaseEdit(id: NodeId) {
+    setEditing((cur) => (cur === id ? null : cur))
+  }
+
+  /**
+   * Whether this blur is the tail end of an edit that was already discarded.
+   *
+   * Escape backs a row out and then the input unmounts, firing one last blur
+   * carrying the text we deliberately threw away. Committing it would resurrect
+   * a removed row, or delete a row whose field was cleared. `cancelEdit` marks
+   * the row; this consumes the mark, so it only ever swallows the one blur.
+   */
+  function wasCancelled(id: NodeId) {
+    if (cancelled.current !== id) return false
+    cancelled.current = null
+    return true
+  }
+
   function commitEdit(id: NodeId, text: string) {
-    // Escape already backed this row out; the blur that follows is just the
-    // input unmounting and carries the text we deliberately threw away.
-    if (cancelled.current === id) {
-      cancelled.current = null
-      setEditing((cur) => (cur === id ? null : cur))
-      return
-    }
     const trimmed = text.trim()
-    // Leaving a row you didn't actually change — clicking away, or blurring
-    // after Alt+Arrow moved it — isn't an edit. Committing it anyway would
-    // charge an undo step for nothing, so the first Cmd+Z after a move would
-    // appear to do nothing at all.
-    if (byId(tree, id)?.text === trimmed) {
-      setEditing((cur) => (cur === id ? null : cur))
+    // Nothing to write: either Escape already discarded this edit, or the text
+    // came back identical. Committing an unchanged row would still cost an undo
+    // step, so the first Cmd+Z after leaving a row would appear to do nothing.
+    if (wasCancelled(id) || byId(tree, id)?.text === trimmed) {
+      releaseEdit(id)
       return
     }
     // An emptied row is a deletion — matches how outliners behave.
@@ -648,9 +667,7 @@ export default function Outliner({ initial }: { initial: Tree }) {
       (prev) => (trimmed ? setText(prev, id, trimmed) : removeNode(prev, id)),
       trimmed ? { op: 'setText', id, text: trimmed } : { op: 'removeNode', id },
     )
-    // Only clear editing if we're still on this row. A blur fired *because*
-    // Enter already moved editing to a fresh sibling must not yank it back.
-    setEditing((cur) => (cur === id ? null : cur))
+    releaseEdit(id)
   }
 
   // Enter while editing: commit the current text and open a fresh empty sibling
@@ -711,7 +728,7 @@ export default function Outliner({ initial }: { initial: Tree }) {
     else if (trimmed !== byId(tree, id)?.text)
       setTree((prev) => setText(prev, id, trimmed), { op: 'setText', id, text: trimmed })
     if (target) setEditing(target.id)
-    else setEditing((cur) => (cur === id ? null : cur))
+    else releaseEdit(id)
   }
 
   // Escape while editing: back out without committing. A row that was never
@@ -719,10 +736,8 @@ export default function Outliner({ initial }: { initial: Tree }) {
   // rather than leave an empty row behind; a row with existing text just stops
   // editing and keeps what was already there.
   function cancelEdit(id: NodeId) {
-    // The input blurs as it unmounts, and that blur would otherwise run
-    // commitEdit with whatever was typed — writing back the very edit Escape
-    // just discarded, or deleting the row outright if the field was cleared.
-    // Mark the row so the farewell blur knows to do nothing.
+    // Mark the row so the blur that follows this unmount is swallowed rather
+    // than committed. See wasCancelled, which consumes the mark.
     cancelled.current = id
     if (byId(tree, id)?.text.trim() === '') setTree(removeNode(tree, id), { op: 'removeNode', id })
     setEditing(null)
