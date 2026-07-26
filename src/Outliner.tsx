@@ -252,6 +252,9 @@ export default function Outliner({ initial }: { initial: Tree }) {
   // Set when a press turns into a drag, so the bullet's click (which fires on
   // release) doesn't also zoom. Cleared by that click.
   const justDragged = useRef(false)
+  // A row Escape just backed out of. Its input blurs as it unmounts, and that
+  // blur must not commit the text Escape deliberately discarded.
+  const cancelled = useRef<NodeId | null>(null)
 
   useEffect(() => () => window.clearTimeout(wormTimer.current), [])
 
@@ -623,6 +626,13 @@ export default function Outliner({ initial }: { initial: Tree }) {
   }
 
   function commitEdit(id: NodeId, text: string) {
+    // Escape already backed this row out; the blur that follows is just the
+    // input unmounting and carries the text we deliberately threw away.
+    if (cancelled.current === id) {
+      cancelled.current = null
+      setEditing((cur) => (cur === id ? null : cur))
+      return
+    }
     const trimmed = text.trim()
     // An emptied row is a deletion — matches how outliners behave.
     setTree(
@@ -700,6 +710,11 @@ export default function Outliner({ initial }: { initial: Tree }) {
   // rather than leave an empty row behind; a row with existing text just stops
   // editing and keeps what was already there.
   function cancelEdit(id: NodeId) {
+    // The input blurs as it unmounts, and that blur would otherwise run
+    // commitEdit with whatever was typed — writing back the very edit Escape
+    // just discarded, or deleting the row outright if the field was cleared.
+    // Mark the row so the farewell blur knows to do nothing.
+    cancelled.current = id
     if (byId(tree, id)?.text.trim() === '') setTree(removeNode(tree, id), { op: 'removeNode', id })
     setEditing(null)
   }
