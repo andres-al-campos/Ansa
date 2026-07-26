@@ -106,7 +106,9 @@ test('Enter on a never-named project backs out instead of leaving an Untitled on
     /new project/i.test(b.textContent ?? ''),
   ) as HTMLElement
   act(() => add.click())
-  expect(container.querySelector('h1')?.textContent).toBe('Untitled')
+  // The title is genuinely empty while being edited — "Untitled" is drawn by
+  // CSS, so it can't be mistaken for a name that was typed.
+  expect(container.querySelector('h1')?.textContent).toBe('')
 
   // The title is in edit mode and still blank. Enter here should abandon the
   // project, not commit it with an empty name and a blank first row.

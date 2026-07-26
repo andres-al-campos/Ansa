@@ -409,6 +409,14 @@ button { font: inherit; color: inherit; }
   outline: none;
   cursor: text;
 }
+/* An unnamed project holds no text while it's being edited, so the "Untitled"
+   placeholder is drawn rather than typed — that's what keeps a project actually
+   named "Untitled" from being mistaken for one nobody named. :empty only
+   matches with no child nodes at all, which is exactly the untouched state. */
+.scope-title.editable[contenteditable='true']:empty::before {
+  content: 'Untitled';
+  color: var(--ink-ghost);
+}
 .scope-meta { font-size: 12px; color: var(--ink-ghost); margin-bottom: 14px; }
 .scope-progress { padding-left: 5px; }
 /* When the meta line carries the breadcrumb, keep the crumb sizing but let it

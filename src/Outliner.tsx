@@ -687,11 +687,18 @@ export default function Outliner({ initial }: { initial: Tree }) {
     setEditing(null)
   }
 
-  // Renaming the scope title. Unlike a row, an emptied title is kept as-is —
-  // clearing a whole project's name shouldn't delete the project.
+  // Renaming the scope title. Clearing an existing project's name keeps the
+  // project — the old name stands rather than the project vanishing under you.
+  // A project that never had a name is different: it only exists because you
+  // just made it, so clicking away from it without typing anything backs out of
+  // creating it, the same as Escape and Enter do.
   function commitTitle(id: NodeId, text: string) {
     const trimmed = text.trim()
     if (trimmed) setTree(setText(tree, id, trimmed), { op: 'setText', id, text: trimmed })
+    else if (byId(tree, id)?.text.trim() === '') {
+      cancelTitle(id)
+      return
+    }
     setEditing(null)
   }
 
@@ -717,11 +724,7 @@ export default function Outliner({ initial }: { initial: Tree }) {
       commitTitle(id, text)
       return
     }
-    // "Untitled" is the placeholder an unnamed project renders, and the
-    // contenteditable hands it back as if it had been typed. Read it as the
-    // empty name it stands for.
-    const typed = text.trim() === 'Untitled' && byId(tree, id)?.text.trim() === '' ? '' : text
-    const trimmed = typed.trim()
+    const trimmed = text.trim()
     // Enter on a project that was never named backs out of creating it, the
     // same as Escape does. Committing here would leave an "Untitled" project
     // holding one blank row, which is nobody's intent.
@@ -1111,15 +1114,21 @@ export default function Outliner({ initial }: { initial: Tree }) {
               e.preventDefault()
               if (scopeNode) {
                 // Restore the display text before backing out, so a blur that
-                // fires on the way can't re-commit the abandoned edit.
-                e.currentTarget.textContent = scopeNode.text || 'Untitled'
+                // fires on the way can't re-commit the abandoned edit. An
+                // unnamed project restores to empty, not to the placeholder.
+                e.currentTarget.textContent = scopeNode.text
                 cancelTitle(scopeNode.id)
               }
             }
           }}
           title={scopeNode ? 'Click to rename' : undefined}
         >
-          {scopeNode ? scopeNode.text || 'Untitled' : 'Projects'}
+          {/* While editing, an unnamed project renders as genuinely empty. If
+              the "Untitled" placeholder were the editable text, committing
+              couldn't tell a name nobody typed from one somebody did — and a
+              project you meant to call Untitled would be thrown away. The
+              placeholder comes from CSS instead, so it's never in the text. */}
+          {scopeNode ? (editing === scopeNode.id ? scopeNode.text : scopeNode.text || 'Untitled') : 'Projects'}
         </h1>
 
         {scope === null ? null : (
