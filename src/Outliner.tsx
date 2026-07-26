@@ -797,8 +797,20 @@ export default function Outliner({ initial }: { initial: Tree }) {
       const parent = node ? byId(withText, node.parentId ?? '') : undefined
       structural = parent && parent.parentId === null ? { op: 'adoptFollowing', id } : { op: 'outdent', id }
     }
-    const { tree: next } = applyOp(withText, structural)
-    setTree(next, { op: 'setText', id, text: trimmed }, structural)
+    const { tree: moved } = applyOp(withText, structural)
+    const ops: Op[] = [{ op: 'setText', id, text: trimmed }, structural]
+    // Tab nests the row under the sibling above it. If that sibling is folded,
+    // the row lands inside a closed subtree and drops off screen — it looks
+    // deleted. Unfold the new parent so the row is still where you left it.
+    // The drag-and-drop path does the same on a drop-into.
+    let next = moved
+    const parentId = byId(moved, id)?.parentId
+    const parent = parentId ? byId(moved, parentId) : undefined
+    if (parent?.collapsed) {
+      next = toggleCollapsed(moved, parent.id)
+      ops.push({ op: 'toggleCollapsed', id: parent.id })
+    }
+    setTree(next, ...ops)
   }
 
   function addSibling(afterId: NodeId | null) {
