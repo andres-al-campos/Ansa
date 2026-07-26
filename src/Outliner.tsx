@@ -635,6 +635,14 @@ export default function Outliner({ initial }: { initial: Tree }) {
       return
     }
     const trimmed = text.trim()
+    // Leaving a row you didn't actually change — clicking away, or blurring
+    // after Alt+Arrow moved it — isn't an edit. Committing it anyway would
+    // charge an undo step for nothing, so the first Cmd+Z after a move would
+    // appear to do nothing at all.
+    if (byId(tree, id)?.text === trimmed) {
+      setEditing((cur) => (cur === id ? null : cur))
+      return
+    }
     // An emptied row is a deletion — matches how outliners behave.
     setTree(
       (prev) => (trimmed ? setText(prev, id, trimmed) : removeNode(prev, id)),
