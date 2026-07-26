@@ -543,6 +543,23 @@ export default function Outliner({ initial }: { initial: Tree }) {
     if (scope && !byId(tree, scope)) setScope(null)
   }, [tree, scope])
 
+  // Leaving a project that was never named and never filled in. "+ New project"
+  // creates the node up front so there's something to scope into and type over,
+  // which means navigating away — the wordmark, a sidebar project, a crumb —
+  // would otherwise strand an empty "Untitled" you never meant to keep. Only a
+  // project with no name *and* no children is swept: anything you actually put
+  // in stays, named or not.
+  const lastScope = useRef(scope)
+  useEffect(() => {
+    const left = lastScope.current
+    lastScope.current = scope
+    if (left === null || left === scope) return
+    const node = byId(tree, left)
+    if (!node || node.parentId !== null) return
+    if (node.text.trim() !== '' || childrenOf(tree, left).length > 0) return
+    setTree(removeNode(tree, left), { op: 'removeNode', id: left })
+  }, [scope, tree])
+
   const rows = useMemo(
     () => visibleRows(tree, scope, leafOnly, hideDone, dragId),
     [tree, scope, leafOnly, hideDone, dragId],
