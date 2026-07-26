@@ -398,6 +398,61 @@ export function adoptFollowing(tree: Tree, id: NodeId): Tree {
 }
 
 /**
+ * Move a row one line up or down the visible list, the way dragging it would —
+ * crossing into and out of other parents rather than stopping at the ends of
+ * its own sibling list.
+ *
+ * `order` is the flattened visible rows (ids, outermost first), which the caller
+ * already computes for rendering. Passing it in keeps this function honest about
+ * what "one row" means: it's one row *as displayed*, so a folded subtree counts
+ * as the single line it draws, and hidden rows are never landed on.
+ *
+ * The row carries its own subtree, so the destination is found by stepping over
+ * that subtree rather than into it. Landing next to a row means becoming its
+ * sibling, except when moving down onto a parent that is open — there the next
+ * visible line is that parent's first child, so the row goes inside it.
+ *
+ * Returns the tree unchanged at either end of the list.
+ */
+export function moveRow(
+  tree: Tree,
+  id: NodeId,
+  dir: 'up' | 'down',
+  order: NodeId[],
+): Tree {
+  const node = byId(tree, id)
+  if (!node) return tree
+  const i = order.indexOf(id)
+  if (i < 0) return tree
+
+  const own = new Set(subtreeOf(tree, id).map((n) => n.id))
+  if (dir === 'up') {
+    // The nearest visible row above that isn't part of what we're carrying.
+    let j = i - 1
+    while (j >= 0 && own.has(order[j])) j--
+    if (j < 0) return tree
+    const target = byId(tree, order[j])
+    if (!target) return tree
+    // Land directly above that row, as its sibling.
+    const sibs = childrenOf(tree, target.parentId).filter((n) => n.id !== id)
+    return moveNode(tree, id, target.parentId, sibs.findIndex((n) => n.id === target.id))
+  }
+
+  // Moving down: skip our own subtree to find the next real row.
+  let j = i + 1
+  while (j < order.length && own.has(order[j])) j++
+  if (j >= order.length) return tree
+  const target = byId(tree, order[j])
+  if (!target) return tree
+  // An open parent's next visible line is its first child, so stepping down
+  // onto it means stepping *into* it.
+  const opensBelow = !target.collapsed && childrenOf(tree, target.id).length > 0
+  if (opensBelow) return moveNode(tree, id, target.id, 0)
+  const sibs = childrenOf(tree, target.parentId).filter((n) => n.id !== id)
+  return moveNode(tree, id, target.parentId, sibs.findIndex((n) => n.id === target.id) + 1)
+}
+
+/**
  * The indent level a drop lands at, given the pointer's X and the rows framing
  * the gap. The pointer's horizontal position picks the level: rounding to the
  * nearest nesting guide. It's clamped so you can nest at most one level deeper

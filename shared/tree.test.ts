@@ -12,6 +12,7 @@ import {
   leavesUnder,
   lineageOf,
   moveNode,
+  moveRow,
   outdent,
   progressOf,
   removeNode,
@@ -466,5 +467,62 @@ describe('insertAtDepth', () => {
     // Depth 0 drops beside taxes among the roots.
     const t = insertAtDepth(fixture(), 'f1', 'g2', 0, 'after', null)
     expect(roots(t).map((n) => n.id)).toEqual(['taxes', 'f1', 'flat'])
+  })
+})
+
+describe('moveRow', () => {
+  /** The visible row order, the way the app flattens the tree to render it. */
+  function order(t: Tree, parentId: string | null = null): string[] {
+    const out: string[] = []
+    for (const child of childrenOf(t, parentId)) {
+      out.push(child.id)
+      if (!child.collapsed) out.push(...order(t, child.id))
+    }
+    return out
+  }
+
+  it('moves a row down past a plain sibling', () => {
+    const t = moveRow(fixture(), 'g1', 'down', order(fixture()))
+    expect(childrenOf(t, 'gather').map((n) => n.id)).toEqual(['g2', 'g1', 'g3'])
+  })
+
+  it('moves a row up past a plain sibling', () => {
+    const t = moveRow(fixture(), 'g3', 'up', order(fixture()))
+    expect(childrenOf(t, 'gather').map((n) => n.id)).toEqual(['g1', 'g3', 'g2'])
+  })
+
+  it('crosses out of its parent when it runs off the top', () => {
+    // g1 is first under gather; the visible row above is gather itself, so it
+    // lands beside gather rather than stopping dead.
+    const t = moveRow(fixture(), 'g1', 'up', order(fixture()))
+    expect(childrenOf(t, 'taxes').map((n) => n.id)).toEqual(['g1', 'gather', 'forms'])
+  })
+
+  it('crosses out of its parent when it runs off the bottom', () => {
+    // g3 is last under gather; the next visible row is forms, and forms is an
+    // open parent, so g3 steps inside it.
+    const t = moveRow(fixture(), 'g3', 'down', order(fixture()))
+    expect(childrenOf(t, 'forms').map((n) => n.id)).toEqual(['g3', 'p1', 'p2'])
+  })
+
+  it('steps over a folded parent rather than into it', () => {
+    const base = fixture().map((n) => (n.id === 'forms' ? { ...n, collapsed: true } : n))
+    const t = moveRow(base, 'g3', 'down', order(base))
+    expect(childrenOf(t, 'taxes').map((n) => n.id)).toEqual(['gather', 'forms', 'g3'])
+    expect(childrenOf(t, 'forms').map((n) => n.id)).toEqual(['p1', 'p2'])
+  })
+
+  it('carries its own subtree, stepping over it rather than into it', () => {
+    // gather moving down must clear g1..g3 and land beside forms, not inside
+    // its own children.
+    const t = moveRow(fixture(), 'gather', 'down', order(fixture()))
+    expect(childrenOf(t, 'forms').map((n) => n.id)).toEqual(['gather', 'p1', 'p2'])
+    expect(childrenOf(t, 'gather').map((n) => n.id)).toEqual(['g1', 'g2', 'g3'])
+  })
+
+  it('does nothing at the very top or the very bottom', () => {
+    const base = fixture()
+    expect(moveRow(base, 'taxes', 'up', order(base))).toEqual(base)
+    expect(moveRow(base, 'f2', 'down', order(base))).toEqual(base)
   })
 })
