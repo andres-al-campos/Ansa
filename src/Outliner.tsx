@@ -15,6 +15,7 @@ import {
   lineageOf,
   markOpened,
   moveNode,
+  moveRow,
   newId,
   progressOf,
   projectList,
@@ -822,34 +823,27 @@ export default function Outliner({ initial }: { initial: Tree }) {
     setEditing(id)
   }
 
-  // Alt+Up/Down: shuffle a row one place among its own siblings. moveNode indexes
-  // into the sibling list with the row itself removed, so 'up' inserts at i-1 and
-  // 'down' at i+1; at either end it's a no-op. Returns the reordered tree (or the
-  // input unchanged) so callers can fold it into a larger update.
-  function shuffleSibling(t: Tree, id: NodeId, dir: 'up' | 'down'): Tree {
-    const node = byId(t, id)
-    if (!node) return t
-    const siblings = childrenOf(t, node.parentId)
-    const i = siblings.findIndex((s) => s.id === id)
-    const to = dir === 'up' ? i - 1 : i + 1
-    if (to < 0 || to >= siblings.length) return t
-    return moveNode(t, id, node.parentId, to)
-  }
-
-  // Commit the live input text, then reorder, in one tree so neither is lost.
-  // shuffleSibling works out the destination slot internally; the op needs that
-  // same index, so resolve it here and send an explicit move.
+  // Alt+Up/Down: commit the live input text, then move the row one line through
+  // the visible list — the same path dragging it with the mouse would take, in
+  // and out of other parents rather than stopping at the ends of its own sibling
+  // list. Both happen in one tree so neither is lost.
+  //
+  // moveRow needs the visible order because "one row" means one row *as drawn*:
+  // a folded subtree is a single line, and hidden rows are never landed on. The
+  // resulting move is read back off the tree so the server replays the same
+  // destination without needing to know anything about what's on screen.
   function reorderWithText(id: NodeId, text: string, dir: 'up' | 'down') {
     const trimmed = text.trim()
     const withText = setText(tree, id, trimmed)
-    const node = byId(withText, id)
-    if (!node) return
-    const siblings = childrenOf(withText, node.parentId)
-    const to = siblings.findIndex((s) => s.id === id) + (dir === 'up' ? -1 : 1)
     const ops: Op[] = [{ op: 'setText', id, text: trimmed }]
-    // At either end there's nowhere to go — commit the text and stop.
-    if (to >= 0 && to < siblings.length) ops.push({ op: 'moveNode', id, parentId: node.parentId, index: to })
-    setTree(shuffleSibling(withText, id, dir), ...ops)
+    const next = moveRow(withText, id, dir, rowsRef.current.map((r) => r.id))
+    const moved = byId(next, id)
+    // At either end of the list there's nowhere to go — commit the text and stop.
+    if (moved && next !== withText) {
+      const index = childrenOf(next, moved.parentId).findIndex((n) => n.id === id)
+      ops.push({ op: 'moveNode', id, parentId: moved.parentId, index })
+    }
+    setTree(next, ...ops)
   }
 
   // Start a new project: a fresh root, scoped into and put straight into edit
