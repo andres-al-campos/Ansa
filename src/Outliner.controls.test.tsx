@@ -126,6 +126,20 @@ test('a leaf still offers zoom, so nothing is unreachable', () => {
   expect(crumbs(container)).toContain('Dig out the P60')
 })
 
+test('a collapsed parent bullet is marked so the halo rule can reach it', () => {
+  const { container } = render(<Outliner initial={seedTree()} />)
+  scopeInto(container, /tax/i)
+
+  const bullet = row(container, /Gather the documents/).querySelector('button.bullet')!
+  click(bullet)
+
+  // The halo selector is `.bullet.parent.collapsed`, and it once lost a
+  // specificity fight with `.bullet.parent` and rendered no differently at all.
+  // jsdom won't tell us the pixels, so pin the hook the rule depends on.
+  expect(bullet.classList.contains('parent')).toBe(true)
+  expect(bullet.classList.contains('collapsed')).toBe(true)
+})
+
 test('the twisty is gone — the bullet is the only fold control', () => {
   const { container } = render(<Outliner initial={seedTree()} />)
   scopeInto(container, /tax/i)

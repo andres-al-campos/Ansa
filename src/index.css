@@ -538,6 +538,15 @@ button { font: inherit; color: inherit; }
   text-overflow: ellipsis;
 }
 
+/* Where the twisty used to be. Empty now, and kept that way on purpose: the
+ * space is what holds the bullet clear of the text and keeps the rows from
+ * crowding each other. It's also what GUIDE_X0 is measured against, so the
+ * nesting guides land under the bullets rather than beside them. */
+.gutter {
+  width: 11px;
+  flex: none;
+}
+
 /* Zoom into a row: revealed on row hover, at the far right so it's clear of the
  * bullet and the nesting guides. Deliberately hover-only — zooming is the rare,
  * deliberate action, and an indicator that must persist has no business here.
@@ -613,14 +622,24 @@ body:has(.row.gap-slot) { cursor: default; }
 .bullet:hover::before { background: var(--bullet-ring-hover); }
 .bullet:hover::after { background: var(--bullet-dot-hover); }
 
-/* Collapsed: the ring thickens into a halo. The ring already means "has
- * children", so weighting it is the second bit — "and they're hidden" — on the
- * mark you're already reading. This is the convention Workflowy and Logseq both
- * landed on, and putting it on the bullet means the indicator and the control
- * that toggles it are the same object, rather than a signal that hides a
- * separate hover-only arrow behind itself. */
-.bullet.collapsed::before { background: var(--bullet-halo); }
-.bullet.collapsed::after { inset: 5.5px; }
+/* Collapsed: the halo grows past the ring rather than just tinting it.
+ *
+ * Deliberately a change of *size and weight*, not of colour. A darker grey is
+ * the first thing to disappear on a dark background, at low contrast, or to a
+ * colourblind reader — and this mark carries real information ("there's more
+ * folded under here"), so it can't depend on hue landing correctly. Scaling the
+ * ring past the bullet's own bounds reads at a glance and keeps reading when
+ * the colour doesn't.
+ *
+ * The indicator and the control that toggles it are the same object, which is
+ * the convention Workflowy and Logseq both landed on. */
+.bullet.parent.collapsed::before {
+  background: var(--bullet-halo);
+  inset: -3px;
+}
+/* Keep the dot the size it always was — the halo is the change, and shrinking
+ * the dot underneath it would just make the whole mark mushier. */
+.bullet.parent.collapsed::after { inset: 5px; }
 /* A leaf has nothing to fold, so its bullet is inert — no pointer, no hover
  * lift. The row's zoom control is still there for going into it. */
 .bullet.leaf { cursor: default; }

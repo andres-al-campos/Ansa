@@ -1404,6 +1404,12 @@ export default function Outliner({ initial }: { initial: Tree }) {
                     <span key={d} className="guide" style={{ left: GUIDE_X0 + d * INDENT }} aria-hidden />
                   ))}
 
+                {/* The twisty's old slot, kept empty. Nothing goes here now, but
+                    the space still earns its place: it keeps the bullet off the
+                    text and the rows breathing, and it's what GUIDE_X0 measures
+                    from, so the guides stay under the bullets they belong to. */}
+                {!flat && <span className="gutter" aria-hidden />}
+
                 {/* The bullet folds the row and shows whether it's folded — one
                     object for the state and the control that changes it. A leaf
                     has nothing to fold, so its bullet is inert; zooming lives on
