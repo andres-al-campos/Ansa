@@ -49,10 +49,10 @@ function editRow(container: HTMLElement, text: RegExp): HTMLInputElement {
   return container.querySelector('input.label-input') as HTMLInputElement
 }
 
-/** Fold a row by clicking its bullet, which is the collapse control. */
+/** Fold a row by clicking its triangle. The bullet zooms; the gutter folds. */
 function collapse(container: HTMLElement, text: RegExp) {
-  const bullet = row(container, text).querySelector('button.bullet') as HTMLElement
-  act(() => bullet.click())
+  const fold = row(container, text).querySelector('button.fold') as HTMLElement
+  act(() => fold.click())
 }
 
 test('Tab into a collapsed sibling keeps the row on screen', () => {

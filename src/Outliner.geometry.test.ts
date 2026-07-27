@@ -21,10 +21,18 @@ import { GEOMETRY } from './Outliner'
 
 const css = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'index.css'), 'utf8')
 
-/** The value of one declaration inside the first rule matching `selector`. */
+/**
+ * The value of one declaration inside the first rule matching `selector`.
+ *
+ * The selector may be any member of a comma-separated group — `.zoom` and
+ * `.fold` share one block — so it can be followed by more of the group before
+ * the `{`, or preceded by the members that came before it.
+ */
 function declaration(selector: string, property: string): string {
   const rule = css.match(
-    new RegExp(`^\\${selector}\\s*\\{([^}]*)\\}`, 'm'),
+    // The selector starts a line; `(?:,[^{]*)?` lets the rest of the group —
+    // possibly spanning further lines — follow before the body opens.
+    new RegExp(`^\\${selector}\\s*(?:,[^{]*)?\\{([^}]*)\\}`, 'm'),
   )
   if (!rule) throw new Error(`No CSS rule for "${selector}" — did the selector get renamed?`)
   const decl = rule[1].match(new RegExp(`(?:^|;)\\s*${property}\\s*:\\s*([^;]+)`))
@@ -42,11 +50,12 @@ test('the bullet is drawn at the size GUIDE_X0 was measured against', () => {
   expect(px('.bullet', 'height')).toBe(GEOMETRY.BULLET)
 })
 
-test('the zoom slot and row gap match what the guide offset assumes', () => {
-  // The zoom button *is* the gutter now — it holds the column open left of the
+test('the gutter slot and row gap match what the guide offset assumes', () => {
+  // The gutter button *is* the column — it holds the space open left of the
   // bullet, so its width is a term in GUIDE_X0. Sizing it to its glyph instead
-  // of fixing it here would drag every nesting guide sideways.
-  expect(px('.zoom', 'width')).toBe(GEOMETRY.GUTTER)
+  // of fixing it here would drag every nesting guide sideways. `.zoom` and
+  // `.fold` share the rule; either name landing on a different width breaks it.
+  expect(px('.fold', 'width')).toBe(GEOMETRY.GUTTER)
   expect(px('.row', 'gap')).toBe(GEOMETRY.ROW_GAP)
 })
 

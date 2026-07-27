@@ -148,6 +148,21 @@ function TrashIcon() {
   )
 }
 
+// The fold triangle, pointing right. Rotated 90° by CSS when the row is open.
+//
+// 13px on an odd 13-unit viewBox, so the shape has a true centre pixel to
+// rotate about; an even box would put the pivot on a boundary and shimmer the
+// glyph a half-pixel as it turns. It reads at about the weight of the 15px
+// outlined checkbox despite being smaller, because it is solid and that box is
+// hollow.
+function FoldIcon() {
+  return (
+    <svg viewBox="0 0 13 13" width="13" height="13" aria-hidden focusable="false">
+      <path d="M4.5 2.6 10 6.5l-5.5 3.9z" fill="currentColor" />
+    </svg>
+  )
+}
+
 // Three dots (vertical): the row's overflow menu, holding rename, pin and delete.
 function MoreIcon() {
   return (
@@ -1427,56 +1442,57 @@ export default function Outliner({ initial }: { initial: Tree }) {
                     />
                   ))}
 
-                {/* Zoom in, in the twisty's old slot. Left of the bullet is
-                    where a row's structural controls belong, and it lines up
-                    down the column instead of drifting with the label's width.
-                    Revealed on row hover: zooming is the rare, deliberate
-                    action and carries no state that must be readable at rest.
+                {/* Fold, in the twisty's old slot. Left of the bullet is where a
+                    row's structural controls belong, and it lines up down the
+                    column instead of drifting with the label's width. Revealed
+                    on row hover, because the bullet already carries the folded
+                    state at rest — this is only the control for changing it.
                     The slot is also what GUIDE_X0 measures from, so it keeps
                     its width whether or not the button is showing. */}
                 {!flat && (
                   <button
-                    className="zoom"
-                    onClick={() => setScope(id)}
-                    aria-label={`Zoom into ${node.text}`}
-                    title="Zoom in"
+                    className={'fold' + (parent && !node.collapsed ? ' open' : '')}
+                    onClick={() =>
+                      parent && setPresent(toggleCollapsed(tree, id), { op: 'toggleCollapsed', id })
+                    }
+                    aria-expanded={parent ? !node.collapsed : undefined}
+                    aria-label={parent ? (node.collapsed ? 'Expand' : 'Collapse') : undefined}
+                    tabIndex={parent ? 0 : -1}
+                    title={parent ? (node.collapsed ? 'Expand' : 'Collapse') : undefined}
                   >
-                    ›
+                    {/* A leaf keeps the empty slot — dropping the button would
+                        let the row's contents slide one column left. */}
+                    {parent && <FoldIcon />}
                   </button>
                 )}
 
-                {/* The bullet folds the row and shows whether it's folded — one
-                    object for the state and the control that changes it. A leaf
-                    has nothing to fold, so its bullet is inert; zooming lives on
-                    the row's own control at the far right. */}
+                {/* Clicking the bullet zooms into the row, the arrangement every
+                    other outliner uses. The bullet still *shows* whether the row
+                    is folded, as a ring or a disc — the state and the control
+                    that changes it are simply different objects, since the
+                    triangle in the gutter now owns folding. Holding it drags. */}
                 <button
                   className={
                     'bullet ' +
                     (bulletParent ? 'parent' : 'leaf') +
-                    (node.collapsed && bulletParent && !flat ? ' collapsed' : '')
+                    (node.collapsed && bulletParent && !flat ? ' collapsed' : '') +
+                    // The flattened view has no structure to zoom into or drag
+                    // within, so there the bullet is decoration and says so.
+                    (flat ? ' inert' : '')
                   }
                   onPointerDown={flat ? undefined : (e) => onBulletPointerDown(e, id)}
                   onClick={() => {
-                    // A press that became a drag must not also fold the row.
+                    // A press that became a drag must not also zoom.
                     if (justDragged.current) {
                       justDragged.current = false
                       return
                     }
-                    if (!parent || flat) return
-                    setPresent(toggleCollapsed(tree, id), { op: 'toggleCollapsed', id })
+                    if (flat) return
+                    setScope(id)
                   }}
-                  aria-expanded={parent && !flat ? !node.collapsed : undefined}
-                  aria-label={parent && !flat ? (node.collapsed ? 'Expand' : 'Collapse') : undefined}
-                  tabIndex={parent && !flat ? 0 : -1}
-                  title={
-                    parent && !flat
-                      ? node.collapsed
-                        ? 'Expand — or hold to drag'
-                        : 'Collapse — or hold to drag'
-                      : flat
-                        ? undefined
-                        : 'Hold to drag'
-                  }
+                  aria-label={flat ? undefined : `Zoom into ${node.text}`}
+                  tabIndex={flat ? -1 : 0}
+                  title={flat ? undefined : 'Zoom in — or hold to drag'}
                 />
 
                 <button
@@ -1543,9 +1559,9 @@ export default function Outliner({ initial }: { initial: Tree }) {
                   )}
                 </div>
 
-                {/* The flattened leaf view has no gutter to hold the zoom
-                    control — there's no indent or ancestry column at all — so
-                    there it falls back to the right edge. */}
+                {/* The flattened leaf view has no gutter, and its bullets are
+                    inert — no structure to zoom into or fold — so zoom falls
+                    back to an explicit control at the right edge. */}
                 {flat && (
                   <button
                     className="zoom trailing"

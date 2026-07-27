@@ -555,14 +555,18 @@ button { font: inherit; color: inherit; }
   text-overflow: ellipsis;
 }
 
-/* Zoom into a row: revealed on row hover, in the column left of the bullet
- * where the twisty used to sit. Deliberately hover-only — zooming is the rare,
- * deliberate action, and an indicator that must persist has no business here.
+/* The gutter column, left of the bullet, where the twisty used to sit. Two
+ * buttons share it: `.fold` in the normal tree view, and `.zoom.trailing`'s
+ * sibling `.zoom` in the flattened one. Both are hover-only — the bullet's ring
+ * or disc already carries the folded state at rest, so nothing here has to
+ * persist.
  *
  * The width is fixed rather than padded out to fit the glyph, because this slot
  * is what GUIDE_X0 measures from: letting it size to its content would move
  * every nesting guide. 15px is odd to match the 1px guide, so button and line
- * share a centre. */
+ * share a centre. The 13px triangle inside is centred by the flexbox, so its
+ * own size is free to differ. */
+.fold,
 .zoom {
   flex: none;
   width: 15px;
@@ -596,17 +600,35 @@ button { font: inherit; color: inherit; }
  * runs. So when the chevron appears it takes the row's own background with it
  * and breaks the line behind itself, the way a label breaks a rule it sits on.
  * At rest it's transparent and the guide runs unbroken. */
-.row:hover .zoom {
+.row:hover .zoom,
+.row:hover .fold {
   opacity: 1;
   /* --sunk, not --ground: the chevron only shows while the row is hovered, and
    * a hovered row paints --sunk. Masking with the page colour would leave a
    * pale notch in the row's own highlight. */
   background: var(--sunk);
 }
-.zoom:hover { color: var(--ink); background: var(--edge-soft); }
+.zoom:hover,
+.fold:hover { color: var(--ink); background: var(--edge-soft); }
 /* Keyboard focus must not depend on a hover that never comes — and it needs the
  * same mask, since tabbing to it doesn't hover the row. */
-.zoom:focus-visible { opacity: 1; background: var(--sunk); }
+.zoom:focus-visible,
+.fold:focus-visible { opacity: 1; background: var(--sunk); }
+
+/* The triangle rides the row's structural ramp rather than the text ink, like
+ * the bullet and the checkbox it sits beside. */
+.fold { color: var(--mark); }
+
+/* Right when folded, down when open. Rotation is a supporting cue only — the
+ * bullet's ring-vs-disc is what says "folded" at rest, and this button isn't
+ * even on screen then. That is the fix for the old twisty, which encoded the
+ * whole state in a 90° turn of a 9px glyph and was unreadable at a glance. */
+.fold svg {
+  transition: transform 0.15s ease;
+}
+.fold.open svg {
+  transform: rotate(90deg);
+}
 
 /* Vertical nesting guides, one per ancestor level, aligned under each parent
  * bullet. Calm but readable at rest; the segments on the hovered row's lineage
@@ -702,10 +724,10 @@ body:has(.row.gap-slot) { cursor: default; }
 }
 .bullet:hover::after { background: var(--mark-hover); }
 
-/* A leaf has nothing to fold, so clicking it does nothing and no pointer
- * advertises otherwise. Its dot still lifts on hover, though — it is a drag
- * handle like every other bullet, and it would be a lie to draw it as dead. */
-.bullet.leaf { cursor: default; }
+/* Every bullet zooms now, leaf included — a leaf is a perfectly good place to
+ * zoom into, and it is a drag handle besides. The exception is the flattened
+ * view, which has no structure to zoom into or drag within. */
+.bullet.inert { cursor: default; }
 
 .check {
   width: 15px;
