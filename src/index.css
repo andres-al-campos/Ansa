@@ -5,14 +5,18 @@
   --edge: #dce1e8;
   --edge-soft: #e9edf2;
   --guide: #c7cdd7;
-  /* Bullet: a dim surround with a brighter inner dot, so the dot reads as the
-   * mark and the surround is the quieter half. One pair of tokens covers both
-   * the expanded ring and the collapsed disc — the two states differ in size
-   * and shape, never in colour. Hover lifts both a notch, neutral — no brand
-   * colour on a resting structural element. */
+  /* Bullet: a dim surround with a darker inner dot, so the dot reads as the
+   * mark and the surround is the quieter half. Hover lifts both a notch,
+   * neutral — no brand colour on a resting structural element.
+   *
+   * The disc is a touch stronger than the ring, for the same reason it is in
+   * dark mode: a mostly-hollow ring shows less ink than a solid disc of the
+   * same colour. Here "stronger" means darker, since the background is light. */
   --bullet-ring: #c2c9d4;
+  --bullet-disc: #b4bcc9;
   --bullet-dot: #8a93a3;
   --bullet-ring-hover: #aab3c0;
+  --bullet-disc-hover: #9aa4b2;
   --bullet-dot-hover: #6c7686;
   --ink: #181d28;
   --ink-mid: #525a69;
@@ -39,10 +43,18 @@
     --guide: #3a4150;
     /* Dark: dim surround, brighter dot. The surround sits just above the guide
      * lines so the collapsed disc never out-shouts the label; the dot carries
-     * the eye. */
+     * the eye.
+     *
+     * The disc runs a step brighter than the ring. On a dark background the
+     * ring is mostly hole, so the little ink it has reads dimmer than the same
+     * colour spread over a solid disc — matching the values makes the folded
+     * state look flatter than it is. It stays well under the dot, which has to
+     * keep reading as the brighter mark inside it. */
     --bullet-ring: #3f4756;
+    --bullet-disc: #4a5364;
     --bullet-dot: #7c8698;
     --bullet-ring-hover: #545d6e;
+    --bullet-disc-hover: #616b7e;
     --bullet-dot-hover: #9aa4b5;
     --ink: #e7eaf0;
     --ink-mid: #98a1b0;
@@ -649,11 +661,11 @@ body:has(.row.gap-slot) { cursor: default; }
 
 /* Collapsed: the ring fills in and grows to the full 18px box.
  *
- * Deliberately a change of *size and shape*, not of colour — both states use
- * the same two tokens. A hue-only difference is the first thing to go on a dark
- * background or to a colourblind reader, and this mark carries real information
- * ("there's more folded under here"). Small hollow ring vs large solid disc
- * survives losing the colour entirely.
+ * The difference that carries the meaning is *size and shape* — small hollow
+ * ring vs large solid disc — because that survives being read on a bad screen
+ * or by someone who can't separate the two hues, and this mark says something
+ * real ("there's more folded under here"). The slightly stronger colour is a
+ * top-up on a distinction that already works without it, never the whole cue.
  *
  * The indicator and the control that toggles it are the same object, which is
  * the convention Workflowy and Logseq both landed on. */
@@ -664,14 +676,17 @@ body:has(.row.gap-slot) { cursor: default; }
    * ink — and since border-color is transitioned, unfolding would animate the
    * ring from white to its own colour: a white flash on every click. */
   border-width: 0;
-  border-color: var(--bullet-ring);
-  background: var(--bullet-ring);
+  border-color: var(--bullet-disc);
+  background: var(--bullet-disc);
 }
 
 /* Hover lifts surround and dot together, so every state answers the pointer —
  * including a leaf, whose dot is draggable even though it has nothing to fold. */
 .bullet:hover::before { border-color: var(--bullet-ring-hover); }
-.bullet.parent.collapsed:hover::before { background: var(--bullet-ring-hover); }
+.bullet.parent.collapsed:hover::before {
+  border-color: var(--bullet-disc-hover);
+  background: var(--bullet-disc-hover);
+}
 .bullet:hover::after { background: var(--bullet-dot-hover); }
 
 /* A leaf has nothing to fold, so clicking it does nothing and no pointer

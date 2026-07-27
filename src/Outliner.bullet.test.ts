@@ -45,10 +45,27 @@ test('the collapsed disc never resets its border colour to currentcolor', () => 
   // back to currentcolor, and the transition then animates *from* white.
   expect(rule).not.toMatch(/(?:^|;)\s*border\s*:/)
 
-  // Whatever it does to the width, the colour has to stay the bullet's own.
+  // Whatever it does to the width, the colour has to stay the bullet's own —
+  // any bullet token will do, since what matters is that it is never white.
   expect(declarations('.bullet.parent.collapsed::before', 'border-color')).toEqual([
-    'var(--bullet-ring)',
+    'var(--bullet-disc)',
   ])
+})
+
+test('the collapsed disc reads stronger than the expanded ring', () => {
+  // The size/shape change is the real signal; this is the top-up on it. Pin
+  // that the two states resolve to *different* tokens, so a later tidy-up that
+  // collapses them back into one loses the distinction loudly rather than
+  // quietly.
+  expect(declarations('.bullet.parent::before', 'border')).toEqual(['2px solid var(--bullet-ring)'])
+  expect(declarations('.bullet.parent.collapsed::before', 'background')).toEqual([
+    'var(--bullet-disc)',
+  ])
+
+  // Both themes have to define the token, or one of them falls back to nothing.
+  for (const token of ['--bullet-disc', '--bullet-disc-hover']) {
+    expect(css.match(new RegExp(`${token}\\s*:`, 'g'))).toHaveLength(2)
+  }
 })
 
 test('both surround forms are tinted on a drop target', () => {
