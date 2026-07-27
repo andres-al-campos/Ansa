@@ -47,6 +47,13 @@ test('the gutter and row gap match what the guide offset assumes', () => {
   expect(px('.row', 'gap')).toBe(GEOMETRY.ROW_GAP)
 })
 
+test('the guide is centred on the bullet, not hung off its left edge', () => {
+  // A 1px line placed at `left: GUIDE_X0` spans X→X+1 and so centres half a
+  // pixel right of the bullet. The offset only cancels if GUIDE_W is the width
+  // CSS actually draws, which is what this pins.
+  expect(px('.guide', 'width')).toBe(GEOMETRY.GUIDE_W)
+})
+
 test("the row's horizontal padding is ROW_PAD", () => {
   // `padding: 5px 6px` — vertical first, then the horizontal value we indent by.
   const [, horizontal] = declaration('.row', 'padding').split(/\s+/)

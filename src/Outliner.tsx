@@ -45,10 +45,14 @@ const ROW_GAP = 7
 // bullet without moving them leaves every line sitting beside its bullet
 // instead of under it. Deriving it means that can't be forgotten.
 const BULLET = 18
+// The guide's own width, so its centre — not its left edge — can be lined up
+// with the bullet's. Left at `left: GUIDE_X0` a 1px line spans 33→34 and sits
+// half a pixel right of the bullet it belongs to, which is visible at 2x.
+const GUIDE_W = 1
 const GUIDE_X0 = ROW_PAD + GUTTER + ROW_GAP + BULLET / 2
 
 /** The same numbers, exported so a test can check them against index.css. */
-export const GEOMETRY = { ROW_PAD, INDENT, GUTTER, ROW_GAP, BULLET, GUIDE_X0 }
+export const GEOMETRY = { ROW_PAD, INDENT, GUTTER, ROW_GAP, BULLET, GUIDE_W, GUIDE_X0 }
 
 // Telling a click on a bullet apart from a drag of it. DRAG_SLOP is how far the
 // pointer may wander and still count as a click; past it, a mouse is dragging.
@@ -1412,7 +1416,12 @@ export default function Outliner({ initial }: { initial: Tree }) {
                   depth > 0 &&
                   Array.from({ length: depth }, (_, d) => (
                     // Each line sits under the bullet of the ancestor at depth d.
-                    <span key={d} className="guide" style={{ left: GUIDE_X0 + d * INDENT }} aria-hidden />
+                    <span
+                      key={d}
+                      className="guide"
+                      style={{ left: GUIDE_X0 + d * INDENT - GUIDE_W / 2 }}
+                      aria-hidden
+                    />
                   ))}
 
                 {/* The twisty's old slot, kept empty. Nothing goes here now, but
