@@ -625,16 +625,20 @@ body:has(.row.gap-slot) { cursor: default; }
   transition: background 0.12s ease;
 }
 
-/* Expanded: a 12px ring around the dot. Inset 3px off the 18px box, drawn as a
- * 1.5px border, so the gap between dot and ring is also 1.5px — gap and stroke
- * are the same interval, which is what makes the spacing read as chosen rather
- * than arbitrary. */
+/* Expanded: a 14px ring around the dot. Inset 2px off the 18px box, drawn as a
+ * 2px border, so the gap between dot and ring is also 2px — gap and stroke are
+ * the same interval, which is what makes the spacing read as chosen rather than
+ * arbitrary.
+ *
+ * 14 against the collapsed 18 is the widest the ring can go and still read as
+ * the smaller of the two: the disc can't grow to make more room, because 18 is
+ * what puts exactly 6px of colour around a 6px dot. */
 .bullet.parent::before {
   content: '';
   position: absolute;
-  inset: 3px;
+  inset: 2px;
   border-radius: 50%;
-  border: 1.5px solid var(--bullet-ring);
+  border: 2px solid var(--bullet-ring);
   transition: border-color 0.12s ease, background 0.12s ease;
 }
 
