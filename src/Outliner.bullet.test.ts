@@ -59,10 +59,24 @@ test('the two surround forms are told apart by shape, not by colour', () => {
   expect(declarations('.bullet.parent.collapsed::before', 'background')).toEqual(['var(--mark)'])
 
   // Both themes have to define the token, or one of them falls back to nothing.
-  for (const token of ['--mark', '--mark-hover']) {
-    // `--mark` is a prefix of `--mark-hover`, so the count needs a boundary.
+  for (const token of ['--mark', '--mark-hover', '--mark-dot', '--mark-lift']) {
+    // `--mark` is a prefix of the rest, so the count needs a boundary.
     expect(css.match(new RegExp(`${token}(?!-)\\s*:`, 'g'))).toHaveLength(2)
   }
+})
+
+test('the dot stays visible once the disc fills in behind it', () => {
+  // Filling the surround puts the dot on top of its own colour, where it
+  // disappears and the disc reads as a plain blob. This is the one place the
+  // dot leaves --mark, so pin both the resting swap and the hover swap — the
+  // generic `.bullet:hover::after` would otherwise drag it back to --mark-hover
+  // just as the surround moves to that same value.
+  expect(declarations('.bullet.parent.collapsed::after', 'background')).toEqual([
+    'var(--mark-dot)',
+  ])
+  expect(declarations('.bullet.parent.collapsed:hover::after', 'background')).toEqual([
+    'var(--ink)',
+  ])
 })
 
 test('both surround forms are tinted on a drop target', () => {

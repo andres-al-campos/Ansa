@@ -10,6 +10,8 @@
    * here rather than eight. */
   --mark: #6c7686;
   --mark-hover: #525b6a;
+  --mark-dot: #333a47;
+  --mark-lift: #5f687a;
   --ink: #181d28;
   --ink-mid: #525a69;
   --ink-faint: #8a93a3;
@@ -49,6 +51,17 @@
      * that should recede, not a control. */
     --mark: #6e7889;
     --mark-hover: #8f99ab;
+    /* The dot inside the collapsed disc, and only there. A dot in --mark on a
+     * disc in --mark is invisible — the disc reads as a plain blob and the
+     * state stops looking like a disc at all. Dimming the disc instead doesn't
+     * work: every fill dark enough to separate a --mark dot lands under 2.5:1
+     * against the ground, fainter than the guides. So the dot goes brighter,
+     * 2.40:1 against the disc it sits on. */
+    --mark-dot: #b6bfcc;
+    /* A half-step above --mark for the fold triangle's hover: enough lift to
+     * answer the pointer at 5.07:1, without --mark-hover's 6.47:1 making a
+     * 13px glyph the brightest mark on the row. */
+    --mark-lift: #7d8697;
     --ink: #e7eaf0;
     --ink-mid: #98a1b0;
     --ink-faint: #6a7382;
@@ -608,8 +621,11 @@ button { font: inherit; color: inherit; }
    * pale notch in the row's own highlight. */
   background: var(--sunk);
 }
-.zoom:hover,
-.fold:hover { color: var(--ink); background: var(--edge-soft); }
+.zoom:hover { color: var(--ink); background: var(--edge-soft); }
+/* The triangle lifts to --mark-lift, not --ink. Body-text white made it the
+ * brightest thing on the row, outshining the bullet it sits beside — and it is
+ * a structural mark, so it stays on the mark ramp. */
+.fold:hover { color: var(--mark-lift); background: var(--edge-soft); }
 /* Keyboard focus must not depend on a hover that never comes — and it needs the
  * same mask, since tabbing to it doesn't hover the row. */
 .zoom:focus-visible,
@@ -696,14 +712,17 @@ body:has(.row.gap-slot) { cursor: default; }
 
 /* Collapsed: the ring fills in and grows to the full 18px box.
  *
- * Size and shape carry the whole meaning — small hollow ring vs large solid
- * disc — so the two states share one colour. Shape survives a bad screen, a
- * colourblind reader, and the several seconds between looking at one row and
- * the next; a hue difference survives none of those, and the two forms are
- * never side by side to be compared anyway.
+ * Size and shape carry the meaning — small hollow ring vs large filled disc —
+ * so the surround is one colour in both states. Shape survives a bad screen and
+ * a reader who can't separate two close greys; a hue difference survives
+ * neither, and the two forms are never side by side to be compared.
  *
- * The indicator and the control that toggles it are the same object, which is
- * the convention Workflowy and Logseq both landed on. */
+ * The dot is the exception, and it has to be. Filling the surround puts it on
+ * top of its own colour, where it vanishes and leaves an 18px blob — so here,
+ * and only here, it switches to --mark-dot.
+ *
+ * The bullet only *shows* this state; the gutter triangle changes it. Splitting
+ * the two is what Workflowy, Roam and Logseq all do. */
 .bullet.parent.collapsed::before {
   inset: 0;
   /* Zero-width rather than `border: none`, and still explicitly coloured. The
@@ -714,6 +733,7 @@ body:has(.row.gap-slot) { cursor: default; }
   border-color: var(--mark);
   background: var(--mark);
 }
+.bullet.parent.collapsed::after { background: var(--mark-dot); }
 
 /* Hover lifts surround and dot together, so every state answers the pointer —
  * including a leaf, whose dot is draggable even though it has nothing to fold. */
@@ -723,6 +743,11 @@ body:has(.row.gap-slot) { cursor: default; }
   background: var(--mark-hover);
 }
 .bullet:hover::after { background: var(--mark-hover); }
+/* The disc's dot keeps its own colour on hover. Letting the generic rule take
+ * it to --mark-hover would land it on a surround that just moved to the same
+ * value — the blob again, only on the state you are pointing at. --ink is the
+ * body text, so the dot separates further as the disc brightens. */
+.bullet.parent.collapsed:hover::after { background: var(--ink); }
 
 /* Every bullet zooms now, leaf included — a leaf is a perfectly good place to
  * zoom into, and it is a drag handle besides. The exception is the flattened
