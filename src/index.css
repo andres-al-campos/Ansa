@@ -654,7 +654,12 @@ body:has(.row.gap-slot) { cursor: default; }
  * the convention Workflowy and Logseq both landed on. */
 .bullet.parent.collapsed::before {
   inset: 0;
-  border: none;
+  /* Zero-width rather than `border: none`, and still explicitly coloured. The
+   * shorthand would reset border-color to currentcolor — the near-white body
+   * ink — and since border-color is transitioned, unfolding would animate the
+   * ring from white to its own colour: a white flash on every click. */
+  border-width: 0;
+  border-color: var(--bullet-ring);
   background: var(--bullet-ring);
 }
 
