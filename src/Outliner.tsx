@@ -37,8 +37,11 @@ import {
 // d*INDENT — directly under that ancestor's bullet.
 const ROW_PAD = 6
 const INDENT = 24
-// What sits left of the bullet, matching .gutter and the row's flex gap in CSS.
-const GUTTER = 11
+// The zoom control's column, left of the bullet — matching .gutter and the
+// row's flex gap in CSS. Odd on purpose: the guide is an odd 1px, so an odd
+// slot puts the button's centre on the same half-pixel the line already sits
+// on, and the two stay visually stacked.
+const GUTTER = 15
 const ROW_GAP = 7
 // The bullet's own size, matching .bullet in CSS. Kept here because GUIDE_X0
 // depends on it: the guides are aimed at bullet *centres*, so resizing the
@@ -1424,11 +1427,23 @@ export default function Outliner({ initial }: { initial: Tree }) {
                     />
                   ))}
 
-                {/* The twisty's old slot, kept empty. Nothing goes here now, but
-                    the space still earns its place: it keeps the bullet off the
-                    text and the rows breathing, and it's what GUIDE_X0 measures
-                    from, so the guides stay under the bullets they belong to. */}
-                {!flat && <span className="gutter" aria-hidden />}
+                {/* Zoom in, in the twisty's old slot. Left of the bullet is
+                    where a row's structural controls belong, and it lines up
+                    down the column instead of drifting with the label's width.
+                    Revealed on row hover: zooming is the rare, deliberate
+                    action and carries no state that must be readable at rest.
+                    The slot is also what GUIDE_X0 measures from, so it keeps
+                    its width whether or not the button is showing. */}
+                {!flat && (
+                  <button
+                    className="zoom"
+                    onClick={() => setScope(id)}
+                    aria-label={`Zoom into ${node.text}`}
+                    title="Zoom in"
+                  >
+                    ›
+                  </button>
+                )}
 
                 {/* The bullet folds the row and shows whether it's folded — one
                     object for the state and the control that changes it. A leaf
@@ -1528,13 +1543,19 @@ export default function Outliner({ initial }: { initial: Tree }) {
                   )}
                 </div>
 
-                {/* Zoom in. On row hover rather than always-on: it's the rare,
-                    deliberate action, and it carries no state that needs to be
-                    readable at rest. '›' is the descend-a-hierarchy convention
-                    (Finder columns, Notion), which is what zooming here is. */}
-                <button className="zoom" onClick={() => setScope(id)} aria-label={`Zoom into ${node.text}`} title="Zoom in">
-                  ›
-                </button>
+                {/* The flattened leaf view has no gutter to hold the zoom
+                    control — there's no indent or ancestry column at all — so
+                    there it falls back to the right edge. */}
+                {flat && (
+                  <button
+                    className="zoom trailing"
+                    onClick={() => setScope(id)}
+                    aria-label={`Zoom into ${node.text}`}
+                    title="Zoom in"
+                  >
+                    ›
+                  </button>
+                )}
               </div>
             )
           })}

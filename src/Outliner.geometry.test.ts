@@ -42,8 +42,11 @@ test('the bullet is drawn at the size GUIDE_X0 was measured against', () => {
   expect(px('.bullet', 'height')).toBe(GEOMETRY.BULLET)
 })
 
-test('the gutter and row gap match what the guide offset assumes', () => {
-  expect(px('.gutter', 'width')).toBe(GEOMETRY.GUTTER)
+test('the zoom slot and row gap match what the guide offset assumes', () => {
+  // The zoom button *is* the gutter now — it holds the column open left of the
+  // bullet, so its width is a term in GUIDE_X0. Sizing it to its glyph instead
+  // of fixing it here would drag every nesting guide sideways.
+  expect(px('.zoom', 'width')).toBe(GEOMETRY.GUTTER)
   expect(px('.row', 'gap')).toBe(GEOMETRY.ROW_GAP)
 })
 
@@ -52,6 +55,14 @@ test('the guide is centred on the bullet, not hung off its left edge', () => {
   // pixel right of the bullet. The offset only cancels if GUIDE_W is the width
   // CSS actually draws, which is what this pins.
   expect(px('.guide', 'width')).toBe(GEOMETRY.GUIDE_W)
+})
+
+test('the zoom slot is odd, so it shares a centre with the 1px guide', () => {
+  // An even slot would centre the button on a whole pixel while the odd guide
+  // centres on a half — a half-pixel stagger between two things drawn as one
+  // column, visible on a 2x display.
+  expect(GEOMETRY.GUTTER % 2).toBe(1)
+  expect(GEOMETRY.GUIDE_W % 2).toBe(1)
 })
 
 test("the row's horizontal padding is ROW_PAD", () => {

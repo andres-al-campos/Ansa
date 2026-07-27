@@ -562,26 +562,24 @@ button { font: inherit; color: inherit; }
   text-overflow: ellipsis;
 }
 
-/* Where the twisty used to be. Empty now, and kept that way on purpose: the
- * space is what holds the bullet clear of the text and keeps the rows from
- * crowding each other. It's also what GUIDE_X0 is measured against, so the
- * nesting guides land under the bullets rather than beside them. */
-.gutter {
-  width: 11px;
-  flex: none;
-}
-
-/* Zoom into a row: revealed on row hover, at the far right so it's clear of the
- * bullet and the nesting guides. Deliberately hover-only — zooming is the rare,
+/* Zoom into a row: revealed on row hover, in the column left of the bullet
+ * where the twisty used to sit. Deliberately hover-only — zooming is the rare,
  * deliberate action, and an indicator that must persist has no business here.
- * The glyph is small; the button around it is the real target. */
+ *
+ * The width is fixed rather than padded out to fit the glyph, because this slot
+ * is what GUIDE_X0 measures from: letting it size to its content would move
+ * every nesting guide. 15px is odd to match the 1px guide, so button and line
+ * share a centre. */
 .zoom {
   flex: none;
-  margin-left: auto;
+  width: 15px;
   align-self: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   background: none;
   border: none;
-  padding: 2px 5px;
+  padding: 2px 0;
   border-radius: 5px;
   cursor: pointer;
   color: var(--ink-ghost);
@@ -590,10 +588,32 @@ button { font: inherit; color: inherit; }
   opacity: 0;
   transition: opacity 0.12s ease, color 0.12s ease, background 0.12s ease;
 }
-.row:hover .zoom { opacity: 1; }
+
+/* The flattened leaf view's fallback: no gutter column there, so it sits at the
+ * right edge and can size to its own content. */
+.zoom.trailing {
+  width: auto;
+  margin-left: auto;
+  padding: 2px 5px;
+  background: none;
+}
+
+/* On every row below depth 0 this slot sits exactly on an ancestor's guide —
+ * the gutter is one indent-step left of the bullet, which is where that line
+ * runs. So when the chevron appears it takes the row's own background with it
+ * and breaks the line behind itself, the way a label breaks a rule it sits on.
+ * At rest it's transparent and the guide runs unbroken. */
+.row:hover .zoom {
+  opacity: 1;
+  /* --sunk, not --ground: the chevron only shows while the row is hovered, and
+   * a hovered row paints --sunk. Masking with the page colour would leave a
+   * pale notch in the row's own highlight. */
+  background: var(--sunk);
+}
 .zoom:hover { color: var(--ink); background: var(--edge-soft); }
-/* Keyboard focus must not depend on a hover that never comes. */
-.zoom:focus-visible { opacity: 1; }
+/* Keyboard focus must not depend on a hover that never comes — and it needs the
+ * same mask, since tabbing to it doesn't hover the row. */
+.zoom:focus-visible { opacity: 1; background: var(--sunk); }
 
 /* Vertical nesting guides, one per ancestor level, aligned under each parent
  * bullet. Calm but readable at rest; the segments on the hovered row's lineage
