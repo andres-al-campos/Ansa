@@ -51,14 +51,21 @@ test('the collapsed disc never resets its border colour to currentcolor', () => 
   ])
 })
 
-test('both surround forms are tinted on a drop target, and so is the dot', () => {
-  // Expanded draws a border, collapsed draws a fill, and a leaf has no surround
-  // at all — so the dot is the only mark every state shares.
+test('both surround forms are tinted on a drop target', () => {
+  // Expanded draws a border, collapsed draws a fill. Tinting only one would
+  // leave half the rows unmarked as drop targets.
   expect(declarations('.row.drop-into .bullet::before', 'border-color')).toEqual(['var(--brass)'])
   expect(declarations('.row.drop-into .bullet.parent.collapsed::before', 'background')).toEqual([
     'var(--brass)',
   ])
-  expect(declarations('.row.drop-into .bullet::after', 'background')).toEqual(['var(--brass)'])
+})
+
+test('only a leaf tints its dot, since it is the one state with no surround', () => {
+  expect(declarations('.row.drop-into .bullet.leaf::after', 'background')).toEqual(['var(--brass)'])
+
+  // Unscoped, this would also brass the dot inside a ring or a disc, turning a
+  // dot-in-a-highlight into one solid brass blob.
+  expect(css).not.toMatch(/^\.row\.drop-into \.bullet::after/m)
 })
 
 test('the collapsed drop rule outranks the expanded ring it overrides', () => {

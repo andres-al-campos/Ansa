@@ -479,12 +479,14 @@ button { font: inherit; color: inherit; }
   box-shadow: inset 0 0 0 1.5px var(--brass);
 }
 /* The bullet is the thing you're dropping *into*, so it goes brass in whichever
- * form it currently takes: a border when expanded, a fill when collapsed, and
- * the dot in all three states — including a leaf, which has no surround at all
- * and would otherwise be the one shape that never lights up. */
+ * form it currently takes: a border when expanded, a fill when collapsed. The
+ * surround carries it wherever there is one — the dot stays its usual colour,
+ * so the mark keeps reading as a dot inside a highlight rather than one brass
+ * blob. A leaf has no surround at all, so there the dot is the only thing left
+ * to light up. */
 .row.drop-into .bullet::before { border-color: var(--brass); }
 .row.drop-into .bullet.parent.collapsed::before { background: var(--brass); }
-.row.drop-into .bullet::after { background: var(--brass); }
+.row.drop-into .bullet.leaf::after { background: var(--brass); }
 
 /* Drop *between*: an insertion line at the row's top or bottom edge. Its left
  * edge starts at --drop-x — the indent of the level the pointer picked — so the
