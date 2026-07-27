@@ -93,6 +93,8 @@ button { font: inherit; color: inherit; }
   border-right: 1px solid var(--edge-soft);
   padding: 24px 18px;
   overflow-y: auto;
+  /* Same reason as .main: a long project list shouldn't reflow the short one. */
+  scrollbar-gutter: stable;
 }
 
 /* The wordmark doubles as the home link back to the Projects landing. All
@@ -344,7 +346,12 @@ button { font: inherit; color: inherit; }
 
 /* ----------------------------------------------------------- main pane */
 
-.main { padding: 26px 30px 40px; overflow-y: auto; }
+/* scrollbar-gutter holds the scrollbar's track open even when there's nothing
+ * to scroll. Without it, the first row that overflows the pane takes 15px of
+ * width away from a centred column, so every block slides 7.5px left — and
+ * folding it back slides them right again. Expanding a long subtree shouldn't
+ * move the text you're reading. */
+.main { padding: 26px 30px 40px; overflow-y: auto; scrollbar-gutter: stable; }
 
 /* One centred column: crumbs, heading, progress and rows share a width and
  * sit in the middle of the pane rather than hugging the left edge. width:100%
