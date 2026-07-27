@@ -47,24 +47,21 @@ test('the collapsed disc never resets its border colour to currentcolor', () => 
 
   // Whatever it does to the width, the colour has to stay the bullet's own —
   // any bullet token will do, since what matters is that it is never white.
-  expect(declarations('.bullet.parent.collapsed::before', 'border-color')).toEqual([
-    'var(--bullet-disc)',
-  ])
+  expect(declarations('.bullet.parent.collapsed::before', 'border-color')).toEqual(['var(--mark)'])
 })
 
-test('the collapsed disc reads stronger than the expanded ring', () => {
-  // The size/shape change is the real signal; this is the top-up on it. Pin
-  // that the two states resolve to *different* tokens, so a later tidy-up that
-  // collapses them back into one loses the distinction loudly rather than
-  // quietly.
-  expect(declarations('.bullet.parent::before', 'border')).toEqual(['2px solid var(--bullet-ring)'])
-  expect(declarations('.bullet.parent.collapsed::before', 'background')).toEqual([
-    'var(--bullet-disc)',
-  ])
+test('the two surround forms are told apart by shape, not by colour', () => {
+  // Ring and disc share one token on purpose: they differ by 2px vs 0px border
+  // and 14px vs 18px diameter, which reads without any colour information and
+  // survives a reader who cannot separate two close greys. Pin the shared token
+  // so a later "let's tint the collapsed one" lands as a deliberate change.
+  expect(declarations('.bullet.parent::before', 'border')).toEqual(['2px solid var(--mark)'])
+  expect(declarations('.bullet.parent.collapsed::before', 'background')).toEqual(['var(--mark)'])
 
   // Both themes have to define the token, or one of them falls back to nothing.
-  for (const token of ['--bullet-disc', '--bullet-disc-hover']) {
-    expect(css.match(new RegExp(`${token}\\s*:`, 'g'))).toHaveLength(2)
+  for (const token of ['--mark', '--mark-hover']) {
+    // `--mark` is a prefix of `--mark-hover`, so the count needs a boundary.
+    expect(css.match(new RegExp(`${token}(?!-)\\s*:`, 'g'))).toHaveLength(2)
   }
 })
 

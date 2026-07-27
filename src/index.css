@@ -4,20 +4,12 @@
   --sunk: #eff2f6;
   --edge: #dce1e8;
   --edge-soft: #e9edf2;
-  --guide: #c7cdd7;
-  /* Bullet: a dim surround with a darker inner dot, so the dot reads as the
-   * mark and the surround is the quieter half. Hover lifts both a notch,
-   * neutral — no brand colour on a resting structural element.
-   *
-   * The disc is a touch stronger than the ring, for the same reason it is in
-   * dark mode: a mostly-hollow ring shows less ink than a solid disc of the
-   * same colour. Here "stronger" means darker, since the background is light. */
-  --bullet-ring: #c2c9d4;
-  --bullet-disc: #b4bcc9;
-  --bullet-dot: #8a93a3;
-  --bullet-ring-hover: #aab3c0;
-  --bullet-disc-hover: #9aa4b2;
-  --bullet-dot-hover: #6c7686;
+  --guide: #9ea6b4;
+  /* The mirror of the dark ramp — same contrast ratios, reached by going darker
+   * instead of lighter. See the dark block below for why there are two values
+   * here rather than eight. */
+  --mark: #6c7686;
+  --mark-hover: #525b6a;
   --ink: #181d28;
   --ink-mid: #525a69;
   --ink-faint: #8a93a3;
@@ -40,22 +32,23 @@
     --sunk: #13161d;
     --edge: #2a303b;
     --edge-soft: #222831;
-    --guide: #3a4150;
-    /* Dark: dim surround, brighter dot. The surround sits just above the guide
-     * lines so the collapsed disc never out-shouts the label; the dot carries
-     * the eye.
+    --guide: #4c5464;
+    /* The row's structural marks — every bullet state, the checkbox, the fold
+     * triangle — share one colour, and hovering lifts them all one step. Two
+     * values, not the eight this used to be.
      *
-     * The disc runs a step brighter than the ring. On a dark background the
-     * ring is mostly hole, so the little ink it has reads dimmer than the same
-     * colour spread over a solid disc — matching the values makes the folded
-     * state look flatter than it is. It stays well under the dot, which has to
-     * keep reading as the brighter mark inside it. */
-    --bullet-ring: #3f4756;
-    --bullet-disc: #4a5364;
-    --bullet-dot: #7c8698;
-    --bullet-ring-hover: #545d6e;
-    --bullet-disc-hover: #616b7e;
-    --bullet-dot-hover: #9aa4b5;
+     * The bullet's three states differ in *shape*: a 6px dot, a 14px hollow
+     * ring, an 18px solid disc. That reads without any colour information at
+     * all, so tinting them apart was decoration on a cue that already works —
+     * and the two states are never on screen together to be compared anyway.
+     *
+     * The values are chosen for contrast against --ground, not by eye: 4.17:1
+     * at rest and 6.47:1 hovered, where WCAG's floor for a UI element is 3:1.
+     * The old set sat at 1.99:1, which is why the ring was hard to see.
+     * --guide stays deliberately under the floor at 2.44:1 — it's decoration
+     * that should recede, not a control. */
+    --mark: #6e7889;
+    --mark-hover: #8f99ab;
     --ink: #e7eaf0;
     --ink-mid: #98a1b0;
     --ink-faint: #6a7382;
@@ -658,7 +651,7 @@ body:has(.row.gap-slot) { cursor: default; }
   position: absolute;
   inset: 6px;
   border-radius: 50%;
-  background: var(--bullet-dot);
+  background: var(--mark);
   transition: background 0.12s ease;
 }
 
@@ -675,17 +668,17 @@ body:has(.row.gap-slot) { cursor: default; }
   position: absolute;
   inset: 2px;
   border-radius: 50%;
-  border: 2px solid var(--bullet-ring);
+  border: 2px solid var(--mark);
   transition: border-color 0.12s ease, background 0.12s ease;
 }
 
 /* Collapsed: the ring fills in and grows to the full 18px box.
  *
- * The difference that carries the meaning is *size and shape* — small hollow
- * ring vs large solid disc — because that survives being read on a bad screen
- * or by someone who can't separate the two hues, and this mark says something
- * real ("there's more folded under here"). The slightly stronger colour is a
- * top-up on a distinction that already works without it, never the whole cue.
+ * Size and shape carry the whole meaning — small hollow ring vs large solid
+ * disc — so the two states share one colour. Shape survives a bad screen, a
+ * colourblind reader, and the several seconds between looking at one row and
+ * the next; a hue difference survives none of those, and the two forms are
+ * never side by side to be compared anyway.
  *
  * The indicator and the control that toggles it are the same object, which is
  * the convention Workflowy and Logseq both landed on. */
@@ -696,18 +689,18 @@ body:has(.row.gap-slot) { cursor: default; }
    * ink — and since border-color is transitioned, unfolding would animate the
    * ring from white to its own colour: a white flash on every click. */
   border-width: 0;
-  border-color: var(--bullet-disc);
-  background: var(--bullet-disc);
+  border-color: var(--mark);
+  background: var(--mark);
 }
 
 /* Hover lifts surround and dot together, so every state answers the pointer —
  * including a leaf, whose dot is draggable even though it has nothing to fold. */
-.bullet:hover::before { border-color: var(--bullet-ring-hover); }
+.bullet:hover::before { border-color: var(--mark-hover); }
 .bullet.parent.collapsed:hover::before {
-  border-color: var(--bullet-disc-hover);
-  background: var(--bullet-disc-hover);
+  border-color: var(--mark-hover);
+  background: var(--mark-hover);
 }
-.bullet:hover::after { background: var(--bullet-dot-hover); }
+.bullet:hover::after { background: var(--mark-hover); }
 
 /* A leaf has nothing to fold, so clicking it does nothing and no pointer
  * advertises otherwise. Its dot still lifts on hover, though — it is a drag
@@ -719,7 +712,9 @@ body:has(.row.gap-slot) { cursor: default; }
   height: 15px;
   flex: none;
   margin-top: 5px;
-  border: 1.5px solid var(--ink-ghost);
+  /* --mark, not the text-ink token it used to borrow: the checkbox is one of
+   * the row's structural marks, so it moves with the bullet and the guide. */
+  border: 1.5px solid var(--mark);
   border-radius: 4px;
   background: none;
   padding: 0;
