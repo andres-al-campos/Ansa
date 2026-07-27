@@ -62,7 +62,7 @@ export const GEOMETRY = { ROW_PAD, INDENT, GUTTER, ROW_GAP, BULLET, GUIDE_W, GUI
 // DRAG_HOLD is the fallback for pressing without moving, and has to sit clear of
 // how long a real click lasts (~80-150ms) or clicks arm drags by accident.
 const DRAG_SLOP = 5
-const DRAG_HOLD = 250
+const DRAG_HOLD = 300
 
 // Completion worm: each row wiggles for WORM_RUN, offset from the previous by
 // WORM_STAGGER. On long waves the stagger tightens so the whole sweep clears
