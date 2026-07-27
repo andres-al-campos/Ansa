@@ -37,7 +37,18 @@ import {
 // d*INDENT — directly under that ancestor's bullet.
 const ROW_PAD = 6
 const INDENT = 24
-const GUIDE_X0 = 32
+// What sits left of the bullet, matching .gutter and the row's flex gap in CSS.
+const GUTTER = 11
+const ROW_GAP = 7
+// The bullet's own size, matching .bullet in CSS. Kept here because GUIDE_X0
+// depends on it: the guides are aimed at bullet *centres*, so resizing the
+// bullet without moving them leaves every line sitting beside its bullet
+// instead of under it. Deriving it means that can't be forgotten.
+const BULLET = 18
+const GUIDE_X0 = ROW_PAD + GUTTER + ROW_GAP + BULLET / 2
+
+/** The same numbers, exported so a test can check them against index.css. */
+export const GEOMETRY = { ROW_PAD, INDENT, GUTTER, ROW_GAP, BULLET, GUIDE_X0 }
 
 // Telling a click on a bullet apart from a drag of it. DRAG_SLOP is how far the
 // pointer may wander and still count as a click; past it, a mouse is dragging.
@@ -1541,7 +1552,17 @@ export default function Outliner({ initial }: { initial: Tree }) {
           }
           aria-hidden
         >
-          <span className={'bullet ' + (isLeaf(tree, dragNode.id) ? 'leaf' : 'parent')} />
+          {/* The ghost is the row you're holding, so it wears the same mark the
+              row does — a folded parent has to keep its disc, or picking it up
+              would look like it quietly unfolded. */}
+          <span
+            className={
+              'bullet ' +
+              (isLeaf(tree, dragNode.id)
+                ? 'leaf'
+                : 'parent' + (dragNode.collapsed ? ' collapsed' : ''))
+            }
+          />
           <span className="ghost-label">{dragNode.text || 'Untitled'}</span>
         </div>
       )}
