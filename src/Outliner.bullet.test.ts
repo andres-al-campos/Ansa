@@ -79,21 +79,34 @@ test('the dot stays visible once the disc fills in behind it', () => {
   ])
 })
 
-test('both surround forms are tinted on a drop target', () => {
-  // Expanded draws a border, collapsed draws a fill. Tinting only one would
-  // leave half the rows unmarked as drop targets.
+test('all three states light as a brass outline of the same weight', () => {
+  // The drop highlight must not depend on how the row happens to be folded.
+  // Expanded already draws a 2px ring; collapsed and leaf are made to match.
   expect(declarations('.row.drop-into .bullet::before', 'border-color')).toEqual(['var(--brass)'])
-  expect(declarations('.row.drop-into .bullet.parent.collapsed::before', 'background')).toEqual([
-    'var(--brass)',
-  ])
+
+  // The collapsed rule adds a stroke to an existing box, so it sets longhands;
+  // the leaf rule builds its box from nothing and uses the shorthand. Either
+  // way the drawn result has to be the same 2px brass ring.
+  for (const selector of [
+    '.row.drop-into .bullet.parent.collapsed::before',
+    '.row.drop-into .bullet.leaf::before',
+  ]) {
+    const rule = body(selector)
+    expect(rule).toMatch(/border(?:-width)?\s*:\s*(?:2px|2px solid)/)
+    expect(rule).toMatch(/border(?:-color)?\s*:\s*(?:2px solid )?var\(--brass\)/)
+  }
 })
 
-test('only a leaf tints its dot, since it is the one state with no surround', () => {
-  expect(declarations('.row.drop-into .bullet.leaf::after', 'background')).toEqual(['var(--brass)'])
+test('no drop rule fills a bullet or touches its dot', () => {
+  // Filling the disc lit a solid 18px of brass where the other two states lit a
+  // 2px line, so the same row flared far brighter collapsed than expanded.
+  expect(body('.row.drop-into .bullet.parent.collapsed::before')).not.toMatch(
+    /(?:^|;)\s*background\s*:/,
+  )
 
-  // Unscoped, this would also brass the dot inside a ring or a disc, turning a
-  // dot-in-a-highlight into one solid brass blob.
-  expect(css).not.toMatch(/^\.row\.drop-into \.bullet::after/m)
+  // Brassing the dot turns a dot-inside-a-highlight into one solid blob, and
+  // did it for leaves only — a third behaviour across three states.
+  expect(css).not.toMatch(/^\.row\.drop-into \.bullet[^{]*::after/m)
 })
 
 test('the collapsed drop rule outranks the expanded ring it overrides', () => {

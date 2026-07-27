@@ -496,15 +496,33 @@ button { font: inherit; color: inherit; }
   background: var(--brass-soft);
   box-shadow: inset 0 0 0 1.5px var(--brass);
 }
-/* The bullet is the thing you're dropping *into*, so it goes brass in whichever
- * form it currently takes: a border when expanded, a fill when collapsed. The
- * surround carries it wherever there is one — the dot stays its usual colour,
- * so the mark keeps reading as a dot inside a highlight rather than one brass
- * blob. A leaf has no surround at all, so there the dot is the only thing left
- * to light up. */
+/* The bullet is the thing you're dropping *into*, so it goes brass — but only
+ * its outline, never its fill. All three states light the same way: the ring
+ * takes a brass stroke, the disc takes a brass stroke of the same weight over
+ * its usual fill, and a leaf gets one drawn around its dot.
+ *
+ * Filling the disc instead would light a solid 18px of brass where the other
+ * two states light a 2px line, so the one row you are pointing at would flare
+ * far brighter than the same row does in any other state. The dot is left
+ * alone throughout, so the mark keeps reading as a dot inside a highlight. */
 .row.drop-into .bullet::before { border-color: var(--brass); }
-.row.drop-into .bullet.parent.collapsed::before { background: var(--brass); }
-.row.drop-into .bullet.leaf::after { background: var(--brass); }
+.row.drop-into .bullet.parent.collapsed::before {
+  /* The disc keeps its fill and gains the same 2px ring the expanded state
+   * draws. Inset 0 with a 2px border puts that stroke on the disc's own edge,
+   * so the bullet does not change size when it lights up. */
+  border-width: 2px;
+  border-color: var(--brass);
+}
+/* A leaf has no surround to stroke, so ::before is drawn purely for this — a
+ * ring around the dot, matching the other two rather than flooding the dot
+ * itself with brass. */
+.row.drop-into .bullet.leaf::before {
+  content: '';
+  position: absolute;
+  inset: 2px;
+  border-radius: 50%;
+  border: 2px solid var(--brass);
+}
 
 /* Drop *between*: an insertion line at the row's top or bottom edge. Its left
  * edge starts at --drop-x — the indent of the level the pointer picked — so the
