@@ -5,16 +5,15 @@
   --edge: #dce1e8;
   --edge-soft: #e9edf2;
   --guide: #c7cdd7;
-  /* Bullet: a dim outer ring with a brighter inner dot, so the dot reads as the
-   * mark and the ring is just a quiet halo. Hover lifts both a notch, neutral —
-   * no brand colour on a resting structural element. */
-  --bullet-ring: #cdd3dc;
+  /* Bullet: a dim surround with a brighter inner dot, so the dot reads as the
+   * mark and the surround is the quieter half. One pair of tokens covers both
+   * the expanded ring and the collapsed disc — the two states differ in size
+   * and shape, never in colour. Hover lifts both a notch, neutral — no brand
+   * colour on a resting structural element. */
+  --bullet-ring: #c2c9d4;
   --bullet-dot: #8a93a3;
-  --bullet-ring-hover: #b7bfca;
+  --bullet-ring-hover: #aab3c0;
   --bullet-dot-hover: #6c7686;
-  /* A collapsed row's halo: the same ring, weighted enough to read while
-   * scanning a long list rather than only when you look straight at it. */
-  --bullet-halo: #aab3c0;
   --ink: #181d28;
   --ink-mid: #525a69;
   --ink-faint: #8a93a3;
@@ -38,15 +37,13 @@
     --edge: #2a303b;
     --edge-soft: #222831;
     --guide: #3a4150;
-    /* Dark: dim ring, brighter dot. The ring sits just above the guide lines so
-     * it never out-shouts the label; the dot carries the eye. */
+    /* Dark: dim surround, brighter dot. The surround sits just above the guide
+     * lines so the collapsed disc never out-shouts the label; the dot carries
+     * the eye. */
     --bullet-ring: #3f4756;
     --bullet-dot: #7c8698;
     --bullet-ring-hover: #545d6e;
     --bullet-dot-hover: #9aa4b5;
-    /* Light mode darkens the halo to gain weight; here the ring is already the
-     * dim end, so it has to brighten instead to read as "more underneath". */
-    --bullet-halo: #6b7688;
     --ink: #e7eaf0;
     --ink-mid: #98a1b0;
     --ink-faint: #6a7382;
@@ -474,7 +471,10 @@ button { font: inherit; color: inherit; }
   background: var(--brass-soft);
   box-shadow: inset 0 0 0 1.5px var(--brass);
 }
-.row.drop-into .bullet::before { background: var(--brass); }
+/* The surround is a border when expanded and a fill when collapsed, so tint
+ * both — setting only one would leave half the rows unmarked as drop targets. */
+.row.drop-into .bullet::before { border-color: var(--brass); }
+.row.drop-into .bullet.collapsed::before { background: var(--brass); }
 
 /* Drop *between*: an insertion line at the row's top or bottom edge. Its left
  * edge starts at --drop-x — the indent of the level the pointer picked — so the
@@ -583,9 +583,13 @@ button { font: inherit; color: inherit; }
   pointer-events: none;
 }
 
+/* The bullet box is the *collapsed disc's* size — the largest of the three
+ * states — and the other two are drawn inside it. That keeps one box, one
+ * centre and one hit target across all three, so folding a row never nudges the
+ * text beside it and the nesting guides stay put under the bullets. */
 .bullet {
-  width: 16px;
-  height: 16px;
+  width: 18px;
+  height: 18px;
   flex: none;
   background: none;
   border: none;
@@ -601,49 +605,58 @@ button { font: inherit; color: inherit; }
  * insertion line's head dot and hid the indent it marks. (Hold-to-drag is a
  * power-user gesture, so no grab cursor advertises it on bullets at rest.) */
 body:has(.row.gap-slot) { cursor: default; }
+/* The dot: 6px, in the centre, in every state. It is the one part that never
+ * changes, which is what lets the surround carry the meaning — and it is also
+ * the drag handle, so it stays a constant target no matter how the row is
+ * folded. 6px inside an 18px box leaves 6px across. */
 .bullet::after {
   content: '';
   position: absolute;
-  inset: 5px;
+  inset: 6px;
   border-radius: 50%;
   background: var(--bullet-dot);
   transition: background 0.12s ease;
 }
+
+/* Expanded: a 12px ring around the dot. Inset 3px off the 18px box, drawn as a
+ * 1.5px border, so the gap between dot and ring is also 1.5px — gap and stroke
+ * are the same interval, which is what makes the spacing read as chosen rather
+ * than arbitrary. */
 .bullet.parent::before {
   content: '';
   position: absolute;
-  inset: 0;
+  inset: 3px;
   border-radius: 50%;
-  background: var(--bullet-ring);
-  transition: background 0.12s ease;
+  border: 1.5px solid var(--bullet-ring);
+  transition: border-color 0.12s ease, background 0.12s ease;
 }
-.bullet.leaf::after { background: var(--bullet-dot); }
-/* Hover lifts ring and dot a neutral notch — no brand tint on a structural mark. */
-.bullet:hover::before { background: var(--bullet-ring-hover); }
-.bullet:hover::after { background: var(--bullet-dot-hover); }
 
-/* Collapsed: the halo grows past the ring rather than just tinting it.
+/* Collapsed: the ring fills in and grows to the full 18px box.
  *
- * Deliberately a change of *size and weight*, not of colour. A darker grey is
- * the first thing to disappear on a dark background, at low contrast, or to a
- * colourblind reader — and this mark carries real information ("there's more
- * folded under here"), so it can't depend on hue landing correctly. Scaling the
- * ring past the bullet's own bounds reads at a glance and keeps reading when
- * the colour doesn't.
+ * Deliberately a change of *size and shape*, not of colour — both states use
+ * the same two tokens. A hue-only difference is the first thing to go on a dark
+ * background or to a colourblind reader, and this mark carries real information
+ * ("there's more folded under here"). Small hollow ring vs large solid disc
+ * survives losing the colour entirely.
  *
  * The indicator and the control that toggles it are the same object, which is
  * the convention Workflowy and Logseq both landed on. */
 .bullet.parent.collapsed::before {
-  background: var(--bullet-halo);
-  inset: -3px;
+  inset: 0;
+  border: none;
+  background: var(--bullet-ring);
 }
-/* Keep the dot the size it always was — the halo is the change, and shrinking
- * the dot underneath it would just make the whole mark mushier. */
-.bullet.parent.collapsed::after { inset: 5px; }
-/* A leaf has nothing to fold, so its bullet is inert — no pointer, no hover
- * lift. The row's zoom control is still there for going into it. */
+
+/* Hover lifts surround and dot together, so every state answers the pointer —
+ * including a leaf, whose dot is draggable even though it has nothing to fold. */
+.bullet:hover::before { border-color: var(--bullet-ring-hover); }
+.bullet.parent.collapsed:hover::before { background: var(--bullet-ring-hover); }
+.bullet:hover::after { background: var(--bullet-dot-hover); }
+
+/* A leaf has nothing to fold, so clicking it does nothing and no pointer
+ * advertises otherwise. Its dot still lifts on hover, though — it is a drag
+ * handle like every other bullet, and it would be a lie to draw it as dead. */
 .bullet.leaf { cursor: default; }
-.bullet.leaf:hover::after { background: var(--bullet-dot); }
 
 .check {
   width: 15px;
