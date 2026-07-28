@@ -599,40 +599,70 @@ button { font: inherit; color: inherit; }
 .fold,
 .zoom {
   flex: none;
-  width: 15px;
+  /* The button is 23px square but occupies only GUTTER (15px) of layout: the
+   * negative margins pull 4px back on each side, so the column keeps the width
+   * GUIDE_X0 is measured against while the target grows past it.
+   *
+   * 15px was under every pointer-target minimum, and the bullet sits one gap
+   * away — a near-miss zoomed the row instead of folding it. 23px overlaps the
+   * row's padding and the gap, both dead space, so nothing else loses area.
+   *
+   * The vertical margins do the same job for height: without them the 23px box
+   * becomes the tallest thing in the row and pushes every row 4px further
+   * apart, which is the whole list's rhythm changing to enlarge one target. */
+  width: 23px;
+  height: 23px;
+  margin: -4px;
   align-self: center;
   display: flex;
   align-items: center;
   justify-content: center;
+  /* The disc below is absolute; this is what it centres against. */
+  position: relative;
   background: none;
   border: none;
-  /* A circle, not a rounded rect. The mask sits on top of a vertical guide, and
-   * a disc reads as the line passing behind a round object; a 15x18 rounded
-   * rectangle reads as a notch cut out of it. Square box + 50% gets the circle,
-   * so the padding has to keep the box square rather than pad only vertically. */
-  height: 15px;
   padding: 0;
-  border-radius: 50%;
   cursor: pointer;
   color: var(--ink-ghost);
   font-size: 14px;
   line-height: 1;
   opacity: 0;
-  transition: opacity 0.12s ease, color 0.12s ease, background 0.12s ease;
+  transition: opacity 0.12s ease, color 0.12s ease;
+}
+
+/* The visible disc, drawn at the old 15px inside the larger target. It is what
+ * masks the guide, so it stays a circle on a square box — a rounded rectangle
+ * reads as a notch cut out of the line rather than the line passing behind
+ * something round. The extra 4px of target around it is invisible. */
+.fold::before,
+.zoom::before {
+  content: '';
+  position: absolute;
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  background: none;
+  transition: background 0.12s ease;
+  /* Behind the glyph, which is a real child and would otherwise be painted
+   * under a positioned pseudo-element that comes later in paint order. */
+  z-index: -1;
 }
 
 /* The flattened leaf view's fallback: no gutter column there, so it sits at the
  * right edge and can size to its own content. */
 .zoom.trailing {
   width: auto;
-  /* Back to a pill: this one sits at the row's right edge with no guide under
-   * it, so it has nothing to cut through and the circle would just crop it. */
   height: auto;
-  border-radius: 5px;
-  margin-left: auto;
+  margin: 0 0 0 auto;
   padding: 2px 5px;
-  background: none;
+  border-radius: 5px;
 }
+/* No guide runs under this one, so it has nothing to mask and no reason for a
+ * fixed-size disc behind a variable-width button. It paints its own pill. */
+.zoom.trailing::before { content: none; }
+.row:hover .zoom.trailing { background: var(--sunk); }
+.zoom.trailing:hover { background: var(--edge-soft); }
+.zoom.trailing:focus-visible { background: var(--sunk); }
 
 /* On every row below depth 0 this slot sits exactly on an ancestor's guide —
  * the gutter is one indent-step left of the bullet, which is where that line
@@ -640,23 +670,30 @@ button { font: inherit; color: inherit; }
  * and breaks the line behind itself, the way a label breaks a rule it sits on.
  * At rest it's transparent and the guide runs unbroken. */
 .row:hover .zoom,
-.row:hover .fold {
-  opacity: 1;
-  /* --sunk, not --ground: the chevron only shows while the row is hovered, and
-   * a hovered row paints --sunk. Masking with the page colour would leave a
-   * pale notch in the row's own highlight. */
+.row:hover .fold { opacity: 1; }
+.row:hover .zoom::before,
+.row:hover .fold::before {
+  /* --sunk, not --ground: the disc only shows while the row is hovered, and a
+   * hovered row paints --sunk. Masking with the page colour would leave a pale
+   * notch in the row's own highlight. */
   background: var(--sunk);
 }
-.zoom:hover { color: var(--ink); background: var(--edge-soft); }
+.zoom:hover { color: var(--ink); }
 /* --mark-hover, the same lift the bullet takes. --mark-lift was half a step —
  * 4.17:1 to 5.07:1 against the ground — which is a real change by measurement
  * and no change at all to look at. This is 4.17 to 6.47, and it stays on the
  * mark ramp rather than going to body-text white. */
-.fold:hover { color: var(--mark-hover); background: var(--edge-soft); }
+.fold:hover { color: var(--mark-hover); }
+/* Pointing at the control fills its disc, which is also what tells you the
+ * whole circle is clickable and not just the 13px glyph inside it. */
+.zoom:hover::before,
+.fold:hover::before { background: var(--edge-soft); }
 /* Keyboard focus must not depend on a hover that never comes — and it needs the
  * same mask, since tabbing to it doesn't hover the row. */
 .zoom:focus-visible,
-.fold:focus-visible { opacity: 1; background: var(--sunk); }
+.fold:focus-visible { opacity: 1; }
+.zoom:focus-visible::before,
+.fold:focus-visible::before { background: var(--sunk); }
 
 /* The triangle rides the row's structural ramp rather than the text ink, like
  * the bullet and the checkbox it sits beside. */

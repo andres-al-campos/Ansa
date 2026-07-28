@@ -59,13 +59,28 @@ test('the gutter slot and row gap match what the guide offset assumes', () => {
   // bullet, so its width is a term in GUIDE_X0. Sizing it to its glyph instead
   // of fixing it here would drag every nesting guide sideways. `.zoom` and
   // `.fold` share the rule; either name landing on a different width breaks it.
-  expect(px('.fold', 'width')).toBe(GEOMETRY.GUTTER)
+  // The button is deliberately bigger than its column — 15px was too small a
+  // pointer target next to a bullet that does something else — so what has to
+  // equal GUTTER is the space it *occupies*: width plus both margins.
+  //
+  // Read the two axes separately. `0 -4px` and `-4px` differ only in the
+  // vertical value, and reading one number for both made a missing vertical
+  // pull — which spreads every row apart — look like a passing test.
+  const margin = declaration('.fold', 'margin').split(/\s+/).map(parseFloat)
+  const [insetY, insetX] = margin.length === 1 ? [margin[0], margin[0]] : margin
+  expect(px('.fold', 'width') + 2 * insetX).toBe(GEOMETRY.GUTTER)
   expect(px('.row', 'gap')).toBe(GEOMETRY.ROW_GAP)
 
-  // The slot masks the guide behind it with a `border-radius: 50%` disc, which
-  // is only a circle while the box is square. A stray vertical padding or a
-  // height change would make it an oval and the mask would read as a smear.
-  expect(px('.fold', 'height')).toBe(GEOMETRY.GUTTER)
+  // Square, so `border-radius: 50%` on the disc is a circle rather than an
+  // oval — it masks a guide, and an oval reads as a smear across the line.
+  expect(px('.fold', 'height')).toBe(px('.fold', 'width'))
+  expect(px('.fold::before', 'width')).toBe(px('.fold::before', 'height'))
+
+  // The same pull vertically, and for the same kind of reason: an unmargined
+  // 23px button is the tallest thing in the row and spreads the whole list out
+  // by 4px a row. The bullet is what sets row height, so the button has to
+  // occupy no more than it does.
+  expect(px('.fold', 'height') + 2 * insetY).toBeLessThanOrEqual(GEOMETRY.BULLET)
 })
 
 test('the guide is centred on the bullet, not hung off its left edge', () => {
