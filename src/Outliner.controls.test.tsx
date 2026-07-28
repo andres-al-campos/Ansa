@@ -107,6 +107,11 @@ test('a leaf has no fold control to click', () => {
   expect(fold).toBeTruthy()
   expect(fold.querySelector('svg')).toBeNull()
   expect(fold.getAttribute('aria-expanded')).toBe(null)
+
+  // And it says so, so CSS can suppress the hover disc. Without the marker the
+  // row paints an empty circle where no control exists — which went unnoticed
+  // while the disc was the same colour as the row, and did not after.
+  expect(fold.classList.contains('empty')).toBe(true)
   click(fold)
 
   expect(labels(container)).toEqual(before)

@@ -4,6 +4,7 @@
   --sunk: #eff2f6;
   --edge: #dce1e8;
   --edge-soft: #e9edf2;
+  --edge-lit: #cbd2dd;
   --guide: #9ea6b4;
   /* The mirror of the dark ramp — same contrast ratios, reached by going darker
    * instead of lighter. See the dark block below for why there are two values
@@ -34,6 +35,10 @@
     --sunk: #13161d;
     --edge: #2a303b;
     --edge-soft: #222831;
+    /* A step above --edge, for a control's disc under the pointer. --edge-soft
+     * is *below* --edge, so it can't serve here — it dims a surface, and this
+     * one has to lift. */
+    --edge-lit: #3a4150;
     --guide: #4c5464;
     /* The row's structural marks — every bullet state, the checkbox, the fold
      * triangle — share one colour, and hovering lifts them all one step. Two
@@ -630,10 +635,19 @@ button { font: inherit; color: inherit; }
   transition: opacity 0.12s ease, color 0.12s ease;
 }
 
-/* The visible disc, drawn at the old 15px inside the larger target. It is what
- * masks the guide, so it stays a circle on a square box — a rounded rectangle
- * reads as a notch cut out of the line rather than the line passing behind
- * something round. The extra 4px of target around it is invisible. */
+/* The disc, drawn at 15px inside the 23px target. Two jobs: it masks the guide
+ * running behind the glyph, and it shows how much of the area around that glyph
+ * is clickable — the target is nearly twice the triangle's width, and nothing
+ * else says so.
+ *
+ * The second job is why it is painted rather than merely filled with the row's
+ * own colour. Masking only needs --sunk, which is exactly what a hovered row
+ * paints: a 1.00:1 disc, invisible by construction. It has to sit above the row
+ * to read as a well the glyph rests in.
+ *
+ * Circle on a square box, not a rounded rectangle — a rectangle reads as a
+ * notch cut out of the guide rather than the line passing behind something
+ * round. */
 .fold::before,
 .zoom::before {
   content: '';
@@ -660,9 +674,16 @@ button { font: inherit; color: inherit; }
 /* No guide runs under this one, so it has nothing to mask and no reason for a
  * fixed-size disc behind a variable-width button. It paints its own pill. */
 .zoom.trailing::before { content: none; }
-.row:hover .zoom.trailing { background: var(--sunk); }
-.zoom.trailing:hover { background: var(--edge-soft); }
-.zoom.trailing:focus-visible { background: var(--sunk); }
+
+/* A leaf's fold button exists only to hold the gutter open — dropping it would
+ * slide the row's contents a column left. It has no glyph, so a disc under it
+ * would advertise a control that isn't there. Harmless while the disc was
+ * invisible; a visible empty circle on every leaf row once it wasn't. */
+.fold.empty::before { content: none; }
+.fold.empty { cursor: default; }
+.row:hover .zoom.trailing { background: var(--edge); }
+.zoom.trailing:hover { background: var(--edge-lit); }
+.zoom.trailing:focus-visible { background: var(--edge-lit); }
 
 /* On every row below depth 0 this slot sits exactly on an ancestor's guide —
  * the gutter is one indent-step left of the bullet, which is where that line
@@ -673,10 +694,11 @@ button { font: inherit; color: inherit; }
 .row:hover .fold { opacity: 1; }
 .row:hover .zoom::before,
 .row:hover .fold::before {
-  /* --sunk, not --ground: the disc only shows while the row is hovered, and a
-   * hovered row paints --sunk. Masking with the page colour would leave a pale
-   * notch in the row's own highlight. */
-  background: var(--sunk);
+  /* One step above the row it sits on, not equal to it. --sunk is what a
+   * hovered row already paints, so a --sunk disc was a 1.00:1 circle — it
+   * masked the guide and was otherwise invisible, leaving the enlarged target
+   * unadvertised. --edge reads as a well without becoming a button. */
+  background: var(--edge);
 }
 .zoom:hover { color: var(--ink); }
 /* --mark-hover, the same lift the bullet takes. --mark-lift was half a step —
@@ -684,16 +706,18 @@ button { font: inherit; color: inherit; }
  * and no change at all to look at. This is 4.17 to 6.47, and it stays on the
  * mark ramp rather than going to body-text white. */
 .fold:hover { color: var(--mark-hover); }
-/* Pointing at the control fills its disc, which is also what tells you the
- * whole circle is clickable and not just the 13px glyph inside it. */
+/* Pointing at the control lifts its disc another step. --edge-soft would go
+ * backwards from here — it is darker than the --edge the disc now rests at. */
 .zoom:hover::before,
-.fold:hover::before { background: var(--edge-soft); }
+.fold:hover::before { background: var(--edge-lit); }
 /* Keyboard focus must not depend on a hover that never comes — and it needs the
  * same mask, since tabbing to it doesn't hover the row. */
 .zoom:focus-visible,
 .fold:focus-visible { opacity: 1; }
+/* Tabbing to it has to look at least as present as pointing at it, since there
+ * is no cursor to corroborate. Same lit disc as hover. */
 .zoom:focus-visible::before,
-.fold:focus-visible::before { background: var(--sunk); }
+.fold:focus-visible::before { background: var(--edge-lit); }
 
 /* The triangle rides the row's structural ramp rather than the text ink, like
  * the bullet and the checkbox it sits beside. */

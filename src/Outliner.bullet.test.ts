@@ -22,16 +22,26 @@ import { expect, test } from 'vitest'
 
 const css = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'index.css'), 'utf8')
 
-/** The body of the first rule whose selector matches exactly, pseudos included. */
+/**
+ * The declarations of the first rule whose selector matches exactly, pseudos
+ * included, with comments replaced by `;`.
+ *
+ * Stripping is not cosmetic. These rules carry long comments, and every caller
+ * matches on `(?:^|;)` boundaries — a declaration written after a `*​/` is
+ * invisible to that, so a rule can appear to set nothing at all. Assertions
+ * phrased as `not.toMatch` then pass against the empty result and the guard
+ * quietly stops guarding. Prose inside a comment can also read as a
+ * declaration, which fails the other way.
+ */
 function body(selector: string): string {
   const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
   const rule = css.match(new RegExp(`^${escaped}\\s*\\{([^}]*)\\}`, 'm'))
   if (!rule) throw new Error(`No CSS rule for "${selector}" — did the selector get renamed?`)
-  return rule[1]
+  return rule[1].replace(/\/\*[\s\S]*?\*\//g, ';')
 }
 
 /** Every declaration of `property` in a rule, longhand only (not `border-color`
- *  when asking for `border`). */
+ *  when asking for `border`). `body` has already stripped comments. */
 function declarations(selector: string, property: string): string[] {
   return [...body(selector).matchAll(new RegExp(`(?:^|;)\\s*${property}\\s*:\\s*([^;]+)`, 'g'))].map(
     (m) => m[1].trim(),
@@ -106,6 +116,21 @@ test('no drop rule fills a bullet or touches its dot', () => {
   // Brassing the dot turns a dot-inside-a-highlight into one solid blob, and
   // did it for leaves only — a third behaviour across three states.
   expect(css).not.toMatch(/^\.row\.drop-into \.bullet[^{]*::after/m)
+})
+
+test('the fold disc is never the same colour as the row beneath it', () => {
+  // The disc started life as a pure mask, filled with --sunk — exactly what a
+  // hovered row paints. That is a 1.00:1 circle: it hid the guide and was
+  // otherwise invisible. Once it also had to advertise a target wider than the
+  // glyph, invisible stopped being acceptable.
+  // Assert the value each one *has*, not merely that it isn't --sunk: a
+  // negative assertion also passes when the property is missing entirely.
+  expect(declarations('.row:hover .fold::before', 'background')).toEqual(['var(--edge)'])
+
+  // And it has to *rise* under the pointer. --edge-soft is darker than --edge,
+  // so reaching for it here would dim the disc on hover.
+  expect(declarations('.fold:hover::before', 'background')).toEqual(['var(--edge-lit)'])
+  expect(css.match(/--edge-lit\s*:/g)).toHaveLength(2)
 })
 
 test('the collapsed drop rule outranks the expanded ring it overrides', () => {

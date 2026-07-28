@@ -1451,7 +1451,13 @@ export default function Outliner({ initial }: { initial: Tree }) {
                     its width whether or not the button is showing. */}
                 {!flat && (
                   <button
-                    className={'fold' + (parent && !node.collapsed ? ' open' : '')}
+                    className={
+                      'fold' +
+                      (parent && !node.collapsed ? ' open' : '') +
+                      // A leaf's button is a spacer holding the column open. It
+                      // has no glyph, so it must not paint a disc either.
+                      (parent ? '' : ' empty')
+                    }
                     onClick={() =>
                       parent && setPresent(toggleCollapsed(tree, id), { op: 'toggleCollapsed', id })
                     }
