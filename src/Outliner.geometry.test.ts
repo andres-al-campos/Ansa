@@ -83,6 +83,25 @@ test('the gutter slot and row gap match what the guide offset assumes', () => {
   expect(px('.fold', 'height') + 2 * insetY).toBeLessThanOrEqual(GEOMETRY.BULLET)
 })
 
+test('the fold-out animation and the timer that clears it agree', () => {
+  // Two clocks, one event. CSS shrinks the departing rows over its own
+  // duration; FOLD_RUN is what JS believes that duration to be, and the
+  // backstop timer that clears the stand-ins if `animationend` never arrives is
+  // set from it. Let FOLD_RUN fall below the CSS duration and that backstop
+  // unmounts the rows mid-shrink, so they snap away — worse than no animation
+  // at all, and neither file has any reason to mention the other.
+  const seconds = declaration('.row.closing', 'animation').match(/([\d.]+)s/)
+  if (!seconds) throw new Error('.row.closing sets no animation duration')
+
+  const run = readFileSync(
+    join(dirname(fileURLToPath(import.meta.url)), 'Outliner.tsx'),
+    'utf8',
+  ).match(/const FOLD_RUN = (\d+)/)
+  if (!run) throw new Error('Could not find FOLD_RUN in Outliner.tsx')
+
+  expect(parseFloat(seconds[1]) * 1000).toBe(Number(run[1]))
+})
+
 test("the leaf fold's marker class is not styled by anything else", () => {
   // The marker started life as `empty`, which the sheet already used for the
   // empty-list placeholder — `padding: 18px 6px`. That padding won against the
