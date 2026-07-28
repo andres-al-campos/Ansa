@@ -65,18 +65,17 @@ test('the two surround forms are told apart by shape, not by colour', () => {
   }
 })
 
-test('the dot stays visible once the disc fills in behind it', () => {
-  // Filling the surround puts the dot on top of its own colour, where it
-  // disappears and the disc reads as a plain blob. This is the one place the
-  // dot leaves --mark, so pin both the resting swap and the hover swap — the
-  // generic `.bullet:hover::after` would otherwise drag it back to --mark-hover
-  // just as the surround moves to that same value.
-  expect(declarations('.bullet.parent.collapsed::after', 'background')).toEqual([
-    'var(--mark-dot)',
-  ])
-  expect(declarations('.bullet.parent.collapsed:hover::after', 'background')).toEqual([
-    'var(--ink)',
-  ])
+test('the dot is brighter than its surround in every state', () => {
+  // One rule for all three states rather than a special case for the disc: the
+  // dot is the drag handle and the only constant part, so it is always the lit
+  // thing and the surround is context around it. Filling the disc in then needs
+  // no exception — the dot is already ahead of it.
+  expect(declarations('.bullet::after', 'background')).toEqual(['var(--mark-dot)'])
+  expect(css).not.toMatch(/^\.bullet\.parent\.collapsed::after/m)
+
+  // Hover must not send the dot *backwards*. --mark-dot already sits above
+  // --mark-hover, so the generic surround-hover value would darken it.
+  expect(declarations('.bullet:hover::after', 'background')).toEqual(['var(--ink)'])
 })
 
 test('all three states light as a brass outline of the same weight', () => {

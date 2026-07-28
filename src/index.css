@@ -698,16 +698,16 @@ button { font: inherit; color: inherit; }
  * insertion line's head dot and hid the indent it marks. (Hold-to-drag is a
  * power-user gesture, so no grab cursor advertises it on bullets at rest.) */
 body:has(.row.gap-slot) { cursor: default; }
-/* The dot: 6px, in the centre, in every state. It is the one part that never
- * changes, which is what lets the surround carry the meaning — and it is also
- * the drag handle, so it stays a constant target no matter how the row is
- * folded. 6px inside an 18px box leaves 6px across. */
+/* The dot: 6px, in the centre, in every state, and always the brightest part of
+ * the bullet. It is the one part that never changes — and it is the drag
+ * handle, so the thing you grab is the thing that is lit, with the surround
+ * reading as context around it. 6px inside an 18px box leaves 6px across. */
 .bullet::after {
   content: '';
   position: absolute;
   inset: 6px;
   border-radius: 50%;
-  background: var(--mark);
+  background: var(--mark-dot);
   transition: background 0.12s ease;
 }
 
@@ -735,9 +735,9 @@ body:has(.row.gap-slot) { cursor: default; }
  * a reader who can't separate two close greys; a hue difference survives
  * neither, and the two forms are never side by side to be compared.
  *
- * The dot is the exception, and it has to be. Filling the surround puts it on
- * top of its own colour, where it vanishes and leaves an 18px blob — so here,
- * and only here, it switches to --mark-dot.
+ * The dot needs no special case here. It is brighter than the surround in
+ * every state, so filling the surround in leaves it standing rather than
+ * swallowing it — which is the reason that rule exists.
  *
  * The bullet only *shows* this state; the gutter triangle changes it. Splitting
  * the two is what Workflowy, Roam and Logseq all do. */
@@ -751,7 +751,6 @@ body:has(.row.gap-slot) { cursor: default; }
   border-color: var(--mark);
   background: var(--mark);
 }
-.bullet.parent.collapsed::after { background: var(--mark-dot); }
 
 /* Hover lifts surround and dot together, so every state answers the pointer —
  * including a leaf, whose dot is draggable even though it has nothing to fold. */
@@ -760,12 +759,11 @@ body:has(.row.gap-slot) { cursor: default; }
   border-color: var(--mark-hover);
   background: var(--mark-hover);
 }
-.bullet:hover::after { background: var(--mark-hover); }
-/* The disc's dot keeps its own colour on hover. Letting the generic rule take
- * it to --mark-hover would land it on a surround that just moved to the same
- * value — the blob again, only on the state you are pointing at. --ink is the
- * body text, so the dot separates further as the disc brightens. */
-.bullet.parent.collapsed:hover::after { background: var(--ink); }
+/* --ink, not --mark-hover. The dot rests at --mark-dot, which is already
+ * brighter than --mark-hover, so lifting it onto the surround's hover value
+ * would *darken* it — and close the gap to a surround moving the other way.
+ * --ink is the body text, so the dot stays ahead as the surround brightens. */
+.bullet:hover::after { background: var(--ink); }
 
 /* Every bullet zooms now, leaf included — a leaf is a perfectly good place to
  * zoom into, and it is a drag handle besides. The exception is the flattened
