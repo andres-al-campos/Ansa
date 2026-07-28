@@ -111,7 +111,14 @@ test('a leaf has no fold control to click', () => {
   // And it says so, so CSS can suppress the hover disc. Without the marker the
   // row paints an empty circle where no control exists — which went unnoticed
   // while the disc was the same colour as the row, and did not after.
-  expect(fold.classList.contains('empty')).toBe(true)
+  //
+  // `leaf`, not `empty`: `.empty` is the empty-list placeholder and carries its
+  // own padding, which beat this button's height and made every leaf row 6px
+  // taller than every parent row. jsdom does no layout, so nothing caught that
+  // — the guard here is that the marker never goes back to a name the
+  // stylesheet already uses for something else.
+  expect(fold.classList.contains('leaf')).toBe(true)
+  expect(fold.classList.contains('empty')).toBe(false)
   click(fold)
 
   expect(labels(container)).toEqual(before)

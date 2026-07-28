@@ -83,6 +83,27 @@ test('the gutter slot and row gap match what the guide offset assumes', () => {
   expect(px('.fold', 'height') + 2 * insetY).toBeLessThanOrEqual(GEOMETRY.BULLET)
 })
 
+test("the leaf fold's marker class is not styled by anything else", () => {
+  // The marker started life as `empty`, which the sheet already used for the
+  // empty-list placeholder — `padding: 18px 6px`. That padding won against the
+  // button's own height and grew every *leaf* row to 38px against a parent
+  // row's 32px, so the list's rhythm broke on exactly the rows with no
+  // children. jsdom does no layout and every test still passed.
+  //
+  // Find the marker the way the DOM does, then assert no bare rule claims it.
+  const marker = readFileSync(
+    join(dirname(fileURLToPath(import.meta.url)), 'Outliner.tsx'),
+    'utf8',
+  ).match(/\(parent \? '' : ' (\w+)'\)/)
+  if (!marker) throw new Error('Could not find the leaf fold marker class in Outliner.tsx')
+
+  // A rule on the bare class — `.leaf {` — applies to the button regardless of
+  // what it was meant for. Qualified rules (`.fold.leaf`, `.bullet.leaf`) are
+  // deliberate and fine.
+  const bare = new RegExp(`(?:^|[,}])\\s*\\.${marker[1]}\\s*(?:,|\\{)`, 'm')
+  expect(css).not.toMatch(bare)
+})
+
 test('the guide is centred on the bullet, not hung off its left edge', () => {
   // A 1px line placed at `left: GUIDE_X0` spans X→X+1 and so centres half a
   // pixel right of the bullet. The offset only cancels if GUIDE_W is the width

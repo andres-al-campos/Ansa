@@ -1456,7 +1456,10 @@ export default function Outliner({ initial }: { initial: Tree }) {
                       (parent && !node.collapsed ? ' open' : '') +
                       // A leaf's button is a spacer holding the column open. It
                       // has no glyph, so it must not paint a disc either.
-                      (parent ? '' : ' empty')
+                      // Named `leaf` rather than `empty` because `.empty` is
+                      // the empty-list placeholder, whose padding grew this
+                      // button and every leaf row with it.
+                      (parent ? '' : ' leaf')
                     }
                     onClick={() =>
                       parent && setPresent(toggleCollapsed(tree, id), { op: 'toggleCollapsed', id })

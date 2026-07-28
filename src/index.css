@@ -679,8 +679,13 @@ button { font: inherit; color: inherit; }
  * slide the row's contents a column left. It has no glyph, so a disc under it
  * would advertise a control that isn't there. Harmless while the disc was
  * invisible; a visible empty circle on every leaf row once it wasn't. */
-.fold.empty::before { content: none; }
-.fold.empty { cursor: default; }
+/* `.leaf`, not `.empty`: `.empty` is already the empty-list placeholder, and it
+ * carries `padding: 18px 6px`. That padding beat this button's 23px height and
+ * grew every leaf row to 38px — the rows got taller, and only the ones with no
+ * children did. A marker class on a shared element needs a name nothing else in
+ * the sheet claims. */
+.fold.leaf::before { content: none; }
+.fold.leaf { cursor: default; }
 .row:hover .zoom.trailing { background: var(--edge); }
 .zoom.trailing:hover { background: var(--edge-lit); }
 .zoom.trailing:focus-visible { background: var(--edge-lit); }
