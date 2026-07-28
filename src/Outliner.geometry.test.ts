@@ -19,7 +19,9 @@ import { dirname, join } from 'node:path'
 import { expect, test } from 'vitest'
 import { GEOMETRY } from './Outliner'
 
-const css = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'index.css'), 'utf8')
+const here = dirname(fileURLToPath(import.meta.url))
+const css = readFileSync(join(here, 'index.css'), 'utf8')
+const source = readFileSync(join(here, 'Outliner.tsx'), 'utf8')
 
 /**
  * The value of one declaration inside the first rule matching `selector`.
@@ -83,23 +85,36 @@ test('the gutter slot and row gap match what the guide offset assumes', () => {
   expect(px('.fold', 'height') + 2 * insetY).toBeLessThanOrEqual(GEOMETRY.BULLET)
 })
 
-test('the fold-out animation and the timer that clears it agree', () => {
-  // Two clocks, one event. CSS shrinks the departing rows over its own
-  // duration; FOLD_RUN is what JS believes that duration to be, and the
-  // backstop timer that clears the stand-ins if `animationend` never arrives is
-  // set from it. Let FOLD_RUN fall below the CSS duration and that backstop
-  // unmounts the rows mid-shrink, so they snap away — worse than no animation
-  // at all, and neither file has any reason to mention the other.
-  const seconds = declaration('.row.closing', 'animation').match(/([\d.]+)s/)
-  if (!seconds) throw new Error('.row.closing sets no animation duration')
+test('the fold animation names a keyframe the stylesheet actually defines', () => {
+  // The slide is inline `transition`, so it needs nothing from the sheet — but
+  // the staggered fade is an inline `animation` naming a keyframe by string.
+  // A keyframe name that doesn't resolve is not an error in CSS: the animation
+  // silently does nothing, `both` never applies, and the children appear at
+  // full opacity with no fade. Renaming the keyframe here would do exactly that
+  // and every test would still pass.
+  const named = source.match(/style\.animation = `(\S+) /)
+  if (!named) throw new Error('Could not find the fade animation in Outliner.tsx')
+  // The terminator has to be an explicit `{` or whitespace, not `\b`. A hyphen
+  // is a word boundary, so `fade-in\b` happily matches inside `fade-in-renamed`
+  // — the exact rename this test exists to catch, passing.
+  expect(css).toMatch(new RegExp(`@keyframes\\s+${named[1]}\\s*\\{`))
+})
 
-  const run = readFileSync(
-    join(dirname(fileURLToPath(import.meta.url)), 'Outliner.tsx'),
-    'utf8',
-  ).match(/const FOLD_RUN = (\d+)/)
-  if (!run) throw new Error('Could not find FOLD_RUN in Outliner.tsx')
-
-  expect(parseFloat(seconds[1]) * 1000).toBe(Number(run[1]))
+test('the fade finishes about when the slide does', () => {
+  // Two animations, one gesture: the rows below slide for FOLD_RUN while the
+  // arriving children fade in over FADE_RUN, staggered by up to FADE_CAP. They
+  // read as one movement only if they end together. Let the fade run well past
+  // the slide and the gap sits visibly empty before the children turn up —
+  // which is the "content appears late" complaint, in numbers.
+  const n = (name: string) => {
+    const m = source.match(new RegExp(`const ${name} = (\\d+)`))
+    if (!m) throw new Error(`Could not find ${name} in Outliner.tsx`)
+    return Number(m[1])
+  }
+  // The last child starts at FADE_CAP and takes FADE_RUN to arrive.
+  const fadeEnds = n('FADE_CAP') + n('FADE_RUN')
+  expect(fadeEnds).toBeGreaterThanOrEqual(n('FOLD_RUN'))
+  expect(fadeEnds).toBeLessThanOrEqual(n('FOLD_RUN') * 3)
 })
 
 test("the leaf fold's marker class is not styled by anything else", () => {
@@ -110,10 +125,7 @@ test("the leaf fold's marker class is not styled by anything else", () => {
   // children. jsdom does no layout and every test still passed.
   //
   // Find the marker the way the DOM does, then assert no bare rule claims it.
-  const marker = readFileSync(
-    join(dirname(fileURLToPath(import.meta.url)), 'Outliner.tsx'),
-    'utf8',
-  ).match(/\(parent \? '' : ' (\w+)'\)/)
+  const marker = source.match(/\(parent \? '' : ' (\w+)'\)/)
   if (!marker) throw new Error('Could not find the leaf fold marker class in Outliner.tsx')
 
   // A rule on the bare class — `.leaf {` — applies to the button regardless of
