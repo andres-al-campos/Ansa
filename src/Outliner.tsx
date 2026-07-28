@@ -77,14 +77,6 @@ const WORM_CAP = 1000
 // over before you want the next one.
 const FOLD_RUN = 160
 
-// Arriving children fade in over FADE_RUN, each one starting FADE_STAGGER after
-// the one above it, so the subtree resolves top to bottom instead of appearing
-// as a block. The stagger tightens on long lists (same rule as the worm) so a
-// twenty-child subtree doesn't take two seconds to finish arriving.
-const FADE_RUN = 140
-const FADE_STAGGER = 26
-const FADE_CAP = 320
-
 /**
  * Where a dragged node would land relative to the row under the pointer.
  * 'return' is the item's own vacated slot — drop there to put it back untouched.
@@ -713,37 +705,40 @@ export default function Outliner({ initial }: { initial: Tree }) {
       }
     })
 
-    // Stagger the arriving children in over the gap the slide opens. Only on
-    // the way open: on the way closed the children are leaving, and fading them
-    // out would hold the gap open and fight the slide they're supposed to be
-    // making room for.
-    const faded: HTMLElement[] = []
+    // Hold the arriving children back until the slide has finished, then let
+    // them appear. The gap opens empty and fills once it has stopped moving,
+    // rather than the content riding down with the rows it displaced.
+    //
+    // Hidden, not faded. A fade overlaps the slide, so the children are on
+    // screen while everything is still moving — which is the motion the slide
+    // was meant to take out. Waiting is what makes the two read as one thing
+    // happening after another.
+    //
+    // Only on the way open. Closing has no arrivals, and the children are
+    // already gone from the list by the time this runs.
+    const held: HTMLElement[] = []
     if (opening) {
-      const arriving = [...last.keys()].filter((id) => !first.has(id))
-      // Tighten the stagger so a wide subtree still finishes promptly, the same
-      // rule the worm uses.
-      const step = Math.min(FADE_STAGGER, FADE_CAP / Math.max(1, arriving.length))
-      arriving.forEach((id, i) => {
+      for (const id of last.keys()) {
+        if (first.has(id)) continue
         const el = els.get(id)
-        if (!el) return
-        el.style.animation = `fade-in ${FADE_RUN}ms ease ${i * step}ms both`
-        faded.push(el)
-      })
+        if (!el) continue
+        el.style.visibility = 'hidden'
+        held.push(el)
+      }
     }
 
     // Hand the rows back to the stylesheet once they've arrived. A left-behind
     // `transition: transform` would quietly animate the next thing that moves
     // this row — a drag, in particular, which has to track the pointer exactly.
-    const clear = window.setTimeout(
-      () => {
-        for (const el of moved) {
-          el.style.transition = ''
-          el.style.transform = ''
-        }
-        for (const el of faded) el.style.animation = ''
-      },
-      Math.max(FOLD_RUN, FADE_RUN + FADE_CAP) + 60,
-    )
+    // This is also what reveals the children, so it can't be much later than
+    // the slide or the gap sits visibly empty.
+    const clear = window.setTimeout(() => {
+      for (const el of moved) {
+        el.style.transition = ''
+        el.style.transform = ''
+      }
+      for (const el of held) el.style.visibility = ''
+    }, FOLD_RUN)
 
     return () => {
       cancelAnimationFrame(play)
@@ -755,7 +750,11 @@ export default function Outliner({ initial }: { initial: Tree }) {
         el.style.transition = ''
         el.style.transform = ''
       }
-      for (const el of faded) el.style.animation = ''
+      // This one is not just tidiness. The reveal above is the *only* thing
+      // that puts these rows back on screen, so a fold interrupted before it
+      // fires would leave them hidden for good — present in the list, taking
+      // up their space, invisible.
+      for (const el of held) el.style.visibility = ''
     }
   }, [rows, tree])
 

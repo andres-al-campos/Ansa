@@ -1105,22 +1105,6 @@ body:has(.row.gap-slot) { cursor: default; }
   animation-delay: var(--worm-delay, 0ms);
 }
 
-/* Children arriving under a row that just opened. The slide of the rows below
- * opens the gap; this is what fills it, staggered top to bottom so the subtree
- * resolves in reading order rather than appearing as a block.
- *
- * Opacity only — no height, no translate. The row is already in its final
- * position by the time this runs (the rows below moved out of its way), so
- * anything geometric here would fight the slide rather than join it.
- *
- * The delay is set inline per row, and `both` holds the row invisible through
- * it — without that a staggered row paints at full opacity, waits its turn,
- * then blinks out to start fading in. */
-@keyframes fade-in {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-
 @media (prefers-reduced-motion: reduce) {
   .row.worm > :not(.guide) { animation: none; }
   .pbar i { transition: none; }
