@@ -630,6 +630,15 @@ export default function Outliner({ initial }: { initial: Tree }) {
   // screen: that is a fold, and nothing else is.
   const prevTops = useRef(new Map<NodeId, number>())
   const prevTree = useRef(tree)
+  // Detached copies of last frame's rows, kept so a collapse has something to
+  // wipe out. By the time the effect runs React has already removed the
+  // departing children from the DOM, so the originals are gone — these are
+  // cloned at the end of each run, while they're still on screen.
+  const prevEls = useRef(new Map<NodeId, HTMLElement>())
+  // Last frame's row boxes, for parking those clones exactly where the real
+  // rows were. A clone is detached, so it can't be measured itself.
+  const prevHeights = useRef(new Map<NodeId, number>())
+  const prevRects = useRef(new Map<NodeId, { left: number; width: number }>())
 
   // Layout, not passive: this runs between React's commit and the browser's
   // paint, so the inverting transform is in place before the user ever sees the
@@ -649,12 +658,29 @@ export default function Outliner({ initial }: { initial: Tree }) {
     // First of the next one.
     const last = new Map<NodeId, number>()
     const els = new Map<NodeId, HTMLElement>()
+    const heights = new Map<NodeId, number>()
+    const rects = new Map<NodeId, { left: number; width: number }>()
     for (const el of document.querySelectorAll<HTMLElement>('.row[data-id]')) {
       const id = el.dataset.id!
-      last.set(id, el.getBoundingClientRect().top)
+      const box = el.getBoundingClientRect()
+      last.set(id, box.top)
+      heights.set(id, box.height)
+      rects.set(id, { left: box.left, width: box.width })
       els.set(id, el)
     }
     prevTops.current = last
+
+    // The rows that were on screen a moment ago but aren't now. A collapse
+    // animates exactly these, and they exist only as last run's clones.
+    const departing = [...prevEls.current.keys()].filter((id) => !els.has(id))
+    const clones = prevEls.current
+    const goneHeights = prevHeights.current
+    const goneRects = prevRects.current
+    // Refresh the caches for the *next* run, from the rows that are live now.
+    // Each copy carries whatever the row looked like when it was last real.
+    prevEls.current = new Map([...els].map(([id, el]) => [id, el.cloneNode(true) as HTMLElement]))
+    prevHeights.current = heights
+    prevRects.current = rects
 
     // Measured above the bail so the *next* fold still has its First positions
     // — the preference can be turned off between one fold and the next.
@@ -725,35 +751,80 @@ export default function Outliner({ initial }: { initial: Tree }) {
     // as units; a clip moves a hard edge down through the row's box, which is
     // what a window edge passing over it actually looks like.
     //
-    // Only on the way open. Closing has no arrivals — the children are out of
-    // the list by the time this runs — and the slide alone carries it.
+    // Both directions run the same sweep over a stack of rows; only which
+    // keyframe plays, and from which end the edge starts, differ. `group` is
+    // the rows in visual order with the box each occupies.
     const wiped: HTMLElement[] = []
-    if (opening) {
-      const arriving = [...last.keys()].filter((id) => !first.has(id))
-      // The group's extent, measured off the rows themselves rather than
-      // assumed from a row count: rows differ in height once a label wraps.
-      const tops = arriving.map((id) => last.get(id)!)
-      const top = Math.min(...tops)
-      const bottom = Math.max(
-        ...arriving.map((id) => last.get(id)! + els.get(id)!.getBoundingClientRect().height),
-      )
+    // Clones parked over the list during a collapse. These are appended to the
+    // document, so unlike `wiped` they have to be *removed*, not just reset —
+    // a leaked ghost is a dead row floating over the app.
+    const ghosts: HTMLElement[] = []
+    const sweep = (group: Array<{ el: HTMLElement; y: number; h: number }>, out: boolean) => {
+      if (!group.length) return
+      const top = Math.min(...group.map((g) => g.y))
+      const bottom = Math.max(...group.map((g) => g.y + g.h))
       const span = bottom - top
-
-      for (const id of arriving) {
-        const el = els.get(id)
-        if (!el) continue
-        const y = last.get(id)! - top
-        const h = el.getBoundingClientRect().height
-        // The line is at this row's top after (y / span) of the run, and clears
-        // its bottom after ((y + h) / span). Scaling both by FOLD_RUN puts every
-        // row on the same travelling edge.
-        const delay = span > 0 ? (y / span) * FOLD_RUN : 0
+      for (const { el, y, h } of group) {
+        // How far into the sweep the edge reaches this row's near and far side.
+        // Closing runs bottom-up, so a row's distance is measured from the
+        // bottom of the group instead of the top — the edge that arrives last
+        // on the way open is the one that leaves first on the way closed.
+        const from = out ? bottom - (y + h) : y - top
+        const delay = span > 0 ? (from / span) * FOLD_RUN : 0
         const run = span > 0 ? (h / span) * FOLD_RUN : FOLD_RUN
-        // Start fully clipped, so the row is covered through its delay.
-        el.style.clipPath = 'inset(0 0 100% 0)'
-        el.style.animation = `wipe-in ${run}ms linear ${delay}ms both`
+        // Hold the starting state through the delay: fully clipped on the way
+        // in, fully drawn on the way out.
+        el.style.clipPath = out ? 'inset(0 0 0 0)' : 'inset(0 0 100% 0)'
+        el.style.animation = `${out ? 'wipe-out' : 'wipe-in'} ${run}ms linear ${delay}ms both`
         wiped.push(el)
       }
+    }
+
+    if (opening) {
+      // Measured off the rows themselves rather than assumed from a row count:
+      // rows differ in height once a label wraps.
+      sweep(
+        [...last.keys()]
+          .filter((id) => !first.has(id))
+          .map((id) => ({ el: els.get(id)!, y: last.get(id)!, h: heights.get(id)! })),
+        false,
+      )
+    } else if (departing.length) {
+      // The departing rows are already out of the DOM, so their clones stand in
+      // for them: parked where the originals were, wiped away, then dropped.
+      // They are decoration, not content — inert, and hidden from readers, so
+      // a row that has left the tree can't be tabbed to or announced.
+      const board = document.querySelector('.rows')
+      const parked: Array<{ el: HTMLElement; y: number; h: number }> = []
+      for (const id of departing) {
+        const clone = clones.get(id)
+        const y = first.get(id)
+        const h = goneHeights.get(id)
+        const box = goneRects.get(id)
+        if (!clone || !board || y === undefined || h === undefined || !box) continue
+        // Not a row any more, and it must not answer to `.row` either. Dropping
+        // only `data-id` is not enough: plenty of code — the hit-test, and any
+        // query that walks the list — selects on the class alone, and a ghost
+        // that matches is a row that has left the tree still being counted.
+        // `ghost` carries the styling instead.
+        clone.className = 'ghost'
+        clone.removeAttribute('data-id')
+        clone.setAttribute('aria-hidden', 'true')
+        clone.style.pointerEvents = 'none'
+        // Fixed to the viewport at the coordinates the original occupied, so it
+        // sits exactly where the row was while the live list closes up beneath
+        // it. Out of flow, so it displaces nothing on its way out.
+        clone.style.position = 'fixed'
+        clone.style.top = `${y}px`
+        clone.style.left = `${box.left}px`
+        clone.style.width = `${box.width}px`
+        clone.style.height = `${h}px`
+        clone.style.margin = '0'
+        board.appendChild(clone)
+        ghosts.push(clone)
+        parked.push({ el: clone, y, h })
+      }
+      sweep(parked, true)
     }
 
     // Hand the rows back to the stylesheet once everything has arrived. A
@@ -771,6 +842,9 @@ export default function Outliner({ initial }: { initial: Tree }) {
         el.style.animation = ''
         el.style.clipPath = ''
       }
+      // The ghosts have no life beyond the animation — they are copies of rows
+      // that no longer exist, so they go rather than get reset.
+      for (const el of ghosts) el.remove()
     }
 
     // The slide and the wipe both run for FOLD_RUN — the wipe's last row starts

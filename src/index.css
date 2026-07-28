@@ -1118,6 +1118,29 @@ body:has(.row.gap-slot) { cursor: default; }
   to { clip-path: inset(0 0 0 0); }
 }
 
+/* A copy of a row that has already left the tree, parked over the list while it
+ * wipes away. It deliberately does *not* carry `.row`: the drag hit-test and
+ * every other walk of the list select on that class, and a ghost answering to
+ * it would be a departed row still being counted. So the few layout properties
+ * that matter are restated here — the rest of `.row` is colour and interaction
+ * a ghost has no use for. */
+.ghost {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  padding: 5px 6px;
+  border-radius: 6px;
+}
+
+/* The same edge, closing. The bottom inset grows, so the row is eaten from its
+ * bottom upward — the path a closing window's lower edge traces back over the
+ * content it was showing. Growing the *top* inset instead would eat downward,
+ * which is the edge travelling the wrong way. */
+@keyframes wipe-out {
+  from { clip-path: inset(0 0 0 0); }
+  to { clip-path: inset(0 0 100% 0); }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .row.worm > :not(.guide) { animation: none; }
   .pbar i { transition: none; }
