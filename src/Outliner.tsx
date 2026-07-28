@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { exportTree, parseTree, saveTree } from './storage'
 import { putTree } from './api'
 import { useOutlinerSync } from './useOutlinerSync'
@@ -71,11 +71,19 @@ const WORM_RUN = 400
 const WORM_STAGGER = 100
 const WORM_CAP = 1000
 
-// How long a folding row takes to close, and how long an unfolding one takes to
-// open. Short enough not to sit in the way of a second click — folding is
+// How long the rows below a fold take to slide to their new place, either
+// direction. Short enough not to sit in the way of a second click — folding is
 // something you do repeatedly while scanning a list, so the animation has to be
 // over before you want the next one.
 const FOLD_RUN = 160
+
+// Arriving children fade in over FADE_RUN, each one starting FADE_STAGGER after
+// the one above it, so the subtree resolves top to bottom instead of appearing
+// as a block. The stagger tightens on long lists (same rule as the worm) so a
+// twenty-child subtree doesn't take two seconds to finish arriving.
+const FADE_RUN = 140
+const FADE_STAGGER = 26
+const FADE_CAP = 320
 
 /**
  * Where a dragged node would land relative to the row under the pointer.
@@ -261,20 +269,6 @@ export default function Outliner({ initial }: { initial: Tree }) {
   /** ids currently running the worm, with their ripple index */
   const [worm, setWorm] = useState<Map<NodeId, number>>(new Map())
   const wormTimer = useRef<number | undefined>(undefined)
-
-  // Rows that have left the list but are still on screen, shrinking. Folding a
-  // parent drops its descendants from `rows` outright, so without this they
-  // vanish between two frames. They are held for FOLD_RUN, rendered inert, then
-  // dropped for real.
-  //
-  // Derived from the row list rather than from the fold button, because folding
-  // happens from three places — the triangle, the keyboard, and the auto-fold
-  // after a move — and all three go through `rows`.
-  const [closing, setClosing] = useState<Array<VisibleRow & { h: number }>>([])
-  const closeTimer = useRef<number | undefined>(undefined)
-  // Row heights measured on the render *before* a fold, since by the time we
-  // notice rows have left, their elements are gone and can't be measured.
-  const heights = useRef(new Map<NodeId, number>())
 
   // ------------------------------------------------------------ drag state
   const [dragId, setDragId] = useState<NodeId | null>(null)
@@ -625,65 +619,145 @@ export default function Outliner({ initial }: { initial: Tree }) {
   const rowsRef = useRef(rows)
   rowsRef.current = rows
 
-  // Catch rows that just left the list so they can shrink on the way out.
+  // Slide the rows below a fold to their new place instead of letting them jump.
+  //
+  // FLIP: measure where every row sits *before* the change (First), let React
+  // relayout (Last), then transform each moved row back to where it looked like
+  // it was (Invert) and release that transform with a transition (Play). The
+  // rows below travel their true distance in one continuous move.
+  //
+  // Transform, not height. Animating height reflows the document every frame,
+  // and a reflow per frame across a long list is what makes the list step down
+  // a row at a time rather than glide. A transform is composited: no layout, so
+  // the motion is smooth however many rows are below the fold.
   //
   // Only a fold animates. A scope change, a filter toggle, a delete and a drag
-  // all remove rows too, and each already has its own treatment — animating
-  // them here as well would replay the whole list on every navigation. The test
-  // is whether the row's nearest visible ancestor is still on screen and newly
-  // collapsed: that is a fold, and nothing else is.
-  const prevRows = useRef(rows)
+  // all move rows too, and each already has its own treatment — animating them
+  // here as well would replay the whole list on every navigation. The test is
+  // whether some row's collapsed flag just flipped while the row stayed on
+  // screen: that is a fold, and nothing else is.
+  const prevTops = useRef(new Map<NodeId, number>())
   const prevTree = useRef(tree)
+
   // Layout, not passive: this runs between React's commit and the browser's
-  // paint. With a passive effect the folded list paints first and the stand-ins
-  // appear a frame later, which is the jump the animation exists to remove.
+  // paint, so the inverting transform is in place before the user ever sees the
+  // rows in their new positions. With a passive effect the moved list paints
+  // first and the animation starts a frame late — from the wrong place, which
+  // is the jump it exists to remove.
   useLayoutEffect(() => {
-    const before = prevRows.current
     const beforeTree = prevTree.current
-    prevRows.current = rows
+    const first = prevTops.current
     prevTree.current = tree
 
-    const now = new Set(rows.map((r) => r.id))
-    const gone = before.filter((r) => !now.has(r.id))
+    // Read the preference per run rather than once: it can change mid-session,
+    // and a fold is short enough that there's no cost to asking each time.
+    const still = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
 
-    // Measure what is on screen now, for the next fold to collapse from. Done
-    // after reading `gone` so the map still holds the outgoing rows below.
-    const measured = heights.current
-    if (!gone.length) {
-      measured.clear()
-      for (const el of document.querySelectorAll<HTMLElement>('.row[data-id]')) {
-        measured.set(el.dataset.id!, el.getBoundingClientRect().height)
-      }
-      return
+    // Where everything sits now, both for this animation's Last and as the
+    // First of the next one.
+    const last = new Map<NodeId, number>()
+    const els = new Map<NodeId, HTMLElement>()
+    for (const el of document.querySelectorAll<HTMLElement>('.row[data-id]')) {
+      const id = el.dataset.id!
+      last.set(id, el.getBoundingClientRect().top)
+      els.set(id, el)
+    }
+    prevTops.current = last
+
+    // Measured above the bail so the *next* fold still has its First positions
+    // — the preference can be turned off between one fold and the next.
+    if (still) return
+
+    // The row whose fold caused this, if a fold caused it. It has to have been
+    // on screen before and still be on screen now — a node that arrived or left
+    // wholesale is a navigation, not a fold.
+    const toggled = rows.find((r) => {
+      const now = byId(tree, r.id)
+      const then = byId(beforeTree, r.id)
+      return now && then && !!now.collapsed !== !!then.collapsed && first.has(r.id)
+    })
+    if (!toggled) return
+
+    const opening = !byId(tree, toggled.id)?.collapsed
+    // Below the fold in the *rendered* list. Rows above it don't move, and
+    // measuring rather than reasoning about depth keeps this honest when a
+    // filter is also on.
+    const pivot = first.get(toggled.id)!
+
+    const moved: HTMLElement[] = []
+    for (const [id, y] of last) {
+      const was = first.get(id)
+      // A row with no previous position is arriving — it fades rather than
+      // slides, handled below.
+      if (was === undefined) continue
+      const dy = was - y
+      // Only rows below the fold move, and a sub-pixel delta is not motion.
+      if (Math.abs(dy) < 0.5 || y < pivot) continue
+
+      const el = els.get(id)!
+      // Invert: put it back where it appeared to be, with no transition, so
+      // this frame paints identically to the last one.
+      el.style.transition = 'none'
+      el.style.transform = `translateY(${dy}px)`
+      moved.push(el)
     }
 
-    // Every departing row must still exist in the tree, under a visible parent
-    // that just closed. A deleted row fails the first test; a scope or filter
-    // change fails the second.
-    const folded = gone.flatMap((r) => {
-      const node = byId(tree, r.id)
-      if (!node) return []
-      const ancestor = lineageOf(tree, r.id).find(
-        (a) => a.collapsed && !byId(beforeTree, a.id)?.collapsed && now.has(a.id),
-      )
-      if (!ancestor) return []
-      // Fall back to the row height the stylesheet settles at, for a row that
-      // was never measured (folded on the very first render).
-      return [{ ...r, h: measured.get(r.id) ?? 32 }]
+    // Play on the next frame. Setting the transform and clearing it in the same
+    // frame is a no-op — the browser coalesces both into the final value and
+    // nothing animates. rAF is the standard way to force the intermediate state
+    // to be observed.
+    const play = requestAnimationFrame(() => {
+      for (const el of moved) {
+        el.style.transition = `transform ${FOLD_RUN}ms ease`
+        el.style.transform = ''
+      }
     })
-    if (!folded.length) return
 
-    setClosing(folded)
-    // The timer is a backstop, not the mechanism — `animationend` on the row
-    // itself is. A timer alone drifts: it is throttled in a background tab, so
-    // the stand-ins outlive the animation and hold dead space open in a list
-    // the user comes back to. The margin covers the animation never firing at
-    // all, which is what happens when the rows mount already display:none.
-    window.clearTimeout(closeTimer.current)
-    closeTimer.current = window.setTimeout(() => setClosing([]), FOLD_RUN + 400)
+    // Stagger the arriving children in over the gap the slide opens. Only on
+    // the way open: on the way closed the children are leaving, and fading them
+    // out would hold the gap open and fight the slide they're supposed to be
+    // making room for.
+    const faded: HTMLElement[] = []
+    if (opening) {
+      const arriving = [...last.keys()].filter((id) => !first.has(id))
+      // Tighten the stagger so a wide subtree still finishes promptly, the same
+      // rule the worm uses.
+      const step = Math.min(FADE_STAGGER, FADE_CAP / Math.max(1, arriving.length))
+      arriving.forEach((id, i) => {
+        const el = els.get(id)
+        if (!el) return
+        el.style.animation = `fade-in ${FADE_RUN}ms ease ${i * step}ms both`
+        faded.push(el)
+      })
+    }
+
+    // Hand the rows back to the stylesheet once they've arrived. A left-behind
+    // `transition: transform` would quietly animate the next thing that moves
+    // this row — a drag, in particular, which has to track the pointer exactly.
+    const clear = window.setTimeout(
+      () => {
+        for (const el of moved) {
+          el.style.transition = ''
+          el.style.transform = ''
+        }
+        for (const el of faded) el.style.animation = ''
+      },
+      Math.max(FOLD_RUN, FADE_RUN + FADE_CAP) + 60,
+    )
+
+    return () => {
+      cancelAnimationFrame(play)
+      window.clearTimeout(clear)
+      // Unmounting mid-slide, or a second fold landing on top of this one:
+      // strip the inline state so the incoming animation measures a settled
+      // row rather than one frozen halfway through the last move.
+      for (const el of moved) {
+        el.style.transition = ''
+        el.style.transform = ''
+      }
+      for (const el of faded) el.style.animation = ''
+    }
   }, [rows, tree])
-
-  useEffect(() => () => window.clearTimeout(closeTimer.current), [])
 
   // One progress figure for the whole view: leaves done under the current
   // scope, or across every project at "Everything".
@@ -1446,18 +1520,6 @@ export default function Outliner({ initial }: { initial: Tree }) {
             const node = byId(tree, id)
             if (!node) return null
 
-            // Rows on their way out, drawn under the row that folded them away.
-            // A fold hides a whole subtree, not just direct children, so this
-            // claims every closing row that sits beneath this one — in their
-            // original order, which `closing` already preserves.
-            //
-            // They are stand-ins rather than real rows: no bullet, no handlers,
-            // no menu — the animation only needs a box of the right height and
-            // indent collapsing to nothing. Rendering the live row instead would
-            // keep a drag target and a tab stop alive for a row that is already
-            // gone from the tree's point of view.
-            const closingHere = closing.filter((c) => isAncestor(tree, id, c.id))
-
             // The lifted item leaves a slim slot behind (children hidden, list
             // closed up). Hovering it is the always-available "put it back" drop.
             if (dragId === id) {
@@ -1500,8 +1562,8 @@ export default function Outliner({ initial }: { initial: Tree }) {
                 : null
 
             return (
-              <Fragment key={id}>
               <div
+                key={id}
                 data-id={id}
                 className={
                   'row' +
@@ -1674,24 +1736,6 @@ export default function Outliner({ initial }: { initial: Tree }) {
                   </button>
                 )}
               </div>
-                {closingHere.map((c) => (
-                  <div
-                    key={`closing-${c.id}`}
-                    className="row closing"
-                    style={
-                      {
-                        paddingLeft: ROW_PAD + c.depth * INDENT,
-                        ['--row-h' as string]: `${c.h}px`,
-                      } as React.CSSProperties
-                    }
-                    // What actually ends the animation. Clearing them all on the
-                    // first row to finish is right: they run as one group, with
-                    // identical duration and no stagger.
-                    onAnimationEnd={() => setClosing([])}
-                    aria-hidden
-                  />
-                ))}
-              </Fragment>
             )
           })}
 

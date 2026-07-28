@@ -1105,34 +1105,28 @@ body:has(.row.gap-slot) { cursor: default; }
   animation-delay: var(--worm-delay, 0ms);
 }
 
-/* A row on its way out after a fold. It is an empty stand-in — the real row is
- * already gone from the tree — so it needs an explicit height to collapse from.
+/* Children arriving under a row that just opened. The slide of the rows below
+ * opens the gap; this is what fills it, staggered top to bottom so the subtree
+ * resolves in reading order rather than appearing as a block.
  *
- * --row-h is set inline, from the height the outgoing row actually measured
- * before it left. Deriving it here instead was wrong twice over: the tallest
- * thing in a row is the label, not the bullet, and a label's height moves with
- * the reader's font settings. Measuring sidesteps both.
+ * Opacity only — no height, no translate. The row is already in its final
+ * position by the time this runs (the rows below moved out of its way), so
+ * anything geometric here would fight the slide rather than join it.
  *
- * Height is animatable here precisely because the box is empty; on a real row
- * it would be a reflow per frame. */
-.row.closing {
-  height: var(--row-h);
-  overflow: hidden;
-  pointer-events: none;
-  animation: fold-out 0.16s ease forwards;
-}
-
-@keyframes fold-out {
-  from { height: var(--row-h); opacity: 1; }
-  to { height: 0; opacity: 0; }
+ * The delay is set inline per row, and `both` holds the row invisible through
+ * it — without that a staggered row paints at full opacity, waits its turn,
+ * then blinks out to start fading in. */
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .row.worm > :not(.guide) { animation: none; }
   .pbar i { transition: none; }
   .twisty { transition: none; }
-  /* Skip straight to gone rather than lingering for the duration. */
-  .row.closing { animation: none; height: 0; }
+  /* The fold's slide and fade are both driven from JS, which reads this same
+   * preference and skips them. Nothing to disable here — see FOLD_RUN. */
 }
 
 .empty {
