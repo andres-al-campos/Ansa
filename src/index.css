@@ -1105,10 +1105,34 @@ body:has(.row.gap-slot) { cursor: default; }
   animation-delay: var(--worm-delay, 0ms);
 }
 
+/* A row on its way out after a fold. It is an empty stand-in — the real row is
+ * already gone from the tree — so it needs an explicit height to collapse from.
+ *
+ * --row-h is set inline, from the height the outgoing row actually measured
+ * before it left. Deriving it here instead was wrong twice over: the tallest
+ * thing in a row is the label, not the bullet, and a label's height moves with
+ * the reader's font settings. Measuring sidesteps both.
+ *
+ * Height is animatable here precisely because the box is empty; on a real row
+ * it would be a reflow per frame. */
+.row.closing {
+  height: var(--row-h);
+  overflow: hidden;
+  pointer-events: none;
+  animation: fold-out 0.16s ease forwards;
+}
+
+@keyframes fold-out {
+  from { height: var(--row-h); opacity: 1; }
+  to { height: 0; opacity: 0; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .row.worm > :not(.guide) { animation: none; }
   .pbar i { transition: none; }
   .twisty { transition: none; }
+  /* Skip straight to gone rather than lingering for the duration. */
+  .row.closing { animation: none; height: 0; }
 }
 
 .empty {
