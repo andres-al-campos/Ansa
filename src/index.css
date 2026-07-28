@@ -11,7 +11,7 @@
   --mark: #6c7686;
   --mark-hover: #525b6a;
   --mark-dot: #333a47;
-  --mark-lift: #5f687a;
+  --ink-struck: #7e8797;
   --ink: #181d28;
   --ink-mid: #525a69;
   --ink-faint: #8a93a3;
@@ -51,17 +51,16 @@
      * that should recede, not a control. */
     --mark: #6e7889;
     --mark-hover: #8f99ab;
-    /* The dot inside the collapsed disc, and only there. A dot in --mark on a
-     * disc in --mark is invisible — the disc reads as a plain blob and the
-     * state stops looking like a disc at all. Dimming the disc instead doesn't
-     * work: every fill dark enough to separate a --mark dot lands under 2.5:1
-     * against the ground, fainter than the guides. So the dot goes brighter,
-     * 2.40:1 against the disc it sits on. */
+    /* The bullet's centre dot, in all three states. Brighter than the surround
+     * everywhere, so the drag handle is the lit part and the ring or disc reads
+     * as context around it — and so filling the disc in needs no special case,
+     * since the dot is already ahead of it at 2.40:1. */
     --mark-dot: #b6bfcc;
-    /* A half-step above --mark for the fold triangle's hover: enough lift to
-     * answer the pointer at 5.07:1, without --mark-hover's 6.47:1 making a
-     * 13px glyph the brightest mark on the row. */
-    --mark-lift: #7d8697;
+    /* Completed labels. Its own token rather than --ink-ghost, which is shared
+     * with crumbs, chips and empty states — those want to recede, but struck
+     * text still has to be read. --ink-ghost left it at 2.71:1, under the 3:1
+     * floor; this is 4.04:1, with the strike carrying the "done" signal. */
+    --ink-struck: #6b7686;
     --ink: #e7eaf0;
     --ink-mid: #98a1b0;
     --ink-faint: #6a7382;
@@ -607,8 +606,13 @@ button { font: inherit; color: inherit; }
   justify-content: center;
   background: none;
   border: none;
-  padding: 2px 0;
-  border-radius: 5px;
+  /* A circle, not a rounded rect. The mask sits on top of a vertical guide, and
+   * a disc reads as the line passing behind a round object; a 15x18 rounded
+   * rectangle reads as a notch cut out of it. Square box + 50% gets the circle,
+   * so the padding has to keep the box square rather than pad only vertically. */
+  height: 15px;
+  padding: 0;
+  border-radius: 50%;
   cursor: pointer;
   color: var(--ink-ghost);
   font-size: 14px;
@@ -621,6 +625,10 @@ button { font: inherit; color: inherit; }
  * right edge and can size to its own content. */
 .zoom.trailing {
   width: auto;
+  /* Back to a pill: this one sits at the row's right edge with no guide under
+   * it, so it has nothing to cut through and the circle would just crop it. */
+  height: auto;
+  border-radius: 5px;
   margin-left: auto;
   padding: 2px 5px;
   background: none;
@@ -640,10 +648,11 @@ button { font: inherit; color: inherit; }
   background: var(--sunk);
 }
 .zoom:hover { color: var(--ink); background: var(--edge-soft); }
-/* The triangle lifts to --mark-lift, not --ink. Body-text white made it the
- * brightest thing on the row, outshining the bullet it sits beside — and it is
- * a structural mark, so it stays on the mark ramp. */
-.fold:hover { color: var(--mark-lift); background: var(--edge-soft); }
+/* --mark-hover, the same lift the bullet takes. --mark-lift was half a step —
+ * 4.17:1 to 5.07:1 against the ground — which is a real change by measurement
+ * and no change at all to look at. This is 4.17 to 6.47, and it stays on the
+ * mark ramp rather than going to body-text white. */
+.fold:hover { color: var(--mark-hover); background: var(--edge-soft); }
 /* Keyboard focus must not depend on a hover that never comes — and it needs the
  * same mask, since tabbing to it doesn't hover the row. */
 .zoom:focus-visible,
@@ -821,7 +830,7 @@ body:has(.row.gap-slot) { cursor: default; }
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.row.done .label { color: var(--ink-ghost); text-decoration: line-through; }
+.row.done .label { color: var(--ink-struck); text-decoration: line-through; }
 
 .label-input {
   width: 100%;

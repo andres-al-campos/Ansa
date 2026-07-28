@@ -35,7 +35,11 @@ function declaration(selector: string, property: string): string {
     new RegExp(`^\\${selector}\\s*(?:,[^{]*)?\\{([^}]*)\\}`, 'm'),
   )
   if (!rule) throw new Error(`No CSS rule for "${selector}" — did the selector get renamed?`)
-  const decl = rule[1].match(new RegExp(`(?:^|;)\\s*${property}\\s*:\\s*([^;]+)`))
+  // Strip comments first: a declaration can follow a `*/` rather than a `;`,
+  // and the boundary below would miss it. Stripping also stops prose inside a
+  // comment from matching as if it were a declaration.
+  const declarations = rule[1].replace(/\/\*[\s\S]*?\*\//g, ';')
+  const decl = declarations.match(new RegExp(`(?:^|;)\\s*${property}\\s*:\\s*([^;]+)`))
   if (!decl) throw new Error(`"${selector}" sets no ${property}`)
   return decl[1].trim()
 }
@@ -57,6 +61,11 @@ test('the gutter slot and row gap match what the guide offset assumes', () => {
   // `.fold` share the rule; either name landing on a different width breaks it.
   expect(px('.fold', 'width')).toBe(GEOMETRY.GUTTER)
   expect(px('.row', 'gap')).toBe(GEOMETRY.ROW_GAP)
+
+  // The slot masks the guide behind it with a `border-radius: 50%` disc, which
+  // is only a circle while the box is square. A stray vertical padding or a
+  // height change would make it an oval and the mask would read as a smear.
+  expect(px('.fold', 'height')).toBe(GEOMETRY.GUTTER)
 })
 
 test('the guide is centred on the bullet, not hung off its left edge', () => {
