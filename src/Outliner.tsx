@@ -77,6 +77,16 @@ const WORM_CAP = 1000
 // over before you want the next one.
 const FOLD_RUN = 160
 
+// Closing runs in two stages rather than one: the children wipe away, and only
+// then do the rows below slide up into the space they left. Overlapping the two
+// puts a sliding sibling on top of a child that is still drawn, and for that
+// moment the list is two sets of text in the same pixels — unreadable, which is
+// worse than either stage being a little quick.
+//
+// Opening needs no such split: there the slide opens the gap *ahead* of the
+// content arriving into it, so the two never occupy the same space.
+const FOLD_STAGE = FOLD_RUN / 2
+
 /**
  * Where a dragged node would land relative to the row under the pointer.
  * 'return' is the item's own vacated slot — drop there to put it back untouched.
@@ -724,9 +734,18 @@ export default function Outliner({ initial }: { initial: Tree }) {
     // frame is a no-op — the browser coalesces both into the final value and
     // nothing animates. rAF is the standard way to force the intermediate state
     // to be observed.
+    // Opening, the slide is the whole animation and owns the full run. Closing,
+    // it is the second stage: it waits out the wipe, then covers the distance in
+    // what's left.
+    const slideRun = opening ? FOLD_RUN : FOLD_STAGE
+    const slideWait = opening ? 0 : FOLD_STAGE
+
+    // `linear`, not `ease`. The wipe's edge and these rows are two halves of one
+    // movement, and an eased slide against a linear wipe drifts in and out of
+    // step — which is exactly how the two ended up drawn over each other.
     const play = requestAnimationFrame(() => {
       for (const el of moved) {
-        el.style.transition = `transform ${FOLD_RUN}ms ease`
+        el.style.transition = `transform ${slideRun}ms linear ${slideWait}ms`
         el.style.transform = ''
       }
     })
@@ -759,7 +778,14 @@ export default function Outliner({ initial }: { initial: Tree }) {
     // document, so unlike `wiped` they have to be *removed*, not just reset —
     // a leaked ghost is a dead row floating over the app.
     const ghosts: HTMLElement[] = []
-    const sweep = (group: Array<{ el: HTMLElement; y: number; h: number }>, out: boolean) => {
+    // `total` is how long the edge takes to cross the whole group: the full run
+    // when opening, and only the first stage when closing, since the slide has
+    // the second.
+    const sweep = (
+      group: Array<{ el: HTMLElement; y: number; h: number }>,
+      out: boolean,
+      total: number,
+    ) => {
       if (!group.length) return
       const top = Math.min(...group.map((g) => g.y))
       const bottom = Math.max(...group.map((g) => g.y + g.h))
@@ -770,8 +796,8 @@ export default function Outliner({ initial }: { initial: Tree }) {
         // bottom of the group instead of the top — the edge that arrives last
         // on the way open is the one that leaves first on the way closed.
         const from = out ? bottom - (y + h) : y - top
-        const delay = span > 0 ? (from / span) * FOLD_RUN : 0
-        const run = span > 0 ? (h / span) * FOLD_RUN : FOLD_RUN
+        const delay = span > 0 ? (from / span) * total : 0
+        const run = span > 0 ? (h / span) * total : total
         // Hold the starting state through the delay: fully clipped on the way
         // in, fully drawn on the way out.
         el.style.clipPath = out ? 'inset(0 0 0 0)' : 'inset(0 0 100% 0)'
@@ -788,6 +814,7 @@ export default function Outliner({ initial }: { initial: Tree }) {
           .filter((id) => !first.has(id))
           .map((id) => ({ el: els.get(id)!, y: last.get(id)!, h: heights.get(id)! })),
         false,
+        FOLD_RUN,
       )
     } else if (departing.length) {
       // The departing rows are already out of the DOM, so their clones stand in
@@ -824,7 +851,8 @@ export default function Outliner({ initial }: { initial: Tree }) {
         ghosts.push(clone)
         parked.push({ el: clone, y, h })
       }
-      sweep(parked, true)
+      // First stage only. The rows below hold still until this finishes.
+      sweep(parked, true, FOLD_STAGE)
     }
 
     // Hand the rows back to the stylesheet once everything has arrived. A
@@ -847,9 +875,9 @@ export default function Outliner({ initial }: { initial: Tree }) {
       for (const el of ghosts) el.remove()
     }
 
-    // The slide and the wipe both run for FOLD_RUN — the wipe's last row starts
-    // late but finishes with it, since the delays and durations are fractions
-    // of the same total.
+    // Either direction is done at FOLD_RUN. Opening, the slide and the wipe both
+    // run the whole of it. Closing, they run FOLD_STAGE each, back to back — so
+    // the total is the same and one timer covers both.
     const clear = window.setTimeout(settle, FOLD_RUN)
 
     return () => {

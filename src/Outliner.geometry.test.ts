@@ -113,22 +113,44 @@ test('a ghost occupies the same box as the row it stands in for', () => {
   }
 })
 
-test('the wipe and the slide share one clock', () => {
-  // Both run for FOLD_RUN: the rows below slide for it, and the reveal edge
-  // crosses the whole arriving group in it, with each row's delay and duration
-  // scaled as a fraction of that total. Give the wipe its own constant and the
-  // two drift — the edge finishing early leaves content sitting still while the
-  // list is moving, finishing late leaves a gap open below a settled list.
-  const transition = source.match(/transition = `transform \$\{(\w+)\}ms/)
-  if (!transition) throw new Error('Could not find the slide transition in Outliner.tsx')
+test("closing's two stages fit inside the same run as opening", () => {
+  // Closing wipes the children away and only then slides the rows below up, so
+  // that a sliding row never crosses a child still being drawn. The two stages
+  // are sequential — the slide's delay is the wipe's duration — so they only fit
+  // if each is half the run, and the cleanup timer only covers both if the run
+  // is still what it waits for.
+  //
+  // Get this wrong and the failure is the bug this split exists to fix: stages
+  // that overlap put two sets of text in the same pixels, and stages that
+  // overrun get cut off by the cleanup mid-movement.
+  const stage = source.match(/const FOLD_STAGE = (\w+) \/ 2/)
+  if (!stage) throw new Error('Could not find FOLD_STAGE in Outliner.tsx')
 
-  // Both ends of the wipe's scaling, and the timer that strips it afterwards.
+  // The slide's own duration and delay when closing, read off the ternaries.
+  const run = source.match(/const slideRun = opening \? (\w+) : (\w+)/)
+  const wait = source.match(/const slideWait = opening \? 0 : (\w+)/)
+  const clear = source.match(/setTimeout\(settle, (\w+)\)/)
+  if (!run || !wait || !clear) throw new Error('Could not find the slide timings in Outliner.tsx')
+
+  // Opening: one stage, the whole run. The cleanup waits exactly that long.
+  expect(run[1]).toBe(stage[1])
+  expect(clear[1]).toBe(stage[1])
+  // Closing: the slide runs for a stage, and starts one stage in — so the wipe
+  // has the first half to itself and the two never overlap.
+  expect(run[2]).toBe('FOLD_STAGE')
+  expect(wait[1]).toBe('FOLD_STAGE')
+})
+
+test('the wipe crosses its group in the stage it was given', () => {
+  // Each row's delay and duration are fractions of one total, so that the
+  // per-row clip edges join into a single continuous sweep. That total is the
+  // parameter, not a constant — closing passes a half-run — and the two ends of
+  // the scaling have to read the same one or the edge accelerates mid-group.
   const delay = source.match(/\(from \/ span\) \* (\w+)/)
   const run = source.match(/\(h \/ span\) \* (\w+)/)
-  const clear = source.match(/setTimeout\(settle, (\w+)\)/)
-  if (!delay || !run || !clear) throw new Error('Could not find the wipe timings in Outliner.tsx')
+  if (!delay || !run) throw new Error('Could not find the wipe timings in Outliner.tsx')
 
-  expect(new Set([transition[1], delay[1], run[1], clear[1]]).size).toBe(1)
+  expect(delay[1]).toBe(run[1])
 })
 
 test("the leaf fold's marker class is not styled by anything else", () => {
