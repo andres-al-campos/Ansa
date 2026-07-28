@@ -58,14 +58,14 @@ function row(container: HTMLElement, text: RegExp) {
 const liveRows = (c: HTMLElement) => c.querySelectorAll('.row[data-id]')
 
 /**
- * Rows carrying inline animation state — mid-slide, or held hidden waiting for
- * the slide to finish. `visibility` is the one that really bites: it is the
- * only thing keeping an arriving row off screen, so a row that keeps it is
- * invisible for good rather than merely un-animated.
+ * Rows carrying inline animation state — mid-slide, or mid-wipe. `clipPath` is
+ * the one that really bites: the wipe starts at `inset(0 0 100% 0)`, which
+ * clips the row away completely, so a row that keeps it is invisible for good
+ * rather than merely un-animated.
  */
 const animating = (c: HTMLElement) =>
   [...c.querySelectorAll<HTMLElement>('.row[data-id]')].filter(
-    (r) => r.style.transform || r.style.transition || r.style.visibility,
+    (r) => r.style.transform || r.style.transition || r.style.animation || r.style.clipPath,
   )
 
 const fold = (c: HTMLElement, text: RegExp) =>
@@ -99,30 +99,30 @@ test('unfolding also settles clean', () => {
   settle()
 
   expect(liveRows(container).length).toBeGreaterThan(folded)
-  // Arriving children are hidden for the length of the slide and revealed
-  // after it. If that reveal doesn't land they stay hidden permanently —
-  // occupying their space in the list, drawing nothing.
+  // Arriving children start fully clipped and are wiped in. If that state is
+  // not cleared they stay clipped permanently — occupying their space in the
+  // list, drawing nothing.
   expect(animating(container)).toHaveLength(0)
 })
 
-test('an unfold interrupted before the reveal still leaves its children visible', () => {
+test('an unfold interrupted mid-wipe still leaves its children visible', () => {
   const { container } = render(<Outliner initial={seedTree()} />)
   scopeInto(container, /tax/i)
 
   act(() => fold(container, /Gather the documents/).click())
   settle()
 
-  // Open it, then fold something else before the reveal timer fires. The first
+  // Open it, then fold something else before the wipe finishes. The first
   // effect's cleanup runs mid-flight, and it owns the only copy of these rows'
-  // visibility — drop it there and the children never come back.
+  // clip state — drop it there and the children never come back.
   act(() => fold(container, /Gather the documents/).click())
   act(() => fold(container, /Send it off/).click())
   settle()
 
-  const hidden = [...container.querySelectorAll<HTMLElement>('.row[data-id]')].filter(
-    (r) => r.style.visibility === 'hidden',
+  const clipped = [...container.querySelectorAll<HTMLElement>('.row[data-id]')].filter(
+    (r) => r.style.clipPath,
   )
-  expect(hidden).toHaveLength(0)
+  expect(clipped).toHaveLength(0)
 })
 
 test('a second fold on top of an unfinished one does not strand the first', () => {

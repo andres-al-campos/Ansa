@@ -85,20 +85,36 @@ test('the gutter slot and row gap match what the guide offset assumes', () => {
   expect(px('.fold', 'height') + 2 * insetY).toBeLessThanOrEqual(GEOMETRY.BULLET)
 })
 
-test('the children are revealed on the same clock the slide runs on', () => {
-  // The arriving children are hidden through the slide and revealed when it
-  // ends, so one number governs both: the transition's duration and the timer
-  // that unhides them. Set that timer independently and the two drift — early
-  // and the children appear over a list still moving, which is the jump the
-  // slide exists to remove; late and the gap sits visibly empty.
+test('the wipe names a keyframe the stylesheet actually defines', () => {
+  // The slide is an inline `transition`, so it needs nothing from the sheet —
+  // but the wipe is an inline `animation` naming a keyframe by string. An
+  // unresolvable keyframe name is not a CSS error: the animation silently does
+  // nothing, `both` never applies, and the initial inline clip is left in place
+  // — so the children would be clipped away and never revealed.
+  const named = source.match(/style\.animation = `(\S+) /)
+  if (!named) throw new Error('Could not find the wipe animation in Outliner.tsx')
+  // The terminator has to be an explicit `{`, not `\b`. A hyphen is a word
+  // boundary, so `wipe-in\b` happily matches inside `wipe-in-renamed` — the
+  // exact rename this test exists to catch, passing.
+  expect(css).toMatch(new RegExp(`@keyframes\\s+${named[1]}\\s*\\{`))
+})
+
+test('the wipe and the slide share one clock', () => {
+  // Both run for FOLD_RUN: the rows below slide for it, and the reveal edge
+  // crosses the whole arriving group in it, with each row's delay and duration
+  // scaled as a fraction of that total. Give the wipe its own constant and the
+  // two drift — the edge finishing early leaves content sitting still while the
+  // list is moving, finishing late leaves a gap open below a settled list.
   const transition = source.match(/transition = `transform \$\{(\w+)\}ms/)
   if (!transition) throw new Error('Could not find the slide transition in Outliner.tsx')
 
-  // The reveal timer's delay, read off the setTimeout that clears the styles.
-  const reveal = source.match(/el\.style\.visibility = ''\s*\}, (\w+)\)/)
-  if (!reveal) throw new Error('Could not find the reveal timer in Outliner.tsx')
+  // Both ends of the wipe's scaling, and the timer that strips it afterwards.
+  const delay = source.match(/\(y \/ span\) \* (\w+)/)
+  const run = source.match(/\(h \/ span\) \* (\w+)/)
+  const clear = source.match(/setTimeout\(settle, (\w+)\)/)
+  if (!delay || !run || !clear) throw new Error('Could not find the wipe timings in Outliner.tsx')
 
-  expect(reveal[1]).toBe(transition[1])
+  expect(new Set([transition[1], delay[1], run[1], clear[1]]).size).toBe(1)
 })
 
 test("the leaf fold's marker class is not styled by anything else", () => {
