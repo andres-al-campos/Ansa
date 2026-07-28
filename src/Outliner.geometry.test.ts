@@ -91,12 +91,26 @@ test('the wipe names a keyframe the stylesheet actually defines', () => {
   // unresolvable keyframe name is not a CSS error: the animation silently does
   // nothing, `both` never applies, and the initial inline clip is left in place
   // — so the children would be clipped away and never revealed.
-  const named = source.match(/style\.animation = `(\S+) /)
-  if (!named) throw new Error('Could not find the wipe animation in Outliner.tsx')
-  // The terminator has to be an explicit `{`, not `\b`. A hyphen is a word
-  // boundary, so `wipe-in\b` happily matches inside `wipe-in-renamed` — the
-  // exact rename this test exists to catch, passing.
-  expect(css).toMatch(new RegExp(`@keyframes\\s+${named[1]}\\s*\\{`))
+  // Both directions, read off the ternary that picks between them.
+  const named = source.match(/\$\{out \? '(\S+)' : '(\S+)'\}/)
+  if (!named) throw new Error('Could not find the wipe animations in Outliner.tsx')
+  for (const name of [named[1], named[2]]) {
+    // The terminator has to be an explicit `{`, not `\b`. A hyphen is a word
+    // boundary, so `wipe-in\b` happily matches inside `wipe-in-renamed` — the
+    // exact rename this test exists to catch, passing.
+    expect(css).toMatch(new RegExp(`@keyframes\\s+${name}\\s*\\{`))
+  }
+})
+
+test('a ghost occupies the same box as the row it stands in for', () => {
+  // A ghost is a departed row's clone, parked over the list while it wipes out.
+  // It deliberately drops the `.row` class — see the effect in Outliner.tsx —
+  // which means it also drops `.row`'s box and has to restate it. Two copies of
+  // the same numbers drift silently: the ghost would sit a few pixels off the
+  // row it replaces, and the wipe would visibly jump at the moment it appears.
+  for (const property of ['gap', 'padding', 'border-radius', 'align-items']) {
+    expect(declaration('.ghost', property)).toBe(declaration('.row', property))
+  }
 })
 
 test('the wipe and the slide share one clock', () => {
@@ -109,7 +123,7 @@ test('the wipe and the slide share one clock', () => {
   if (!transition) throw new Error('Could not find the slide transition in Outliner.tsx')
 
   // Both ends of the wipe's scaling, and the timer that strips it afterwards.
-  const delay = source.match(/\(y \/ span\) \* (\w+)/)
+  const delay = source.match(/\(from \/ span\) \* (\w+)/)
   const run = source.match(/\(h \/ span\) \* (\w+)/)
   const clear = source.match(/setTimeout\(settle, (\w+)\)/)
   if (!delay || !run || !clear) throw new Error('Could not find the wipe timings in Outliner.tsx')

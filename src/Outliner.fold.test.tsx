@@ -105,6 +105,40 @@ test('unfolding also settles clean', () => {
   expect(animating(container)).toHaveLength(0)
 })
 
+test('collapsing cleans up the ghosts it parks over the list', () => {
+  const { container } = render(<Outliner initial={seedTree()} />)
+  scopeInto(container, /tax/i)
+  settle()
+
+  act(() => fold(container, /Gather the documents/).click())
+  settle()
+
+  // A ghost is appended to the document rather than rendered by React, so
+  // nothing else will ever take it away. One left behind is a dead copy of a
+  // row floating over the list, outliving the row it copied.
+  expect(container.querySelectorAll('.ghost')).toHaveLength(0)
+})
+
+test('a ghost is not a row, so nothing that walks the list can see it', () => {
+  const { container } = render(<Outliner initial={seedTree()} />)
+  scopeInto(container, /tax/i)
+  settle()
+
+  const before = liveRows(container).length
+  act(() => fold(container, /Gather the documents/).click())
+
+  // Mid-collapse the ghosts are on screen. They must not answer to `.row` or
+  // carry a `data-id` — the drag hit-test walks `.row[data-id]` in document
+  // order, and a ghost in that walk is a drop target on a row that no longer
+  // exists.
+  expect(liveRows(container).length).toBeLessThan(before)
+  for (const ghost of container.querySelectorAll('.ghost')) {
+    expect(ghost.classList.contains('row')).toBe(false)
+    expect(ghost.getAttribute('data-id')).toBe(null)
+    expect(ghost.getAttribute('aria-hidden')).toBe('true')
+  }
+})
+
 test('an unfold interrupted mid-wipe still leaves its children visible', () => {
   const { container } = render(<Outliner initial={seedTree()} />)
   scopeInto(container, /tax/i)
