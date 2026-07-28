@@ -705,56 +705,87 @@ export default function Outliner({ initial }: { initial: Tree }) {
       }
     })
 
-    // Hold the arriving children back until the slide has finished, then let
-    // them appear. The gap opens empty and fills once it has stopped moving,
-    // rather than the content riding down with the rows it displaced.
+    // Wipe the arriving children into view, as though a window were opening
+    // over content that was already there.
     //
-    // Hidden, not faded. A fade overlaps the slide, so the children are on
-    // screen while everything is still moving — which is the motion the slide
-    // was meant to take out. Waiting is what makes the two read as one thing
-    // happening after another.
+    // The real version of this is an accordion: wrap the subtree in one box
+    // with `overflow: hidden` and animate its height 0 → natural. That can't be
+    // done here — the row list is deliberately flat, because the nesting guides
+    // are positioned against a flat row and the drag hit-test walks
+    // `.row[data-id]` in document order. A wrapper would break both.
     //
-    // Only on the way open. Closing has no arrivals, and the children are
-    // already gone from the list by the time this runs.
-    const held: HTMLElement[] = []
+    // So each child clips itself instead, and the delays reconstruct the one
+    // edge the wrapper would have had. A single reveal line travels the height
+    // of the group; a child starts uncovering when the line reaches its top and
+    // finishes when the line clears its bottom. Because the rows stack flush —
+    // no margins, no flex gap, all spacing is internal padding — those per-row
+    // edges join into one continuous sweep.
+    //
+    // Clip, not opacity. A fade changes a whole row at once, so rows blink in
+    // as units; a clip moves a hard edge down through the row's box, which is
+    // what a window edge passing over it actually looks like.
+    //
+    // Only on the way open. Closing has no arrivals — the children are out of
+    // the list by the time this runs — and the slide alone carries it.
+    const wiped: HTMLElement[] = []
     if (opening) {
-      for (const id of last.keys()) {
-        if (first.has(id)) continue
+      const arriving = [...last.keys()].filter((id) => !first.has(id))
+      // The group's extent, measured off the rows themselves rather than
+      // assumed from a row count: rows differ in height once a label wraps.
+      const tops = arriving.map((id) => last.get(id)!)
+      const top = Math.min(...tops)
+      const bottom = Math.max(
+        ...arriving.map((id) => last.get(id)! + els.get(id)!.getBoundingClientRect().height),
+      )
+      const span = bottom - top
+
+      for (const id of arriving) {
         const el = els.get(id)
         if (!el) continue
-        el.style.visibility = 'hidden'
-        held.push(el)
+        const y = last.get(id)! - top
+        const h = el.getBoundingClientRect().height
+        // The line is at this row's top after (y / span) of the run, and clears
+        // its bottom after ((y + h) / span). Scaling both by FOLD_RUN puts every
+        // row on the same travelling edge.
+        const delay = span > 0 ? (y / span) * FOLD_RUN : 0
+        const run = span > 0 ? (h / span) * FOLD_RUN : FOLD_RUN
+        // Start fully clipped, so the row is covered through its delay.
+        el.style.clipPath = 'inset(0 0 100% 0)'
+        el.style.animation = `wipe-in ${run}ms linear ${delay}ms both`
+        wiped.push(el)
       }
     }
 
-    // Hand the rows back to the stylesheet once they've arrived. A left-behind
-    // `transition: transform` would quietly animate the next thing that moves
-    // this row — a drag, in particular, which has to track the pointer exactly.
-    // This is also what reveals the children, so it can't be much later than
-    // the slide or the gap sits visibly empty.
-    const clear = window.setTimeout(() => {
+    // Hand the rows back to the stylesheet once everything has arrived. A
+    // left-behind `transition: transform` would quietly animate the next thing
+    // that moves this row — a drag, in particular, which has to track the
+    // pointer exactly. The wipe's own styles have to go for a sharper reason:
+    // the initial `inset(0 0 100% 0)` clips a row away entirely, so a row that
+    // keeps it is invisible rather than merely un-animated.
+    const settle = () => {
       for (const el of moved) {
         el.style.transition = ''
         el.style.transform = ''
       }
-      for (const el of held) el.style.visibility = ''
-    }, FOLD_RUN)
+      for (const el of wiped) {
+        el.style.animation = ''
+        el.style.clipPath = ''
+      }
+    }
+
+    // The slide and the wipe both run for FOLD_RUN — the wipe's last row starts
+    // late but finishes with it, since the delays and durations are fractions
+    // of the same total.
+    const clear = window.setTimeout(settle, FOLD_RUN)
 
     return () => {
       cancelAnimationFrame(play)
       window.clearTimeout(clear)
-      // Unmounting mid-slide, or a second fold landing on top of this one:
-      // strip the inline state so the incoming animation measures a settled
-      // row rather than one frozen halfway through the last move.
-      for (const el of moved) {
-        el.style.transition = ''
-        el.style.transform = ''
-      }
-      // This one is not just tidiness. The reveal above is the *only* thing
-      // that puts these rows back on screen, so a fold interrupted before it
-      // fires would leave them hidden for good — present in the list, taking
-      // up their space, invisible.
-      for (const el of held) el.style.visibility = ''
+      // Unmounting mid-animation, or a second fold landing on top of this one:
+      // strip the inline state so the incoming animation measures a settled row
+      // rather than one frozen halfway through the last move — and so nothing
+      // is left clipped out of existence.
+      settle()
     }
   }, [rows, tree])
 

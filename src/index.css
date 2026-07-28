@@ -1105,6 +1105,19 @@ body:has(.row.gap-slot) { cursor: default; }
   animation-delay: var(--worm-delay, 0ms);
 }
 
+/* The reveal edge passing over one arriving child. Each row runs this with its
+ * own delay and duration — both fractions of the whole group's sweep — so the
+ * separate edges line up into the single edge a real clipping wrapper would
+ * have. See the fold effect in Outliner.tsx for why there is no wrapper.
+ *
+ * `linear`, deliberately. Every row is a segment of one continuous travel, so
+ * easing each one separately would make the edge lurch at every row boundary.
+ * The easing belongs to the whole sweep, not to its pieces. */
+@keyframes wipe-in {
+  from { clip-path: inset(0 0 100% 0); }
+  to { clip-path: inset(0 0 0 0); }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .row.worm > :not(.guide) { animation: none; }
   .pbar i { transition: none; }
