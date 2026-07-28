@@ -400,9 +400,26 @@ describe('depthAtGap', () => {
     expect(depthAtGap(guideX(9), 1, 0, GUIDE_X0, INDENT)).toBe(2)
   })
 
-  it('will not go shallower than the row below', () => {
-    // Below is depth 1: even dragging far left clamps to 1.
-    expect(depthAtGap(GUIDE_X0 - 200, 2, 1, GUIDE_X0, INDENT)).toBe(1)
+  it('will not go shallower than the top level', () => {
+    // Dragging far left lands at the root, not at a negative depth. The row
+    // below used to be the floor instead; see the outdent case below for why
+    // that floor was wrong.
+    expect(depthAtGap(GUIDE_X0 - 200, 2, 1, GUIDE_X0, INDENT)).toBe(0)
+  })
+
+  it('lets a row outdent in place, past the row below it', () => {
+    // The gap under a depth-1 row, with another depth-1 row below it. Clamping
+    // to the row below made depth 0 unreachable here — and in every gap inside
+    // the parent — so promoting a child to top level meant dragging it past the
+    // end of its parent's whole subtree to find the one gap with nothing below.
+    //
+    // Nothing is stranded by allowing it: the row below keeps its own parent,
+    // and the dragged row lands after that parent, which is exactly where
+    // Shift-Tab puts it. The clamp only ever protected the indicator's drawing.
+    expect(depthAtGap(guideX(0), 1, 1, GUIDE_X0, INDENT)).toBe(0)
+
+    // The row above still bounds how deep you can go — that end is unchanged.
+    expect(depthAtGap(guideX(9), 1, 1, GUIDE_X0, INDENT)).toBe(2)
   })
 
   it('at the top of the list (no row above) cannot nest', () => {

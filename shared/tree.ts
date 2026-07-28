@@ -456,7 +456,19 @@ export function moveRow(
  * The indent level a drop lands at, given the pointer's X and the rows framing
  * the gap. The pointer's horizontal position picks the level: rounding to the
  * nearest nesting guide. It's clamped so you can nest at most one level deeper
- * than the row above, and no shallower than the row below.
+ * than the row above, and no shallower than the top of the current scope.
+ *
+ * The floor used to be the row *below* the gap, on the reasoning that a drop
+ * can't be shallower than the row it lands in front of. That made an in-place
+ * outdent impossible: every gap inside a parent has one of that parent's own
+ * children below it, so a child could never reach depth 0 without being dragged
+ * past its parent's entire subtree to the one gap with nothing underneath.
+ *
+ * Nothing is stranded by dropping the floor. insertAtDepth reads the depth
+ * against the anchor's *lineage*, so every level from 0 up to that chain's
+ * length is a real position — a shallower drop makes the row a sibling of one
+ * of the anchor's ancestors and leaves the row below with the parent it already
+ * had. That is the same move Shift-Tab makes.
  *
  * `guideX0` is the X of depth-0 guide, `indent` the px per level. Depths are
  * scope-relative, matching visibleRows.
@@ -469,9 +481,8 @@ export function depthAtGap(
   indent: number,
 ): number {
   const maxD = aboveDepth !== null ? aboveDepth + 1 : belowDepth !== null ? belowDepth : 0
-  const minD = belowDepth !== null ? belowDepth : 0
   const raw = Math.round((clientX - guideX0) / indent)
-  return Math.max(minD, Math.min(maxD, raw))
+  return Math.max(0, Math.min(maxD, raw))
 }
 
 /**
