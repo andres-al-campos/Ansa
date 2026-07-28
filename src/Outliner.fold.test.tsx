@@ -1,17 +1,17 @@
 /**
- * Folding a parent drops its whole subtree from the row list in one frame. To
- * animate that, the departing rows are held on screen as inert stand-ins while
- * they shrink, then dropped for real.
+ * Folding and unfolding a parent moves every row below it. Rather than let the
+ * list jump, the rows below are slid to their new place with FLIP: measure,
+ * relayout, invert with a transform, then release it.
  *
- * The risk in that arrangement is a stand-in that never leaves: it is a
- * `.row` holding a row's worth of vertical space, with no content and no way
- * for the user to get rid of it. So the tests here are mostly about the
- * *disappearance* rather than the appearance.
+ * jsdom has no layout — every `getBoundingClientRect` is zero — so the slide
+ * itself can't be exercised here, and nor can the stagger's geometry. What
+ * these pin is everything around it: that the animation only ever fires for a
+ * fold, that it leaves no inline state stuck on a row afterwards, and that
+ * unmounting mid-slide cleans up. Those are the failure modes that outlive a
+ * missing animation — a row left with `transition: transform` quietly animates
+ * the next drag, which is much worse than a fold that doesn't glide.
  *
- * jsdom runs no CSS animations, so `animationend` never fires here. That makes
- * this the fallback path — the backstop timer — which is the one that has to
- * hold when the animation doesn't run: a background tab, reduced-motion, an
- * older browser.
+ * The visual smoothness is verified in the browser, not here.
  */
 
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
@@ -55,73 +55,87 @@ function row(container: HTMLElement, text: RegExp) {
   ) as HTMLElement
 }
 
-const standins = (c: HTMLElement) => c.querySelectorAll('.row.closing')
 const liveRows = (c: HTMLElement) => c.querySelectorAll('.row[data-id]')
 
-test('folding leaves stand-ins behind, then clears them', () => {
+/** Rows carrying inline animation state — mid-slide or mid-fade. */
+const animating = (c: HTMLElement) =>
+  [...c.querySelectorAll<HTMLElement>('.row[data-id]')].filter(
+    (r) => r.style.transform || r.style.transition || r.style.animation,
+  )
+
+const fold = (c: HTMLElement, text: RegExp) =>
+  row(c, text).querySelector('.fold') as HTMLElement
+
+/** Long enough for the slide, the staggered fade, and the cleanup after both. */
+const settle = () => act(() => void vi.advanceTimersByTime(2000))
+
+test('a fold leaves no inline animation state behind once it settles', () => {
   const { container } = render(<Outliner initial={seedTree()} />)
   scopeInto(container, /tax/i)
 
-  const before = liveRows(container).length
-  act(() => (row(container, /Gather the documents/).querySelector('.fold') as HTMLElement).click())
+  act(() => fold(container, /Gather the documents/).click())
+  settle()
 
-  // The children left the list, and the same number of stand-ins took their
-  // place so the list doesn't jump before it animates.
-  const after = liveRows(container).length
-  expect(after).toBeLessThan(before)
-  expect(standins(container)).toHaveLength(before - after)
-
-  // And they go. This is the whole point: a stand-in is an empty box holding
-  // a row's worth of space, so one that outlives the animation is dead space
-  // in the list with nothing the user can do about it.
-  act(() => void vi.advanceTimersByTime(2000))
-  expect(standins(container)).toHaveLength(0)
-  expect(liveRows(container)).toHaveLength(after)
+  // The slide sets `transition: transform` inline to run. Leaving it there
+  // would hand the next move of this row — a drag, which has to track the
+  // pointer exactly — a 160ms easing curve it never asked for.
+  expect(animating(container)).toHaveLength(0)
 })
 
-test('a stand-in is inert — no id, no controls, hidden from readers', () => {
+test('unfolding also settles clean', () => {
   const { container } = render(<Outliner initial={seedTree()} />)
   scopeInto(container, /tax/i)
-  act(() => (row(container, /Gather the documents/).querySelector('.fold') as HTMLElement).click())
 
-  const ghost = standins(container)[0]
-  expect(ghost).toBeTruthy()
-
-  // No data-id: `hitTest` walks `.row[data-id]` to find drop targets, and a
-  // stand-in is not a droppable row — it is a row that has already left.
-  expect(ghost.getAttribute('data-id')).toBe(null)
-  // No focusable controls, or folding would leave tab stops behind.
-  expect(ghost.querySelectorAll('button')).toHaveLength(0)
-  expect(ghost.getAttribute('aria-hidden')).toBe('true')
-})
-
-test('unfolding does not leave stand-ins', () => {
-  const { container } = render(<Outliner initial={seedTree()} />)
-  scopeInto(container, /tax/i)
-  const fold = () => row(container, /Gather the documents/).querySelector('.fold') as HTMLElement
-
-  act(() => fold().click())
-  act(() => void vi.advanceTimersByTime(2000))
+  act(() => fold(container, /Gather the documents/).click())
+  settle()
   const folded = liveRows(container).length
 
-  // Opening adds rows rather than removing them, so nothing is on its way out.
-  act(() => fold().click())
-  expect(standins(container)).toHaveLength(0)
+  act(() => fold(container, /Gather the documents/).click())
+  settle()
+
   expect(liveRows(container).length).toBeGreaterThan(folded)
+  // Arriving children get an inline `animation` for the staggered fade; that
+  // has to come off too, or the row re-fades every time it re-renders.
+  expect(animating(container)).toHaveLength(0)
 })
 
-test('hiding completed rows is not a fold, so nothing shrinks', () => {
+test('a second fold on top of an unfinished one does not strand the first', () => {
+  const { container } = render(<Outliner initial={seedTree()} />)
+  scopeInto(container, /tax/i)
+
+  // Fold, then immediately fold something else without letting the first
+  // finish. The effect's cleanup runs for the first fold as the second commits.
+  act(() => fold(container, /Gather the documents/).click())
+  act(() => fold(container, /Fill in the forms/).click())
+  settle()
+
+  expect(animating(container)).toHaveLength(0)
+})
+
+test('unmounting mid-slide does not throw', () => {
+  const { container, unmount } = render(<Outliner initial={seedTree()} />)
+  scopeInto(container, /tax/i)
+
+  // The rAF that starts the slide and the timer that cleans it up are both
+  // still pending here. Both are cancelled on unmount; if they weren't, they'd
+  // reach for elements that no longer exist.
+  act(() => fold(container, /Gather the documents/).click())
+  expect(() => unmount()).not.toThrow()
+  expect(() => vi.advanceTimersByTime(2000)).not.toThrow()
+})
+
+test('hiding completed rows is not a fold, so nothing animates', () => {
   const { container } = render(<Outliner initial={seedTree()} />)
   scopeInto(container, /tax/i)
 
   // Complete a leaf so the filter has something to take away.
   act(() => (row(container, /Dig out the P60/).querySelector('.check') as HTMLElement).click())
-  act(() => void vi.advanceTimersByTime(2000))
+  settle()
   const before = liveRows(container).length
 
-  // Now hide it. Rows leave the list while the list stays on screen — the same
-  // shape as a fold, and the case the fold check has to tell apart. Animating
-  // it would replay part of the list every time a filter is toggled.
+  // Rows leave the list while the list stays on screen — the same shape as a
+  // fold, and the case the fold check has to tell apart. Animating it would
+  // slide part of the list every time a filter is toggled.
   const toggle = [...container.querySelectorAll('.filters label')].find((l) =>
     /Hide completed/i.test(l.textContent ?? ''),
   )!
@@ -129,5 +143,21 @@ test('hiding completed rows is not a fold, so nothing shrinks', () => {
   act(() => box.click())
 
   expect(liveRows(container).length).toBeLessThan(before)
-  expect(standins(container)).toHaveLength(0)
+  expect(animating(container)).toHaveLength(0)
+})
+
+test('navigating to another project does not animate the arrival', () => {
+  const { container } = render(<Outliner initial={seedTree()} />)
+  scopeInto(container, /tax/i)
+  settle()
+
+  // A whole new set of rows, none of which is a fold. Fading them in one by
+  // one would replay the entire list on every navigation.
+  const crumb = [...container.querySelectorAll('.crumbs button')].find((b) =>
+    /Projects/.test(b.textContent ?? ''),
+  ) as HTMLElement
+  act(() => crumb.click())
+  scopeInto(container, /Sort out the flat/i)
+
+  expect(animating(container)).toHaveLength(0)
 })
