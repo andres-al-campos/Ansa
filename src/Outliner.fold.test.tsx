@@ -57,10 +57,15 @@ function row(container: HTMLElement, text: RegExp) {
 
 const liveRows = (c: HTMLElement) => c.querySelectorAll('.row[data-id]')
 
-/** Rows carrying inline animation state — mid-slide or mid-fade. */
+/**
+ * Rows carrying inline animation state — mid-slide, or held hidden waiting for
+ * the slide to finish. `visibility` is the one that really bites: it is the
+ * only thing keeping an arriving row off screen, so a row that keeps it is
+ * invisible for good rather than merely un-animated.
+ */
 const animating = (c: HTMLElement) =>
   [...c.querySelectorAll<HTMLElement>('.row[data-id]')].filter(
-    (r) => r.style.transform || r.style.transition || r.style.animation,
+    (r) => r.style.transform || r.style.transition || r.style.visibility,
   )
 
 const fold = (c: HTMLElement, text: RegExp) =>
@@ -94,9 +99,30 @@ test('unfolding also settles clean', () => {
   settle()
 
   expect(liveRows(container).length).toBeGreaterThan(folded)
-  // Arriving children get an inline `animation` for the staggered fade; that
-  // has to come off too, or the row re-fades every time it re-renders.
+  // Arriving children are hidden for the length of the slide and revealed
+  // after it. If that reveal doesn't land they stay hidden permanently —
+  // occupying their space in the list, drawing nothing.
   expect(animating(container)).toHaveLength(0)
+})
+
+test('an unfold interrupted before the reveal still leaves its children visible', () => {
+  const { container } = render(<Outliner initial={seedTree()} />)
+  scopeInto(container, /tax/i)
+
+  act(() => fold(container, /Gather the documents/).click())
+  settle()
+
+  // Open it, then fold something else before the reveal timer fires. The first
+  // effect's cleanup runs mid-flight, and it owns the only copy of these rows'
+  // visibility — drop it there and the children never come back.
+  act(() => fold(container, /Gather the documents/).click())
+  act(() => fold(container, /Send it off/).click())
+  settle()
+
+  const hidden = [...container.querySelectorAll<HTMLElement>('.row[data-id]')].filter(
+    (r) => r.style.visibility === 'hidden',
+  )
+  expect(hidden).toHaveLength(0)
 })
 
 test('a second fold on top of an unfinished one does not strand the first', () => {

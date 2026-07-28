@@ -85,36 +85,20 @@ test('the gutter slot and row gap match what the guide offset assumes', () => {
   expect(px('.fold', 'height') + 2 * insetY).toBeLessThanOrEqual(GEOMETRY.BULLET)
 })
 
-test('the fold animation names a keyframe the stylesheet actually defines', () => {
-  // The slide is inline `transition`, so it needs nothing from the sheet — but
-  // the staggered fade is an inline `animation` naming a keyframe by string.
-  // A keyframe name that doesn't resolve is not an error in CSS: the animation
-  // silently does nothing, `both` never applies, and the children appear at
-  // full opacity with no fade. Renaming the keyframe here would do exactly that
-  // and every test would still pass.
-  const named = source.match(/style\.animation = `(\S+) /)
-  if (!named) throw new Error('Could not find the fade animation in Outliner.tsx')
-  // The terminator has to be an explicit `{` or whitespace, not `\b`. A hyphen
-  // is a word boundary, so `fade-in\b` happily matches inside `fade-in-renamed`
-  // — the exact rename this test exists to catch, passing.
-  expect(css).toMatch(new RegExp(`@keyframes\\s+${named[1]}\\s*\\{`))
-})
+test('the children are revealed on the same clock the slide runs on', () => {
+  // The arriving children are hidden through the slide and revealed when it
+  // ends, so one number governs both: the transition's duration and the timer
+  // that unhides them. Set that timer independently and the two drift — early
+  // and the children appear over a list still moving, which is the jump the
+  // slide exists to remove; late and the gap sits visibly empty.
+  const transition = source.match(/transition = `transform \$\{(\w+)\}ms/)
+  if (!transition) throw new Error('Could not find the slide transition in Outliner.tsx')
 
-test('the fade finishes about when the slide does', () => {
-  // Two animations, one gesture: the rows below slide for FOLD_RUN while the
-  // arriving children fade in over FADE_RUN, staggered by up to FADE_CAP. They
-  // read as one movement only if they end together. Let the fade run well past
-  // the slide and the gap sits visibly empty before the children turn up —
-  // which is the "content appears late" complaint, in numbers.
-  const n = (name: string) => {
-    const m = source.match(new RegExp(`const ${name} = (\\d+)`))
-    if (!m) throw new Error(`Could not find ${name} in Outliner.tsx`)
-    return Number(m[1])
-  }
-  // The last child starts at FADE_CAP and takes FADE_RUN to arrive.
-  const fadeEnds = n('FADE_CAP') + n('FADE_RUN')
-  expect(fadeEnds).toBeGreaterThanOrEqual(n('FOLD_RUN'))
-  expect(fadeEnds).toBeLessThanOrEqual(n('FOLD_RUN') * 3)
+  // The reveal timer's delay, read off the setTimeout that clears the styles.
+  const reveal = source.match(/el\.style\.visibility = ''\s*\}, (\w+)\)/)
+  if (!reveal) throw new Error('Could not find the reveal timer in Outliner.tsx')
+
+  expect(reveal[1]).toBe(transition[1])
 })
 
 test("the leaf fold's marker class is not styled by anything else", () => {
