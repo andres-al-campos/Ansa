@@ -797,7 +797,11 @@ export default function Outliner({ initial }: { initial: Tree }) {
         // on the way open is the one that leaves first on the way closed.
         const from = out ? bottom - (y + h) : y - top
         const delay = span > 0 ? (from / span) * total : 0
-        const run = span > 0 ? (h / span) * total : total
+        // Clamp so the last row still finishes by `total`. Rounding in the
+        // fraction can push `delay + run` a hair past the group's span, and on
+        // a close the ghosts are torn down at `total` exactly — a row not yet
+        // fully clipped then flashes under the sliding siblings.
+        const run = Math.min(span > 0 ? (h / span) * total : total, total - delay)
         // Hold the starting state through the delay: fully clipped on the way
         // in, fully drawn on the way out.
         el.style.clipPath = out ? 'inset(0 0 0 0)' : 'inset(0 0 100% 0)'
@@ -861,6 +865,17 @@ export default function Outliner({ initial }: { initial: Tree }) {
     // pointer exactly. The wipe's own styles have to go for a sharper reason:
     // the initial `inset(0 0 100% 0)` clips a row away entirely, so a row that
     // keeps it is invisible rather than merely un-animated.
+    // The ghosts have no life beyond the animation — they are copies of rows
+    // that no longer exist, so they go rather than get reset. Split out from
+    // `settle` because a close has to drop them a stage early: they finish
+    // wiping at FOLD_STAGE, and the siblings then slide up through the band
+    // they occupied. Leaving them in the DOM for that second stage is what put
+    // a ghost's text under a moving sibling. `.remove()` on an already-detached
+    // node is a no-op, so calling this twice is safe.
+    const dropGhosts = () => {
+      for (const el of ghosts) el.remove()
+    }
+
     const settle = () => {
       for (const el of moved) {
         el.style.transition = ''
@@ -870,10 +885,14 @@ export default function Outliner({ initial }: { initial: Tree }) {
         el.style.animation = ''
         el.style.clipPath = ''
       }
-      // The ghosts have no life beyond the animation — they are copies of rows
-      // that no longer exist, so they go rather than get reset.
-      for (const el of ghosts) el.remove()
+      dropGhosts()
     }
+
+    // On a close the ghosts wipe away in the first stage; tear them down the
+    // instant it ends, before the slide starts, so nothing the siblings slide
+    // through still exists. Opening has no ghosts, so this timer does nothing
+    // there and is left unset.
+    const clearGhosts = opening ? undefined : window.setTimeout(dropGhosts, FOLD_STAGE)
 
     // Either direction is done at FOLD_RUN. Opening, the slide and the wipe both
     // run the whole of it. Closing, they run FOLD_STAGE each, back to back — so
@@ -883,6 +902,7 @@ export default function Outliner({ initial }: { initial: Tree }) {
     return () => {
       cancelAnimationFrame(play)
       window.clearTimeout(clear)
+      if (clearGhosts !== undefined) window.clearTimeout(clearGhosts)
       // Unmounting mid-animation, or a second fold landing on top of this one:
       // strip the inline state so the incoming animation measures a settled row
       // rather than one frozen halfway through the last move — and so nothing

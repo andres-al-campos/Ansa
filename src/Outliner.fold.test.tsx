@@ -119,6 +119,23 @@ test('collapsing cleans up the ghosts it parks over the list', () => {
   expect(container.querySelectorAll('.ghost')).toHaveLength(0)
 })
 
+test('the ghosts are gone before the rows below slide up over their band', () => {
+  const { container } = render(<Outliner initial={seedTree()} />)
+  scopeInto(container, /tax/i)
+  settle()
+
+  act(() => fold(container, /Gather the documents/).click())
+  // The collapse runs in two stages: the ghosts wipe away over the first 80ms,
+  // then the rows below slide up through the band they occupied. If a ghost is
+  // still in the DOM once that slide starts, its text is drawn under the moving
+  // sibling — the overlap flicker. So the ghosts must be gone by FOLD_STAGE
+  // (80ms), well before the slide and the final cleanup at FOLD_RUN (160ms).
+  act(() => void vi.advanceTimersByTime(90))
+  expect(container.querySelectorAll('.ghost')).toHaveLength(0)
+
+  settle()
+})
+
 test('a ghost is not a row, so nothing that walks the list can see it', () => {
   const { container } = render(<Outliner initial={seedTree()} />)
   scopeInto(container, /tax/i)
