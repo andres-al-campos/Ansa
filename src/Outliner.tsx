@@ -967,18 +967,28 @@ export default function Outliner({ initial }: { initial: Tree }) {
 
   function commitEdit(id: NodeId, text: string) {
     const trimmed = text.trim()
-    // Nothing to write: either Escape already discarded this edit, or the text
-    // came back identical. Committing an unchanged row would still cost an undo
-    // step, so the first Cmd+Z after leaving a row would appear to do nothing.
-    if (wasCancelled(id) || byId(tree, id)?.text === trimmed) {
+    // Escape already discarded this edit — swallow the trailing blur.
+    if (wasCancelled(id)) {
       releaseEdit(id)
       return
     }
-    // An emptied row is a deletion — matches how outliners behave.
-    setTree(
-      (prev) => (trimmed ? setText(prev, id, trimmed) : removeNode(prev, id)),
-      trimmed ? { op: 'setText', id, text: trimmed } : { op: 'removeNode', id },
-    )
+    // An emptied row is a deletion — matches how outliners behave. This has to
+    // fire even when the stored text was *already* empty: a just-created row
+    // (addSibling mints it with text '') left without typing anything is exactly
+    // that case, and treating "empty and unchanged" as a no-op would strand it.
+    if (trimmed === '') {
+      if (byId(tree, id)) setTree(removeNode(tree, id), { op: 'removeNode', id })
+      releaseEdit(id)
+      return
+    }
+    // Non-empty but unchanged: nothing to write. Committing an unchanged row
+    // would still cost an undo step, so the first Cmd+Z after leaving a row
+    // would appear to do nothing.
+    if (byId(tree, id)?.text === trimmed) {
+      releaseEdit(id)
+      return
+    }
+    setTree(setText(tree, id, trimmed), { op: 'setText', id, text: trimmed })
     releaseEdit(id)
   }
 

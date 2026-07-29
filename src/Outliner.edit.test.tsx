@@ -124,6 +124,30 @@ test('Enter on a never-named project backs out instead of leaving an Untitled on
   expect(container.textContent).not.toContain('Untitled')
 })
 
+test('blurring a never-typed empty row removes it rather than stranding one', async () => {
+  const { default: Outliner } = await import('./Outliner')
+  const { container } = render(<Outliner initial={seedTree()} />)
+  scopeInto(container, /flat/i)
+
+  // Spawn a fresh empty sibling, then leave it without typing anything —
+  // clicking away, zooming into another row, or starting a drag all blur the
+  // input the same way. The stored text of a just-made row is already '', so a
+  // commit that treats "empty and unchanged" as a no-op would keep it.
+  const first = editRow(container, /Book a carpet clean/)
+  act(() => {
+    fireEvent.change(first, { target: { value: 'Book a carpet clean' } })
+    fireEvent.keyDown(first, { key: 'Enter' })
+  })
+  const blank = container.querySelector('input.label-input') as HTMLInputElement
+  act(() => fireEvent.blur(blank, { target: { value: '' } }))
+
+  expect(labels(container)).toEqual([
+    'Email the landlord about the boiler',
+    'Book a carpet clean',
+    'Replace the hallway bulb',
+  ])
+})
+
 test('Enter on an empty row removes it rather than leaving an untitled one', async () => {
   const { default: Outliner } = await import('./Outliner')
   const { container } = render(<Outliner initial={seedTree()} />)
