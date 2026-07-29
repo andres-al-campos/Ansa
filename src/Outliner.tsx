@@ -76,7 +76,11 @@ const WORM_CAP = 1000
 // enough not to sit in the way of a second click — folding is something you do
 // repeatedly while scanning a list, so it has to be over before you want the
 // next one.
-const FOLD_RUN = 160
+const FOLD_RUN = 170
+
+// A sentinel row id for the "+ add a subtask" button, so the fold slide can
+// carry it along with the real rows. No node ever has this id.
+const ADD_KEY = '__add'
 
 /**
  * Where a dragged node would land relative to the row under the pointer.
@@ -668,6 +672,15 @@ export default function Outliner({ initial }: { initial: Tree }) {
       heights.set(id, box.height)
       rects.set(id, { left: box.left, width: box.width })
       els.set(id, el)
+    }
+    // The "+ add a subtask" button sits at the foot of the list, below every
+    // row, so a fold above it moves it too. It isn't a `.row` and carries no id,
+    // so give it a sentinel key and let it ride the same invert-and-slide as the
+    // rows — otherwise it alone jumps to its new place while they glide.
+    const adder = document.querySelector<HTMLElement>('.rows > .add')
+    if (adder) {
+      last.set(ADD_KEY, adder.getBoundingClientRect().top)
+      els.set(ADD_KEY, adder)
     }
     prevTops.current = last
 
