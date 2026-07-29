@@ -782,7 +782,12 @@ export default function Outliner({ initial }: { initial: Tree }) {
         // the list select on those, and a stand-in caught there is a row that
         // isn't in the tree being counted.
         const item = g.el.cloneNode(true) as HTMLElement
-        item.className = 'fold-mask-item'
+        // Keep the source row's own classes (`done` draws the strike, and any
+        // future state class rides along the same way) but drop `.row` and add
+        // the mask class: the clone must look like the row it stands in for
+        // without answering to the selector the list walks.
+        item.classList.remove('row')
+        item.classList.add('fold-mask-item')
         item.removeAttribute('data-id')
         item.style.top = `${g.y - groupTop}px`
         item.style.height = `${g.h}px`

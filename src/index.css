@@ -896,7 +896,10 @@ body:has(.row.gap-slot) { cursor: default; }
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.row.done .label { color: var(--ink-struck); text-decoration: line-through; }
+/* The mask clone drops `.row`, so it needs the strike named for it too, or a
+   done row flashes un-struck for the length of the fold. */
+.row.done .label,
+.fold-mask-item.done .label { color: var(--ink-struck); text-decoration: line-through; }
 
 .label-input {
   width: 100%;
