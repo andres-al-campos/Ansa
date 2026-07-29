@@ -739,6 +739,18 @@ button { font: inherit; color: inherit; }
  * the bullet and the checkbox it sits beside. */
 .fold { color: var(--mark); }
 
+/* Align the triangle with the bullet on the first line, not with the row's
+ * centre. `align-self: center` (from the shared rule above) tracks the row's
+ * full height, so on a wrapped row the triangle drifts a line below the dot it
+ * belongs to; anchoring to the top like the bullet keeps them level. `top` then
+ * slides the disc's centre onto the bullet's — a paint offset, so it leaves the
+ * row rhythm the negative margins protect untouched. Scoped to `.fold`: the
+ * flat view's `.zoom` is a right-edge pill with no bullet to line up against. */
+.fold {
+  align-self: flex-start;
+  top: 5.5px;
+}
+
 /* Right when folded, down when open. Rotation is a supporting cue only — the
  * bullet's ring-vs-disc is what says "folded" at rest, and this button isn't
  * even on screen then. That is the fix for the old twisty, which encoded the
