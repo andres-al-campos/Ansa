@@ -118,19 +118,35 @@ test('no drop rule fills a bullet or touches its dot', () => {
   expect(css).not.toMatch(/^\.row\.drop-into \.bullet[^{]*::after/m)
 })
 
-test('the fold disc is never the same colour as the row beneath it', () => {
+test('the fold disc reads as a well the moment the triangle shows', () => {
   // The disc started life as a pure mask, filled with --sunk — exactly what a
   // hovered row paints. That is a 1.00:1 circle: it hid the guide and was
   // otherwise invisible. Once it also had to advertise a target wider than the
   // glyph, invisible stopped being acceptable.
-  // Assert the value each one *has*, not merely that it isn't --sunk: a
+  //
+  // The disc sits on a guide as often as not, and the row's own --sunk hover
+  // background paints in the same band. --edge was so close to both that on a
+  // line the glyph looked stuck to the wire. The disc is filled with --edge-lit
+  // the instant the row is hovered — the same tone it holds under the pointer —
+  // so it's a clear well from the first frame, not a faint tint the guide shows
+  // through. Assert the value it *has*, not merely that it isn't --sunk: a
   // negative assertion also passes when the property is missing entirely.
-  expect(declarations('.row:hover .fold::before', 'background')).toEqual(['var(--edge)'])
+  expect(declarations('.row:hover .fold::before', 'background')).toEqual(['var(--edge-lit)'])
 
-  // And it has to *rise* under the pointer. --edge-soft is darker than --edge,
-  // so reaching for it here would dim the disc on hover.
-  expect(declarations('.fold:hover::before', 'background')).toEqual(['var(--edge-lit)'])
-  expect(css.match(/--edge-lit\s*:/g)).toHaveLength(2)
+  // Pointing at the control lifts the glyph, not the disc — so there is no
+  // second disc value to reach for, and no `.fold:hover::before` rule.
+  expect(css).not.toMatch(/\.fold:hover::before/)
+
+  // The well has to survive the row's hover background. The disc is z-index 1
+  // and the row isolates a stacking context, so `1` is read against the row —
+  // above the guide and the --sunk band, below the glyph. Without the isolation
+  // the disc dropped to the list level and the hover background painted over it.
+  // (`.fold::before` is a grouped selector, so match its block by hand rather
+  // than through `body`, which anchors on a single selector before the brace.)
+  const disc = css.match(/\.fold::before,\s*\n\s*\.zoom::before\s*\{([^}]*)\}/)
+  const discBody = disc?.[1].replace(/\/\*[\s\S]*?\*\//g, ';') ?? ''
+  expect(discBody).toMatch(/(?:^|;)\s*z-index\s*:\s*1\b/)
+  expect(declarations('.row', 'isolation')).toEqual(['isolate'])
 })
 
 test('the collapsed drop rule outranks the expanded ring it overrides', () => {

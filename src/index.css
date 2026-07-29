@@ -466,6 +466,11 @@ button { font: inherit; color: inherit; }
   padding: 5px 6px;
   border-radius: 6px;
   position: relative;
+  /* Own stacking context, so the fold disc's z-index is read against the row —
+   * the guide and the hover background — and not against the whole list. Without
+   * it the disc sat at the .rows level and the row's own :hover background
+   * painted over it, so the well vanished the instant you hovered. */
+  isolation: isolate;
 }
 .row:hover { background: var(--sunk); }
 
@@ -657,9 +662,14 @@ button { font: inherit; color: inherit; }
   border-radius: 50%;
   background: none;
   transition: background 0.12s ease;
-  /* Behind the glyph, which is a real child and would otherwise be painted
-   * under a positioned pseudo-element that comes later in paint order. */
-  z-index: -1;
+  /* Above the row's hover background and the guide it masks, below the glyph.
+   * The glyph is lifted a step further so it stays on top of its own well. */
+  z-index: 1;
+}
+.fold svg,
+.zoom > * {
+  position: relative;
+  z-index: 2;
 }
 
 /* The flattened leaf view's fallback: no gutter column there, so it sits at the
