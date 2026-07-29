@@ -699,11 +699,14 @@ button { font: inherit; color: inherit; }
 .row:hover .fold { opacity: 1; }
 .row:hover .zoom::before,
 .row:hover .fold::before {
-  /* One step above the row it sits on, not equal to it. --sunk is what a
-   * hovered row already paints, so a --sunk disc was a 1.00:1 circle — it
-   * masked the guide and was otherwise invisible, leaving the enlarged target
-   * unadvertised. --edge reads as a well without becoming a button. */
-  background: var(--edge);
+  /* The disc is on a guide as often as not — the gutter sits exactly on an
+   * ancestor's line — so as soon as the triangle appears the disc has to read
+   * as a filled well the line runs behind, not a faint tint the line shows
+   * through. --edge was a step above the surface but still close to the guide;
+   * on a line it looked like the glyph sat on the wire. --edge-lit is the same
+   * tone the disc takes under the pointer, so it's clearly a well the moment the
+   * control is visible, and pointing at it lifts the glyph rather than the disc. */
+  background: var(--edge-lit);
 }
 .zoom:hover { color: var(--ink); }
 /* --mark-hover, the same lift the bullet takes. --mark-lift was half a step —
@@ -711,12 +714,10 @@ button { font: inherit; color: inherit; }
  * and no change at all to look at. This is 4.17 to 6.47, and it stays on the
  * mark ramp rather than going to body-text white. */
 .fold:hover { color: var(--mark-hover); }
-/* Pointing at the control lifts its disc another step. --edge-soft would go
- * backwards from here — it is darker than the --edge the disc now rests at. */
-.zoom:hover::before,
-.fold:hover::before { background: var(--edge-lit); }
-/* Keyboard focus must not depend on a hover that never comes — and it needs the
- * same mask, since tabbing to it doesn't hover the row. */
+/* Pointing at the control lifts the glyph, not the disc: the disc is already at
+ * --edge-lit the moment the row is hovered, so the well is a constant and the
+ * pointer response is the triangle darkening. Keyboard focus needs the disc
+ * too, since tabbing to it doesn't hover the row. */
 .zoom:focus-visible,
 .fold:focus-visible { opacity: 1; }
 /* Tabbing to it has to look at least as present as pointing at it, since there

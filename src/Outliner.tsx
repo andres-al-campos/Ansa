@@ -76,7 +76,7 @@ const WORM_CAP = 1000
 // enough not to sit in the way of a second click — folding is something you do
 // repeatedly while scanning a list, so it has to be over before you want the
 // next one.
-const FOLD_RUN = 170
+const FOLD_RUN = 180
 
 // A sentinel row id for the "+ add a subtask" button, so the fold slide can
 // carry it along with the real rows. No node ever has this id.
