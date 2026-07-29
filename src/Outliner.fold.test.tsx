@@ -105,7 +105,7 @@ test('unfolding also settles clean', () => {
   expect(animating(container)).toHaveLength(0)
 })
 
-test('collapsing cleans up the ghosts it parks over the list', () => {
+test('collapsing cleans up the mask it parks over the list', () => {
   const { container } = render(<Outliner initial={seedTree()} />)
   scopeInto(container, /tax/i)
   settle()
@@ -113,13 +113,13 @@ test('collapsing cleans up the ghosts it parks over the list', () => {
   act(() => fold(container, /Gather the documents/).click())
   settle()
 
-  // A ghost is appended to the document rather than rendered by React, so
-  // nothing else will ever take it away. One left behind is a dead copy of a
-  // row floating over the list, outliving the row it copied.
-  expect(container.querySelectorAll('.ghost')).toHaveLength(0)
+  // The mask is appended to the document rather than rendered by React, so
+  // nothing else will ever take it away. One left behind is a dead band of
+  // cloned rows floating over the list, outliving the rows it copied.
+  expect(container.querySelectorAll('.fold-mask')).toHaveLength(0)
 })
 
-test('a ghost is not a row, so nothing that walks the list can see it', () => {
+test('the mask is not a row, so nothing that walks the list can see it', () => {
   const { container } = render(<Outliner initial={seedTree()} />)
   scopeInto(container, /tax/i)
   settle()
@@ -127,15 +127,16 @@ test('a ghost is not a row, so nothing that walks the list can see it', () => {
   const before = liveRows(container).length
   act(() => fold(container, /Gather the documents/).click())
 
-  // Mid-collapse the ghosts are on screen. They must not answer to `.row` or
-  // carry a `data-id` — the drag hit-test walks `.row[data-id]` in document
-  // order, and a ghost in that walk is a drop target on a row that no longer
-  // exists.
+  // Mid-collapse the mask and its cloned rows are on screen. They must not
+  // answer to `.row` or carry a `data-id` — the drag hit-test walks
+  // `.row[data-id]` in document order, and a clone in that walk is a drop
+  // target on a row that no longer exists.
   expect(liveRows(container).length).toBeLessThan(before)
-  for (const ghost of container.querySelectorAll('.ghost')) {
-    expect(ghost.classList.contains('row')).toBe(false)
-    expect(ghost.getAttribute('data-id')).toBe(null)
-    expect(ghost.getAttribute('aria-hidden')).toBe('true')
+  const mask = container.querySelector('.fold-mask')
+  expect(mask?.getAttribute('aria-hidden')).toBe('true')
+  for (const clone of container.querySelectorAll('.fold-mask-item')) {
+    expect(clone.classList.contains('row')).toBe(false)
+    expect(clone.getAttribute('data-id')).toBe(null)
   }
 })
 

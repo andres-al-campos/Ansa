@@ -71,21 +71,12 @@ const WORM_RUN = 400
 const WORM_STAGGER = 100
 const WORM_CAP = 1000
 
-// How long the rows below a fold take to slide to their new place, either
-// direction. Short enough not to sit in the way of a second click — folding is
-// something you do repeatedly while scanning a list, so the animation has to be
-// over before you want the next one.
+// How long a fold takes, either direction: the mask over the children opens or
+// shuts and the rows below travel to meet it, both on this one clock. Short
+// enough not to sit in the way of a second click — folding is something you do
+// repeatedly while scanning a list, so it has to be over before you want the
+// next one.
 const FOLD_RUN = 160
-
-// Closing runs in two stages rather than one: the children wipe away, and only
-// then do the rows below slide up into the space they left. Overlapping the two
-// puts a sliding sibling on top of a child that is still drawn, and for that
-// moment the list is two sets of text in the same pixels — unreadable, which is
-// worse than either stage being a little quick.
-//
-// Opening needs no such split: there the slide opens the gap *ahead* of the
-// content arriving into it, so the two never occupy the same space.
-const FOLD_STAGE = FOLD_RUN / 2
 
 /**
  * Where a dragged node would land relative to the row under the pointer.
@@ -712,172 +703,156 @@ export default function Outliner({ initial }: { initial: Tree }) {
     // filter is also on.
     const pivot = first.get(toggled.id)!
 
+    // One clock, not two.
+    //
+    // A collapse is an accordion: a band of children of height H opens or shuts,
+    // and everything below it travels exactly H to make room or take it back.
+    // The one rule that keeps it readable is that the band's moving edge and the
+    // rows below stay welded together — the moment they drift, a sibling is
+    // drawn in pixels a child still occupies, and you get two lines of text in
+    // one place.
+    //
+    // The honest way to weld them is a real wrapper: put the children in a box
+    // with `overflow: hidden`, animate its height, and the rows below follow for
+    // free because the box takes real space. The row list is deliberately flat
+    // (the drag hit-test and guides are built on it), so instead we fake exactly
+    // that box: one fixed, clipped `mask` element holding clones of the group,
+    // its height animated between the band's full height and nothing. The rows
+    // below are slid by transform over the
+    // *same* duration and easing, so the mask's near edge and the sibling tops
+    // move as one. Because both are `H · progress` under `linear`, they cannot
+    // come apart at any frame, however the browser schedules them.
+    //
+    // `mask` is the box; `masked` are the real rows it stands in for, which stay
+    // clipped away underneath it until it's gone (open) or are already unmounted
+    // (close). `moved` are the siblings that slide.
+    let mask: HTMLElement | null = null
+    const masked: HTMLElement[] = []
     const moved: HTMLElement[] = []
+
+    // The group the mask covers, in visual order, each with the box it occupies.
+    // Opening, it's the arriving rows at their new places; closing, it's the
+    // departing rows at the places they just left (only their clones remain).
+    const group: Array<{ el: HTMLElement; y: number; h: number; live?: HTMLElement }> =
+      opening
+        ? [...last.keys()]
+            .filter((id) => !first.has(id))
+            .map((id) => ({ el: els.get(id)!, y: last.get(id)!, h: heights.get(id)! }))
+            .sort((a, b) => a.y - b.y)
+        : departing
+            .map((id) => {
+              const clone = clones.get(id)
+              const y = first.get(id)
+              const h = goneHeights.get(id)
+              const box = goneRects.get(id)
+              if (!clone || y === undefined || h === undefined || !box) return null
+              return { clone, y, h, left: box.left, width: box.width }
+            })
+            .filter((g): g is NonNullable<typeof g> => g !== null)
+            .sort((a, b) => a.y - b.y)
+            .map((g) => ({ el: g.clone, y: g.y, h: g.h }))
+
+    const board = document.querySelector('.rows') as HTMLElement | null
+    const groupTop = group.length ? Math.min(...group.map((g) => g.y)) : 0
+    const groupH = group.length
+      ? Math.max(...group.map((g) => g.y + g.h)) - groupTop
+      : 0
+
+    // Build the mask: a clipped box over the group's band, filled with a stack
+    // of the group's rows at their offsets from the band's top. On open the
+    // clones are of the live rows (identical content, so the swap is seamless);
+    // on close they are last frame's clones, the only copy left.
+    if (board && group.length) {
+      mask = document.createElement('div')
+      mask.className = 'fold-mask'
+      mask.setAttribute('aria-hidden', 'true')
+      mask.style.top = `${groupTop}px`
+      // Left/width come from a group row so the clones line up with the list.
+      const sample = opening ? rects.get(group[0].el.dataset.id!) : undefined
+      const box =
+        sample ?? (goneRects.get(departing[0]) as { left: number; width: number } | undefined)
+      mask.style.left = `${box?.left ?? 0}px`
+      mask.style.width = `${box?.width ?? 0}px`
+      // Starts at the band's full height when closing, at nothing when opening.
+      mask.style.height = opening ? '0px' : `${groupH}px`
+      for (const g of group) {
+        // Clone the source row (a live arriving row, or an existing ghost clone)
+        // and stack it inside the mask at its place within the band. It must not
+        // answer to `.row` or carry a `data-id`: the hit-test and every walk of
+        // the list select on those, and a stand-in caught there is a row that
+        // isn't in the tree being counted.
+        const item = g.el.cloneNode(true) as HTMLElement
+        item.className = 'fold-mask-item'
+        item.removeAttribute('data-id')
+        item.style.top = `${g.y - groupTop}px`
+        item.style.height = `${g.h}px`
+        mask.appendChild(item)
+      }
+      board.appendChild(mask)
+    }
+
+    // The real arriving rows hide beneath the mask until it finishes, or the
+    // mask's clones would double the content the mask is already showing. Clipped
+    // rather than hidden so they still hold their space in the list.
+    if (opening) {
+      for (const g of group) {
+        const live = g.el
+        live.style.clipPath = 'inset(0 0 100% 0)'
+        masked.push(live)
+      }
+    }
+
+    // Invert the siblings that move: put them back where they appeared to be,
+    // with no transition, so this frame paints identically to the last one.
     for (const [id, y] of last) {
       const was = first.get(id)
-      // A row with no previous position is arriving — it fades rather than
-      // slides, handled below.
       if (was === undefined) continue
       const dy = was - y
       // Only rows below the fold move, and a sub-pixel delta is not motion.
       if (Math.abs(dy) < 0.5 || y < pivot) continue
-
       const el = els.get(id)!
-      // Invert: put it back where it appeared to be, with no transition, so
-      // this frame paints identically to the last one.
       el.style.transition = 'none'
       el.style.transform = `translateY(${dy}px)`
       moved.push(el)
     }
 
-    // Play on the next frame. Setting the transform and clearing it in the same
+    // Play on the next frame. Setting a transform and clearing it in the same
     // frame is a no-op — the browser coalesces both into the final value and
-    // nothing animates. rAF is the standard way to force the intermediate state
-    // to be observed.
-    // Opening, the slide is the whole animation and owns the full run. Closing,
-    // it is the second stage: it waits out the wipe, then covers the distance in
-    // what's left.
-    const slideRun = opening ? FOLD_RUN : FOLD_STAGE
-    const slideWait = opening ? 0 : FOLD_STAGE
-
-    // `linear`, not `ease`. The wipe's edge and these rows are two halves of one
-    // movement, and an eased slide against a linear wipe drifts in and out of
-    // step — which is exactly how the two ended up drawn over each other.
+    // nothing animates. rAF forces the intermediate state to be observed.
+    //
+    // The mask and the slide start together, run the same FOLD_RUN, and share
+    // `linear` so their progress is the same number at every instant. That is
+    // the whole point: one clock. The mask goes to its far height (full when
+    // opening, nothing when closing); the siblings release to their true place.
     const play = requestAnimationFrame(() => {
+      if (mask) {
+        mask.style.transition = `height ${FOLD_RUN}ms linear`
+        mask.style.height = opening ? `${groupH}px` : '0px'
+      }
       for (const el of moved) {
-        el.style.transition = `transform ${slideRun}ms linear ${slideWait}ms`
+        el.style.transition = `transform ${FOLD_RUN}ms linear`
         el.style.transform = ''
       }
     })
 
-    // Wipe the arriving children into view, as though a window were opening
-    // over content that was already there.
-    //
-    // The real version of this is an accordion: wrap the subtree in one box
-    // with `overflow: hidden` and animate its height 0 → natural. That can't be
-    // done here — the row list is deliberately flat, because the nesting guides
-    // are positioned against a flat row and the drag hit-test walks
-    // `.row[data-id]` in document order. A wrapper would break both.
-    //
-    // So each child clips itself instead, and the delays reconstruct the one
-    // edge the wrapper would have had. A single reveal line travels the height
-    // of the group; a child starts uncovering when the line reaches its top and
-    // finishes when the line clears its bottom. Because the rows stack flush —
-    // no margins, no flex gap, all spacing is internal padding — those per-row
-    // edges join into one continuous sweep.
-    //
-    // Clip, not opacity. A fade changes a whole row at once, so rows blink in
-    // as units; a clip moves a hard edge down through the row's box, which is
-    // what a window edge passing over it actually looks like.
-    //
-    // Both directions run the same sweep over a stack of rows; only which
-    // keyframe plays, and from which end the edge starts, differ. `group` is
-    // the rows in visual order with the box each occupies.
-    const wiped: HTMLElement[] = []
-    // Clones parked over the list during a collapse. These are appended to the
-    // document, so unlike `wiped` they have to be *removed*, not just reset —
-    // a leaked ghost is a dead row floating over the app.
-    const ghosts: HTMLElement[] = []
-    // `total` is how long the edge takes to cross the whole group: the full run
-    // when opening, and only the first stage when closing, since the slide has
-    // the second.
-    const sweep = (
-      group: Array<{ el: HTMLElement; y: number; h: number }>,
-      out: boolean,
-      total: number,
-    ) => {
-      if (!group.length) return
-      const top = Math.min(...group.map((g) => g.y))
-      const bottom = Math.max(...group.map((g) => g.y + g.h))
-      const span = bottom - top
-      for (const { el, y, h } of group) {
-        // How far into the sweep the edge reaches this row's near and far side.
-        // Closing runs bottom-up, so a row's distance is measured from the
-        // bottom of the group instead of the top — the edge that arrives last
-        // on the way open is the one that leaves first on the way closed.
-        const from = out ? bottom - (y + h) : y - top
-        const delay = span > 0 ? (from / span) * total : 0
-        const run = span > 0 ? (h / span) * total : total
-        // Hold the starting state through the delay: fully clipped on the way
-        // in, fully drawn on the way out.
-        el.style.clipPath = out ? 'inset(0 0 0 0)' : 'inset(0 0 100% 0)'
-        el.style.animation = `${out ? 'wipe-out' : 'wipe-in'} ${run}ms linear ${delay}ms both`
-        wiped.push(el)
-      }
-    }
-
-    if (opening) {
-      // Measured off the rows themselves rather than assumed from a row count:
-      // rows differ in height once a label wraps.
-      sweep(
-        [...last.keys()]
-          .filter((id) => !first.has(id))
-          .map((id) => ({ el: els.get(id)!, y: last.get(id)!, h: heights.get(id)! })),
-        false,
-        FOLD_RUN,
-      )
-    } else if (departing.length) {
-      // The departing rows are already out of the DOM, so their clones stand in
-      // for them: parked where the originals were, wiped away, then dropped.
-      // They are decoration, not content — inert, and hidden from readers, so
-      // a row that has left the tree can't be tabbed to or announced.
-      const board = document.querySelector('.rows')
-      const parked: Array<{ el: HTMLElement; y: number; h: number }> = []
-      for (const id of departing) {
-        const clone = clones.get(id)
-        const y = first.get(id)
-        const h = goneHeights.get(id)
-        const box = goneRects.get(id)
-        if (!clone || !board || y === undefined || h === undefined || !box) continue
-        // Not a row any more, and it must not answer to `.row` either. Dropping
-        // only `data-id` is not enough: plenty of code — the hit-test, and any
-        // query that walks the list — selects on the class alone, and a ghost
-        // that matches is a row that has left the tree still being counted.
-        // `ghost` carries the styling instead.
-        clone.className = 'ghost'
-        clone.removeAttribute('data-id')
-        clone.setAttribute('aria-hidden', 'true')
-        clone.style.pointerEvents = 'none'
-        // Fixed to the viewport at the coordinates the original occupied, so it
-        // sits exactly where the row was while the live list closes up beneath
-        // it. Out of flow, so it displaces nothing on its way out.
-        clone.style.position = 'fixed'
-        clone.style.top = `${y}px`
-        clone.style.left = `${box.left}px`
-        clone.style.width = `${box.width}px`
-        clone.style.height = `${h}px`
-        clone.style.margin = '0'
-        board.appendChild(clone)
-        ghosts.push(clone)
-        parked.push({ el: clone, y, h })
-      }
-      // First stage only. The rows below hold still until this finishes.
-      sweep(parked, true, FOLD_STAGE)
-    }
-
-    // Hand the rows back to the stylesheet once everything has arrived. A
-    // left-behind `transition: transform` would quietly animate the next thing
-    // that moves this row — a drag, in particular, which has to track the
-    // pointer exactly. The wipe's own styles have to go for a sharper reason:
-    // the initial `inset(0 0 100% 0)` clips a row away entirely, so a row that
-    // keeps it is invisible rather than merely un-animated.
+    // Hand everything back once the run is over. A left-behind `transition:
+    // transform` would quietly animate the next move of a sibling — a drag,
+    // which has to track the pointer exactly. A left-behind clip is worse: the
+    // arriving rows start fully clipped, so one that keeps it is invisible for
+    // good rather than merely un-animated. The mask is a copy of rows, not rows,
+    // so it goes rather than gets reset.
     const settle = () => {
       for (const el of moved) {
         el.style.transition = ''
         el.style.transform = ''
       }
-      for (const el of wiped) {
-        el.style.animation = ''
+      for (const el of masked) {
         el.style.clipPath = ''
       }
-      // The ghosts have no life beyond the animation — they are copies of rows
-      // that no longer exist, so they go rather than get reset.
-      for (const el of ghosts) el.remove()
+      mask?.remove()
     }
 
-    // Either direction is done at FOLD_RUN. Opening, the slide and the wipe both
-    // run the whole of it. Closing, they run FOLD_STAGE each, back to back — so
-    // the total is the same and one timer covers both.
+    // One timer covers both directions: each is done at FOLD_RUN.
     const clear = window.setTimeout(settle, FOLD_RUN)
 
     return () => {
@@ -885,8 +860,8 @@ export default function Outliner({ initial }: { initial: Tree }) {
       window.clearTimeout(clear)
       // Unmounting mid-animation, or a second fold landing on top of this one:
       // strip the inline state so the incoming animation measures a settled row
-      // rather than one frozen halfway through the last move — and so nothing
-      // is left clipped out of existence.
+      // rather than one frozen halfway through the last move — and so nothing is
+      // left clipped out of existence or floating over the list.
       settle()
     }
   }, [rows, tree])

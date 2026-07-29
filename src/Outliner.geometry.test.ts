@@ -85,72 +85,49 @@ test('the gutter slot and row gap match what the guide offset assumes', () => {
   expect(px('.fold', 'height') + 2 * insetY).toBeLessThanOrEqual(GEOMETRY.BULLET)
 })
 
-test('the wipe names a keyframe the stylesheet actually defines', () => {
-  // The slide is an inline `transition`, so it needs nothing from the sheet —
-  // but the wipe is an inline `animation` naming a keyframe by string. An
-  // unresolvable keyframe name is not a CSS error: the animation silently does
-  // nothing, `both` never applies, and the initial inline clip is left in place
-  // — so the children would be clipped away and never revealed.
-  // Both directions, read off the ternary that picks between them.
-  const named = source.match(/\$\{out \? '(\S+)' : '(\S+)'\}/)
-  if (!named) throw new Error('Could not find the wipe animations in Outliner.tsx')
-  for (const name of [named[1], named[2]]) {
-    // The terminator has to be an explicit `{`, not `\b`. A hyphen is a word
-    // boundary, so `wipe-in\b` happily matches inside `wipe-in-renamed` — the
-    // exact rename this test exists to catch, passing.
-    expect(css).toMatch(new RegExp(`@keyframes\\s+${name}\\s*\\{`))
-  }
-})
-
-test('a ghost occupies the same box as the row it stands in for', () => {
-  // A ghost is a departed row's clone, parked over the list while it wipes out.
-  // It deliberately drops the `.row` class — see the effect in Outliner.tsx —
-  // which means it also drops `.row`'s box and has to restate it. Two copies of
-  // the same numbers drift silently: the ghost would sit a few pixels off the
-  // row it replaces, and the wipe would visibly jump at the moment it appears.
+test('a mask item occupies the same box as the row it stands in for', () => {
+  // The mask holds clones of the group's rows, one per `.fold-mask-item`. The
+  // clone dropped the `.row` class — see the effect in Outliner.tsx — so it
+  // dropped `.row`'s box and has to restate it. Two copies of the same numbers
+  // drift silently: the clone would sit a few pixels off the row it stands in
+  // for, and the mask's edge would meet the sliding siblings out of true.
   for (const property of ['gap', 'padding', 'border-radius', 'align-items']) {
-    expect(declaration('.ghost', property)).toBe(declaration('.row', property))
+    expect(declaration('.fold-mask-item', property)).toBe(declaration('.row', property))
   }
 })
 
-test("closing's two stages fit inside the same run as opening", () => {
-  // Closing wipes the children away and only then slides the rows below up, so
-  // that a sliding row never crosses a child still being drawn. The two stages
-  // are sequential — the slide's delay is the wipe's duration — so they only fit
-  // if each is half the run, and the cleanup timer only covers both if the run
-  // is still what it waits for.
-  //
-  // Get this wrong and the failure is the bug this split exists to fix: stages
-  // that overlap put two sets of text in the same pixels, and stages that
-  // overrun get cut off by the cleanup mid-movement.
-  const stage = source.match(/const FOLD_STAGE = (\w+) \/ 2/)
-  if (!stage) throw new Error('Could not find FOLD_STAGE in Outliner.tsx')
-
-  // The slide's own duration and delay when closing, read off the ternaries.
-  const run = source.match(/const slideRun = opening \? (\w+) : (\w+)/)
-  const wait = source.match(/const slideWait = opening \? 0 : (\w+)/)
-  const clear = source.match(/setTimeout\(settle, (\w+)\)/)
-  if (!run || !wait || !clear) throw new Error('Could not find the slide timings in Outliner.tsx')
-
-  // Opening: one stage, the whole run. The cleanup waits exactly that long.
-  expect(run[1]).toBe(stage[1])
-  expect(clear[1]).toBe(stage[1])
-  // Closing: the slide runs for a stage, and starts one stage in — so the wipe
-  // has the first half to itself and the two never overlap.
-  expect(run[2]).toBe('FOLD_STAGE')
-  expect(wait[1]).toBe('FOLD_STAGE')
+test('the mask is fixed and clipped, so it stands over the list without joining it', () => {
+  // The whole mechanism rests on the mask being out of flow (it displaces
+  // nothing while the live list opens or closes beneath it) and clipping its
+  // overflow (the edge that reveals or hides the clones is the box's own
+  // bottom). Lose `overflow: hidden` and the clones spill past the animating
+  // height — every child shows at once and the fold does nothing.
+  expect(declaration('.fold-mask', 'position')).toBe('fixed')
+  expect(declaration('.fold-mask', 'overflow')).toBe('hidden')
 })
 
-test('the wipe crosses its group in the stage it was given', () => {
-  // Each row's delay and duration are fractions of one total, so that the
-  // per-row clip edges join into a single continuous sweep. That total is the
-  // parameter, not a constant — closing passes a half-run — and the two ends of
-  // the scaling have to read the same one or the edge accelerates mid-group.
-  const delay = source.match(/\(from \/ span\) \* (\w+)/)
-  const run = source.match(/\(h \/ span\) \* (\w+)/)
-  if (!delay || !run) throw new Error('Could not find the wipe timings in Outliner.tsx')
-
-  expect(delay[1]).toBe(run[1])
+test('the mask and the slide share one clock', () => {
+  // The mask's height and the siblings' transform are the two halves of one
+  // motion. They only stay welded — no sliding row ever crossing a child still
+  // drawn — if they run the same duration with the same easing and no offset
+  // between them. All three of these read the same FOLD_RUN, `linear`, and no
+  // delay; the cleanup timer waits exactly that long.
+  const maskRun = source.match(/height \$\{(\w+)\}ms (\w+)`/)
+  const slideRun = source.match(/transform \$\{(\w+)\}ms (\w+)`/)
+  const clear = source.match(/setTimeout\(settle, (\w+)\)/)
+  if (!maskRun || !slideRun || !clear) {
+    throw new Error('Could not find the fold timings in Outliner.tsx')
+  }
+  // Same duration and same easing for the mask and the slide.
+  expect(maskRun[1]).toBe(slideRun[1])
+  expect(maskRun[2]).toBe(slideRun[2])
+  expect(maskRun[2]).toBe('linear')
+  // The cleanup waits for exactly that run.
+  expect(clear[1]).toBe(maskRun[1])
+  // Neither carries a delay — a `ms <n>ms` third value would offset one from the
+  // other. The template literals end right after the easing word.
+  expect(source).toMatch(new RegExp(`height \\$\\{${maskRun[1]}\\}ms ${maskRun[2]}\``))
+  expect(source).toMatch(new RegExp(`transform \\$\\{${slideRun[1]}\\}ms ${slideRun[2]}\``))
 })
 
 test("the leaf fold's marker class is not styled by anything else", () => {

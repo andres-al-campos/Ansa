@@ -1105,40 +1105,38 @@ body:has(.row.gap-slot) { cursor: default; }
   animation-delay: var(--worm-delay, 0ms);
 }
 
-/* The reveal edge passing over one arriving child. Each row runs this with its
- * own delay and duration — both fractions of the whole group's sweep — so the
- * separate edges line up into the single edge a real clipping wrapper would
- * have. See the fold effect in Outliner.tsx for why there is no wrapper.
+/* The fold mask: a fixed, clipped box parked over the band of children that a
+ * fold opens or shuts. Its height animates between the band's full height and
+ * nothing, which — because it's `overflow: hidden` — reveals or hides the
+ * clones stacked inside it from one moving edge. It stands in for the accordion
+ * wrapper the flat row list can't have (the drag hit-test and guides are built
+ * on rows being flat siblings, and a real wrapper would break both). See the
+ * fold effect in Outliner.tsx.
  *
- * `linear`, deliberately. Every row is a segment of one continuous travel, so
- * easing each one separately would make the edge lurch at every row boundary.
- * The easing belongs to the whole sweep, not to its pieces. */
-@keyframes wipe-in {
-  from { clip-path: inset(0 0 100% 0); }
-  to { clip-path: inset(0 0 0 0); }
+ * Fixed and out of flow, so it displaces nothing while the live list opens or
+ * closes beneath it. It deliberately does *not* carry `.row`: every walk of the
+ * list selects on that class, and a stand-in caught there is a row that isn't in
+ * the tree being counted. */
+.fold-mask {
+  position: fixed;
+  overflow: hidden;
+  pointer-events: none;
+  margin: 0;
 }
 
-/* A copy of a row that has already left the tree, parked over the list while it
- * wipes away. It deliberately does *not* carry `.row`: the drag hit-test and
- * every other walk of the list select on that class, and a ghost answering to
- * it would be a departed row still being counted. So the few layout properties
- * that matter are restated here — the rest of `.row` is colour and interaction
- * a ghost has no use for. */
-.ghost {
+/* One cloned row inside the mask, absolutely placed at its offset from the
+ * band's top so the stack reproduces the list it stands in for. It restates
+ * `.row`'s box — the clone dropped the `.row` class, so it dropped `.row`'s
+ * layout too. `Outliner.geometry.test.ts` pins these against `.row`. */
+.fold-mask-item {
+  position: absolute;
+  left: 0;
+  right: 0;
   display: flex;
   align-items: flex-start;
   gap: 7px;
   padding: 5px 6px;
   border-radius: 6px;
-}
-
-/* The same edge, closing. The bottom inset grows, so the row is eaten from its
- * bottom upward — the path a closing window's lower edge traces back over the
- * content it was showing. Growing the *top* inset instead would eat downward,
- * which is the edge travelling the wrong way. */
-@keyframes wipe-out {
-  from { clip-path: inset(0 0 0 0); }
-  to { clip-path: inset(0 0 100% 0); }
 }
 
 @media (prefers-reduced-motion: reduce) {
