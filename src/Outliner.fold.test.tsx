@@ -58,10 +58,11 @@ function row(container: HTMLElement, text: RegExp) {
 const liveRows = (c: HTMLElement) => c.querySelectorAll('.row[data-id]')
 
 /**
- * Rows carrying inline animation state — mid-slide, or mid-wipe. `clipPath` is
- * the one that really bites: the wipe starts at `inset(0 0 100% 0)`, which
- * clips the row away completely, so a row that keeps it is invisible for good
- * rather than merely un-animated.
+ * Rows carrying inline animation state — mid-slide, or clipped beneath the mask
+ * while opening. `clipPath` is the one that really bites: an arriving row starts
+ * at `inset(0 0 100% 0)`, which clips it away completely so the mask can show
+ * its clone instead, so a row that keeps it is invisible for good rather than
+ * merely un-animated.
  */
 const animating = (c: HTMLElement) =>
   [...c.querySelectorAll<HTMLElement>('.row[data-id]')].filter(
@@ -99,9 +100,9 @@ test('unfolding also settles clean', () => {
   settle()
 
   expect(liveRows(container).length).toBeGreaterThan(folded)
-  // Arriving children start fully clipped and are wiped in. If that state is
-  // not cleared they stay clipped permanently — occupying their space in the
-  // list, drawing nothing.
+  // Arriving children start fully clipped, hidden beneath the mask until it
+  // finishes. If that state is not cleared they stay clipped permanently —
+  // occupying their space in the list, drawing nothing.
   expect(animating(container)).toHaveLength(0)
 })
 
@@ -140,14 +141,14 @@ test('the mask is not a row, so nothing that walks the list can see it', () => {
   }
 })
 
-test('an unfold interrupted mid-wipe still leaves its children visible', () => {
+test('an unfold interrupted mid-reveal still leaves its children visible', () => {
   const { container } = render(<Outliner initial={seedTree()} />)
   scopeInto(container, /tax/i)
 
   act(() => fold(container, /Gather the documents/).click())
   settle()
 
-  // Open it, then fold something else before the wipe finishes. The first
+  // Open it, then fold something else before the reveal finishes. The first
   // effect's cleanup runs mid-flight, and it owns the only copy of these rows'
   // clip state — drop it there and the children never come back.
   act(() => fold(container, /Gather the documents/).click())

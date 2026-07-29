@@ -666,8 +666,7 @@ button { font: inherit; color: inherit; }
    * The glyph is lifted a step further so it stays on top of its own well. */
   z-index: 1;
 }
-.fold svg,
-.zoom > * {
+.fold svg {
   position: relative;
   z-index: 2;
 }
