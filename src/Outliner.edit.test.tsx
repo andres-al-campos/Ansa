@@ -148,6 +148,31 @@ test('blurring a never-typed empty row removes it rather than stranding one', as
   ])
 })
 
+test('Cmd+D toggles the edited row done while keeping it in edit mode', async () => {
+  const { default: Outliner } = await import('./Outliner')
+  const { container } = render(<Outliner initial={seedTree()} />)
+  scopeInto(container, /flat/i)
+
+  const rowOf = (input: HTMLElement) => input.closest('.row') as HTMLElement
+  const input = editRow(container, /Book a carpet clean/)
+  expect(rowOf(input).classList.contains('done')).toBe(false)
+
+  // Ticking it off mid-edit must not drop out of edit mode or lose typed text.
+  act(() => {
+    fireEvent.change(input, { target: { value: 'Book a deep carpet clean' } })
+    fireEvent.keyDown(input, { key: 'd', metaKey: true })
+  })
+
+  const stillEditing = container.querySelector('input.label-input') as HTMLInputElement
+  expect(stillEditing).not.toBeNull()
+  expect(stillEditing.value).toBe('Book a deep carpet clean')
+  expect(rowOf(stillEditing).classList.contains('done')).toBe(true)
+
+  // And it toggles back.
+  act(() => fireEvent.keyDown(stillEditing, { key: 'd', metaKey: true }))
+  expect(rowOf(stillEditing).classList.contains('done')).toBe(false)
+})
+
 test('Cmd+Enter commits the row and exits without spawning an empty sibling', async () => {
   const { default: Outliner } = await import('./Outliner')
   const { container } = render(<Outliner initial={seedTree()} />)

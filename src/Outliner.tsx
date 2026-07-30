@@ -1815,7 +1815,15 @@ export default function Outliner({ initial }: { initial: Tree }) {
                       onBlur={(e) => commitEdit(id, e.target.value)}
                       onKeyDown={(e) => {
                         const empty = e.currentTarget.value.trim() === ''
-                        if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                        if ((e.metaKey || e.ctrlKey) && (e.key === 'd' || e.key === 'D')) {
+                          // Cmd/Ctrl+D toggles the edited row's done state without
+                          // leaving edit mode, so you can tick a task off as you
+                          // pass over it. preventDefault stops the browser's
+                          // bookmark shortcut. Only the done flag flips — the live
+                          // input keeps whatever's typed but not yet committed.
+                          e.preventDefault()
+                          handleToggleDone(id)
+                        } else if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
                           // Cmd/Ctrl+Enter commits the row and leaves edit mode
                           // without opening a fresh sibling — the "I'm done adding"
                           // exit, so you don't type a task, get an empty row, and
