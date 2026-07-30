@@ -1823,11 +1823,12 @@ export default function Outliner({ initial }: { initial: Tree }) {
                           // input keeps whatever's typed but not yet committed.
                           e.preventDefault()
                           handleToggleDone(id)
-                        } else if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
-                          // Cmd/Ctrl+Enter commits the row and leaves edit mode
+                        } else if (e.key === 'Enter' && e.shiftKey) {
+                          // Shift+Enter commits the row and leaves edit mode
                           // without opening a fresh sibling — the "I'm done adding"
                           // exit, so you don't type a task, get an empty row, and
                           // have to press Enter a second time to dismiss it.
+                          // (Ctrl+Enter would read as a right-click on macOS.)
                           e.preventDefault()
                           commitEdit(id, e.currentTarget.value)
                         } else if (e.key === 'Enter') {

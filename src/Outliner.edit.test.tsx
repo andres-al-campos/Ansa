@@ -173,17 +173,17 @@ test('Cmd+D toggles the edited row done while keeping it in edit mode', async ()
   expect(rowOf(stillEditing).classList.contains('done')).toBe(false)
 })
 
-test('Cmd+Enter commits the row and exits without spawning an empty sibling', async () => {
+test('Shift+Enter commits the row and exits without spawning an empty sibling', async () => {
   const { default: Outliner } = await import('./Outliner')
   const { container } = render(<Outliner initial={seedTree()} />)
   scopeInto(container, /flat/i)
 
-  // Finishing a task with Cmd+Enter should save it and drop straight out of
+  // Finishing a task with Shift+Enter should save it and drop straight out of
   // edit mode — no trailing empty row to dismiss with a second Enter.
   const input = editRow(container, /Book a carpet clean/)
   act(() => {
     fireEvent.change(input, { target: { value: 'Book the carpet clean' } })
-    fireEvent.keyDown(input, { key: 'Enter', metaKey: true })
+    fireEvent.keyDown(input, { key: 'Enter', shiftKey: true })
   })
 
   expect(container.querySelector('input.label-input')).toBeNull()
