@@ -1815,7 +1815,14 @@ export default function Outliner({ initial }: { initial: Tree }) {
                       onBlur={(e) => commitEdit(id, e.target.value)}
                       onKeyDown={(e) => {
                         const empty = e.currentTarget.value.trim() === ''
-                        if (e.key === 'Enter') {
+                        if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                          // Cmd/Ctrl+Enter commits the row and leaves edit mode
+                          // without opening a fresh sibling — the "I'm done adding"
+                          // exit, so you don't type a task, get an empty row, and
+                          // have to press Enter a second time to dismiss it.
+                          e.preventDefault()
+                          commitEdit(id, e.currentTarget.value)
+                        } else if (e.key === 'Enter') {
                           // Enter on an empty row deletes it and drops out of edit
                           // mode, rather than spawning yet another empty sibling.
                           if (empty) deleteRow(id)

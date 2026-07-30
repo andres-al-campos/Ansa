@@ -148,6 +148,27 @@ test('blurring a never-typed empty row removes it rather than stranding one', as
   ])
 })
 
+test('Cmd+Enter commits the row and exits without spawning an empty sibling', async () => {
+  const { default: Outliner } = await import('./Outliner')
+  const { container } = render(<Outliner initial={seedTree()} />)
+  scopeInto(container, /flat/i)
+
+  // Finishing a task with Cmd+Enter should save it and drop straight out of
+  // edit mode — no trailing empty row to dismiss with a second Enter.
+  const input = editRow(container, /Book a carpet clean/)
+  act(() => {
+    fireEvent.change(input, { target: { value: 'Book the carpet clean' } })
+    fireEvent.keyDown(input, { key: 'Enter', metaKey: true })
+  })
+
+  expect(container.querySelector('input.label-input')).toBeNull()
+  expect(labels(container)).toEqual([
+    'Email the landlord about the boiler',
+    'Book the carpet clean',
+    'Replace the hallway bulb',
+  ])
+})
+
 test('Enter on an empty row removes it rather than leaving an untitled one', async () => {
   const { default: Outliner } = await import('./Outliner')
   const { container } = render(<Outliner initial={seedTree()} />)
