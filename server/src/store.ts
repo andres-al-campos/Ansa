@@ -174,7 +174,28 @@ export class Store {
     return this.replace(tree)
   }
 
+  /**
+   * Fold the write-ahead log back into the database file and reset it to empty.
+   *
+   * WAL's own autocheckpoint runs at 1000 pages, but it can only reclaim the
+   * part of the log no reader still needs — and this process keeps a connection
+   * open continuously for the SSE subscribers, so in practice the log is never
+   * fully reset and grows without bound. A 24KB database fronted by a 4MB WAL
+   * is the observed result.
+   *
+   * TRUNCATE rather than PASSIVE because reclaiming the file is the whole point.
+   * It gives up rather than blocking if a reader is mid-read, which is why this
+   * is safe to call on a timer: a skipped checkpoint just means the next one
+   * does the work.
+   */
+  checkpoint(): void {
+    this.db.pragma('wal_checkpoint(TRUNCATE)')
+  }
+
   close(): void {
+    // Checkpoint first: a clean shutdown should leave the database standing on
+    // its own rather than needing the -wal file to be complete.
+    this.checkpoint()
     this.db.close()
   }
 }
