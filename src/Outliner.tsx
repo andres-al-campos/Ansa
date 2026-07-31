@@ -2,10 +2,18 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { exportTree, parseTree, saveTree } from './storage'
 import { putTree } from './api'
 import { dropTargetAt, measureRows, type DropTarget } from './dropTarget'
+import {
+  commitAndAddSiblingEdit,
+  commitEditEdit,
+  reindentEdit,
+  reorderWithTextEdit,
+  titleAndFirstTaskEdit,
+  type Edit,
+} from './edits'
 import { useFoldAnimation } from './useFoldAnimation'
 import { useOutlinerSync } from './useOutlinerSync'
 import { useWorm } from './useWorm'
-import { applyOp, type Op } from '@shared/ops'
+import type { Op } from '@shared/ops'
 import {
   addChild,
   byId,
@@ -16,7 +24,6 @@ import {
   lineageOf,
   markOpened,
   moveNode,
-  moveRow,
   newId,
   progressOf,
   projectList,
@@ -611,30 +618,22 @@ export default function Outliner({ initial }: { initial: Tree }) {
     return true
   }
 
+  /** Apply a computed edit: check it in as one tree, then place the caret. */
+  function applyEdit(edit: Edit) {
+    if (edit.ops.length) setTree(edit.tree, ...edit.ops)
+    setEditing(edit.focus)
+  }
+
   function commitEdit(id: NodeId, text: string) {
-    const trimmed = text.trim()
     // Escape already discarded this edit — swallow the trailing blur.
     if (wasCancelled(id)) {
       releaseEdit(id)
       return
     }
-    // An emptied row is a deletion — matches how outliners behave. This has to
-    // fire even when the stored text was *already* empty: a just-created row
-    // (addSibling mints it with text '') left without typing anything is exactly
-    // that case, and treating "empty and unchanged" as a no-op would strand it.
-    if (trimmed === '') {
-      if (byId(tree, id)) setTree(removeNode(tree, id), { op: 'removeNode', id })
-      releaseEdit(id)
-      return
-    }
-    // Non-empty but unchanged: nothing to write. Committing an unchanged row
-    // would still cost an undo step, so the first Cmd+Z after leaving a row
-    // would appear to do nothing.
-    if (byId(tree, id)?.text === trimmed) {
-      releaseEdit(id)
-      return
-    }
-    setTree(setText(tree, id, trimmed), { op: 'setText', id, text: trimmed })
+    const edit = commitEditEdit(tree, id, text, null)
+    if (edit.ops.length) setTree(edit.tree, ...edit.ops)
+    // Unlike the other keys this only *releases* the row: a late blur must never
+    // close a row something else has since opened. See releaseEdit.
     releaseEdit(id)
   }
 
@@ -644,31 +643,7 @@ export default function Outliner({ initial }: { initial: Tree }) {
   // the new sibling, and the new input is keyed by id, so it mounts empty and
   // focused rather than reusing the old input's DOM node and its text.
   function commitAndAddSibling(id: NodeId, text: string) {
-    const trimmed = text.trim()
-    const parentId = byId(tree, id)?.parentId ?? scope
-    const renamed = trimmed ? setText(tree, id, trimmed) : removeNode(tree, id)
-    // Mint the id and timestamp here and hand both to the op, so the server
-    // creates the same node rather than one of its own with a different id.
-    const childId = newId()
-    const at = Date.now()
-    const { tree: added } = addChild(renamed, parentId, '', childId, at)
-    const ops: Op[] = [
-      trimmed ? { op: 'setText', id, text: trimmed } : { op: 'removeNode', id },
-      { op: 'addChild', id: childId, parentId, text: '', at },
-    ]
-    // addChild appends, which drops the new row at the bottom of the list — far
-    // from the caret when you pressed Enter halfway up a tree. Slot it directly
-    // after the current row instead. When that row was just removed for being
-    // empty it's no longer among the siblings, and appending is already right.
-    const siblings = childrenOf(added, parentId)
-    const index = siblings.findIndex((n) => n.id === id)
-    let next = added
-    if (index !== -1 && index + 1 !== siblings.length - 1) {
-      next = moveNode(added, childId, parentId, index + 1)
-      ops.push({ op: 'moveNode', id: childId, parentId, index: index + 1 })
-    }
-    setTree(next, ...ops)
-    setEditing(childId)
+    applyEdit(commitAndAddSiblingEdit(tree, id, text, scope))
   }
 
   // Deleting an empty row always drops out of edit mode rather than stepping
@@ -688,13 +663,9 @@ export default function Outliner({ initial }: { initial: Tree }) {
   function moveEdit(id: NodeId, text: string, dir: 'up' | 'down') {
     const i = rows.findIndex((r) => r.id === id)
     const target = rows[dir === 'up' ? i - 1 : i + 1]
-    const trimmed = text.trim()
-    // Only touch the tree when the row actually changed: an emptied row is
-    // removed, edited text is committed. Navigating past an unchanged row must
-    // not push a no-op onto the undo history.
-    if (trimmed === '') setTree((prev) => removeNode(prev, id), { op: 'removeNode', id })
-    else if (trimmed !== byId(tree, id)?.text)
-      setTree((prev) => setText(prev, id, trimmed), { op: 'setText', id, text: trimmed })
+    const edit = commitEditEdit(tree, id, text, target ? target.id : null)
+    if (edit.ops.length) setTree(edit.tree, ...edit.ops)
+    // At either end there's nowhere to go, so it just commits and stays put.
     if (target) setEditing(target.id)
     else releaseEdit(id)
   }
@@ -744,28 +715,16 @@ export default function Outliner({ initial }: { initial: Tree }) {
   // Both edits fold into one tree so the added child isn't lost, and the id is
   // taken outside setTree to stay stable under React's double-invoked updaters.
   function commitTitleAndAddTask(id: NodeId, text: string) {
-    if (childrenOf(tree, id).length > 0) {
-      commitTitle(id, text)
+    const edit = titleAndFirstTaskEdit(tree, id, text)
+    if (edit) {
+      applyEdit(edit)
       return
     }
-    const trimmed = text.trim()
-    // Enter on a project that was never named backs out of creating it, the
-    // same as Escape does. Committing here would leave an "Untitled" project
-    // holding one blank row, which is nobody's intent.
-    if (!trimmed) {
-      cancelTitle(id)
-      return
-    }
-    const named = setText(tree, id, trimmed)
-    const childId = newId()
-    const at = Date.now()
-    const { tree: next } = addChild(named, id, '', childId, at)
-    setTree(
-      next,
-      { op: 'setText', id, text: trimmed },
-      { op: 'addChild', id: childId, parentId: id, text: '', at },
-    )
-    setEditing(childId)
+    // Either the project already has children — you came to rename it, so Enter
+    // just saves and steps out — or it was never named, and Enter backs out of
+    // creating it the same as Escape does. commitTitle handles both.
+    if (!text.trim()) cancelTitle(id)
+    else commitTitle(id, text)
   }
 
   /**
@@ -773,36 +732,7 @@ export default function Outliner({ initial }: { initial: Tree }) {
    * doesn't discard it, then re-nest and keep the row in edit mode.
    */
   function reindent(id: NodeId, text: string, dir: 'in' | 'out') {
-    const trimmed = text.trim()
-    const withText = setText(tree, id, trimmed)
-    // Which structural op applies depends on where the row sits, so decide it
-    // once here and use it for both the local tree and the wire — deriving it
-    // twice would risk the two disagreeing.
-    let structural: Op
-    if (dir === 'in') {
-      structural = { op: 'indent', id }
-    } else {
-      // Outdenting a top-level task (parent is a project root) would otherwise
-      // fling it up to the root and turn it into its own project. Instead, keep
-      // it in place and pull the rows below it in as its children.
-      const node = byId(withText, id)
-      const parent = node ? byId(withText, node.parentId ?? '') : undefined
-      structural = parent && parent.parentId === null ? { op: 'adoptFollowing', id } : { op: 'outdent', id }
-    }
-    const { tree: moved } = applyOp(withText, structural)
-    const ops: Op[] = [{ op: 'setText', id, text: trimmed }, structural]
-    // Tab nests the row under the sibling above it. If that sibling is folded,
-    // the row lands inside a closed subtree and drops off screen — it looks
-    // deleted. Unfold the new parent so the row is still where you left it.
-    // The drag-and-drop path does the same on a drop-into.
-    let next = moved
-    const parentId = byId(moved, id)?.parentId
-    const parent = parentId ? byId(moved, parentId) : undefined
-    if (parent?.collapsed) {
-      next = toggleCollapsed(moved, parent.id)
-      ops.push({ op: 'toggleCollapsed', id: parent.id })
-    }
-    setTree(next, ...ops)
+    applyEdit(reindentEdit(tree, id, text, dir))
   }
 
   function addSibling(afterId: NodeId | null) {
@@ -824,17 +754,8 @@ export default function Outliner({ initial }: { initial: Tree }) {
   // resulting move is read back off the tree so the server replays the same
   // destination without needing to know anything about what's on screen.
   function reorderWithText(id: NodeId, text: string, dir: 'up' | 'down') {
-    const trimmed = text.trim()
-    const withText = setText(tree, id, trimmed)
-    const ops: Op[] = [{ op: 'setText', id, text: trimmed }]
-    const next = moveRow(withText, id, dir, rowsRef.current.map((r) => r.id))
-    const moved = byId(next, id)
-    // At either end of the list there's nowhere to go — commit the text and stop.
-    if (moved && next !== withText) {
-      const index = childrenOf(next, moved.parentId).findIndex((n) => n.id === id)
-      ops.push({ op: 'moveNode', id, parentId: moved.parentId, index })
-    }
-    setTree(next, ...ops)
+    const order = rowsRef.current.map((r) => r.id)
+    applyEdit(reorderWithTextEdit(tree, id, text, dir, order))
   }
 
   // Start a new project: a fresh root, scoped into and put straight into edit
