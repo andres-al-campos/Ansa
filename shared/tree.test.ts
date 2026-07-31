@@ -8,6 +8,7 @@ import {
   indent,
   insertAtDepth,
   isAncestor,
+  invalidTree,
   isLeaf,
   leavesUnder,
   lineageOf,
@@ -541,5 +542,96 @@ describe('moveRow', () => {
     const base = fixture()
     expect(moveRow(base, 'taxes', 'up', order(base))).toEqual(base)
     expect(moveRow(base, 'f2', 'down', order(base))).toEqual(base)
+  })
+})
+
+describe('invalidTree', () => {
+  const node = (id: string, parentId: string | null, extra: object = {}) => ({
+    id,
+    parentId,
+    text: id,
+    done: false,
+    order: 0,
+    collapsed: false,
+    createdAt: 0,
+    ...extra,
+  })
+
+  it('accepts a well-formed tree', () => {
+    expect(invalidTree([node('a', null), node('b', 'a')])).toBeNull()
+  })
+
+  it('accepts an empty tree', () => {
+    // A database with no projects is a legitimate state, not a broken one.
+    expect(invalidTree([])).toBeNull()
+  })
+
+  it('accepts the optional root-only fields when present', () => {
+    expect(invalidTree([node('a', null, { pinned: true, lastOpenedAt: 123 })])).toBeNull()
+  })
+
+  it('rejects anything that is not an array', () => {
+    expect(invalidTree({ nodes: [] })).toMatch(/must be an array/)
+    expect(invalidTree(null)).toMatch(/must be an array/)
+    expect(invalidTree('[]')).toMatch(/must be an array/)
+  })
+
+  it('names the index of the first malformed node', () => {
+    // The message is what a 400 shows, so it has to point at the bad row.
+    expect(invalidTree([node('a', null), { id: 'b' }])).toBe('tree[1] is not a valid node')
+  })
+
+  it('rejects a stringly-typed number rather than coercing it', () => {
+    // The reachable case: SQLite's own constraints accept this and store it,
+    // and the mis-typed value only surfaces later as a mis-ordered list.
+    expect(invalidTree([node('a', null, { order: '3' })])).toMatch(/not a valid node/)
+    expect(invalidTree([node('a', null, { createdAt: '0' })])).toMatch(/not a valid node/)
+  })
+
+  it('rejects NaN and Infinity in the numeric fields', () => {
+    // typeof NaN === 'number', so these slip past a bare typeof check and then
+    // sort unpredictably.
+    expect(invalidTree([node('a', null, { order: NaN })])).toMatch(/not a valid node/)
+    expect(invalidTree([node('a', null, { createdAt: Infinity })])).toMatch(/not a valid node/)
+  })
+
+  it('rejects a wrongly-typed optional field', () => {
+    expect(invalidTree([node('a', null, { pinned: 'yes' })])).toMatch(/not a valid node/)
+    expect(invalidTree([node('a', null, { lastOpenedAt: 'today' })])).toMatch(/not a valid node/)
+  })
+
+  it('tolerates unknown extra keys', () => {
+    // A field from a newer client shouldn't make the tree unreadable.
+    expect(invalidTree([node('a', null, { somethingNew: 1 })])).toBeNull()
+  })
+
+  it('rejects duplicate ids', () => {
+    // byId would find one node while removeNode drops both.
+    expect(invalidTree([node('a', null), node('a', null)])).toBe('duplicate node id: a')
+  })
+
+  it('rejects a parentId that points at nothing', () => {
+    // The branch would be orphaned out of every view while still stored.
+    expect(invalidTree([node('a', null), node('b', 'ghost')])).toMatch(/parentId that doesn't exist/)
+  })
+
+  it('rejects a node that is its own parent', () => {
+    expect(invalidTree([node('a', 'a')])).toBe('node a is its own ancestor')
+  })
+
+  it('rejects a longer parent cycle', () => {
+    // Without the visited set this doesn't return a wrong answer — it walks the
+    // cycle until the path array blows up. Cheap to check here, and the reason
+    // lineageOf and depthOf can walk parent pointers without their own guard.
+    expect(invalidTree([node('a', 'c'), node('b', 'a'), node('c', 'b')])).toMatch(/own ancestor/)
+  })
+
+  it('accepts a deep chain without mistaking it for a cycle', () => {
+    // Depth alone must not trip the cycle check — the memoisation is what keeps
+    // this linear, and a bug there would show up as a false rejection.
+    const chain = Array.from({ length: 500 }, (_, i) =>
+      node(`n${i}`, i === 0 ? null : `n${i - 1}`),
+    )
+    expect(invalidTree(chain)).toBeNull()
   })
 })

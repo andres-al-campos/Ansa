@@ -9,32 +9,16 @@
  * blob that isn't a valid tree is ignored rather than allowed to crash the app.
  */
 
-import type { Node, Tree } from '@shared/tree'
+import { invalidTree, type Tree } from '@shared/tree'
 
 const KEY = 'ansa.tree.v1'
-
-/** True when `value` is shaped like a Node. Unknown extra keys are tolerated. */
-function isNode(value: unknown): value is Node {
-  if (typeof value !== 'object' || value === null) return false
-  const n = value as Record<string, unknown>
-  return (
-    typeof n.id === 'string' &&
-    (n.parentId === null || typeof n.parentId === 'string') &&
-    typeof n.text === 'string' &&
-    typeof n.done === 'boolean' &&
-    typeof n.order === 'number' &&
-    typeof n.collapsed === 'boolean' &&
-    typeof n.createdAt === 'number'
-  )
-}
 
 /**
  * Parse a JSON string into a Tree, or return null if it isn't one.
  *
- * Beyond per-node shape it checks referential sanity: ids are unique and every
- * parentId points at a node that exists. A dangling parentId would orphan a
- * whole branch out of every view, so we'd rather reject the blob and fall back
- * to the seed than silently lose tasks.
+ * The shape checks live in shared/tree.ts, so that an imported file the app
+ * accepts is exactly one the server's PUT will also take. When these were two
+ * implementations, "imports fine, then fails to save" was a reachable state.
  */
 export function parseTree(json: string): Tree | null {
   let data: unknown
@@ -43,15 +27,7 @@ export function parseTree(json: string): Tree | null {
   } catch {
     return null
   }
-  if (!Array.isArray(data) || !data.every(isNode)) return null
-
-  const tree = data as Tree
-  const ids = new Set(tree.map((n) => n.id))
-  if (ids.size !== tree.length) return null
-  for (const n of tree) {
-    if (n.parentId !== null && !ids.has(n.parentId)) return null
-  }
-  return tree
+  return invalidTree(data) === null ? (data as Tree) : null
 }
 
 /** The stored tree, or null when there's nothing saved or it's unreadable. */

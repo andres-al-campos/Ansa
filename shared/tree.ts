@@ -30,6 +30,88 @@ export interface Node {
 
 export type Tree = Node[]
 
+// ------------------------------------------------------------- validation
+
+/**
+ * True when `value` is shaped like a Node. Unknown extra keys are tolerated —
+ * an older or newer client's field shouldn't make a tree unreadable.
+ *
+ * The optional fields are checked when present rather than ignored: `pinned`
+ * and `lastOpenedAt` are read straight into sorting and rendering, so a string
+ * where a number belongs surfaces far from here, as a mis-sorted project list
+ * rather than a rejected write.
+ */
+export function isNode(value: unknown): value is Node {
+  if (typeof value !== 'object' || value === null) return false
+  const n = value as Record<string, unknown>
+  return (
+    typeof n.id === 'string' &&
+    (n.parentId === null || typeof n.parentId === 'string') &&
+    typeof n.text === 'string' &&
+    typeof n.done === 'boolean' &&
+    typeof n.order === 'number' &&
+    Number.isFinite(n.order) &&
+    typeof n.collapsed === 'boolean' &&
+    typeof n.createdAt === 'number' &&
+    Number.isFinite(n.createdAt) &&
+    (n.pinned === undefined || typeof n.pinned === 'boolean') &&
+    (n.lastOpenedAt === undefined ||
+      (typeof n.lastOpenedAt === 'number' && Number.isFinite(n.lastOpenedAt)))
+  )
+}
+
+/**
+ * Check an already-parsed value is a usable Tree, naming the first problem.
+ *
+ * Per-node shape isn't enough — the three referential rules below are what keep
+ * the walks in this file terminating and total:
+ *
+ *  - unique ids, or byId returns one node while removeNode drops two;
+ *  - every parentId resolves, or a whole branch is orphaned out of every view
+ *    while still occupying the table;
+ *  - no parent cycles, which is the one that actually hangs: lineageOf,
+ *    subtreeOf and depthOf all walk parent pointers with no visited set, so a
+ *    cycle is an infinite loop rather than a wrong answer.
+ *
+ * Returns null when the tree is fine, so callers read `const bad = invalidTree(t)`.
+ */
+export function invalidTree(value: unknown): string | null {
+  if (!Array.isArray(value)) return 'tree must be an array of nodes'
+  const bad = value.findIndex((n) => !isNode(n))
+  if (bad !== -1) return `tree[${bad}] is not a valid node`
+
+  const tree = value as Tree
+  const ids = new Set<NodeId>()
+  for (const n of tree) {
+    if (ids.has(n.id)) return `duplicate node id: ${n.id}`
+    ids.add(n.id)
+  }
+  for (const n of tree) {
+    if (n.parentId !== null && !ids.has(n.parentId)) {
+      return `node ${n.id} has a parentId that doesn't exist: ${n.parentId}`
+    }
+  }
+
+  // Walk each node to its root. Nodes already proven to reach a root are
+  // memoised, so this stays linear over the whole tree rather than quadratic
+  // down a deep chain.
+  const rooted = new Set<NodeId>()
+  const parents = new Map(tree.map((n) => [n.id, n.parentId]))
+  for (const start of tree) {
+    const path: NodeId[] = []
+    const seen = new Set<NodeId>()
+    let cur: NodeId | null = start.id
+    while (cur !== null && !rooted.has(cur)) {
+      if (seen.has(cur)) return `node ${cur} is its own ancestor`
+      seen.add(cur)
+      path.push(cur)
+      cur = parents.get(cur) ?? null
+    }
+    for (const id of path) rooted.add(id)
+  }
+  return null
+}
+
 // ---------------------------------------------------------------- lookups
 
 export function byId(tree: Tree, id: NodeId): Node | undefined {
