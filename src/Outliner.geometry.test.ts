@@ -22,6 +22,9 @@ import { GEOMETRY } from './Outliner'
 const here = dirname(fileURLToPath(import.meta.url))
 const css = readFileSync(join(here, 'index.css'), 'utf8')
 const source = readFileSync(join(here, 'Outliner.tsx'), 'utf8')
+// The fold animation lives in its own module; the mask/slide timings are read
+// from there rather than from the component that calls it.
+const fold = readFileSync(join(here, 'useFoldAnimation.ts'), 'utf8')
 
 /**
  * The value of one declaration inside the first rule matching `selector`.
@@ -87,7 +90,7 @@ test('the gutter slot and row gap match what the guide offset assumes', () => {
 
 test('a mask item occupies the same box as the row it stands in for', () => {
   // The mask holds clones of the group's rows, one per `.fold-mask-item`. The
-  // clone dropped the `.row` class — see the effect in Outliner.tsx — so it
+  // clone dropped the `.row` class — see useFoldAnimation.ts — so it
   // dropped `.row`'s box and has to restate it. Two copies of the same numbers
   // drift silently: the clone would sit a few pixels off the row it stands in
   // for, and the mask's edge would meet the sliding siblings out of true.
@@ -112,11 +115,11 @@ test('the mask and the slide share one clock', () => {
   // drawn — if they run the same duration with the same easing and no offset
   // between them. All three of these read the same FOLD_RUN, `linear`, and no
   // delay; the cleanup timer waits exactly that long.
-  const maskRun = source.match(/height \$\{(\w+)\}ms (\w+)`/)
-  const slideRun = source.match(/transform \$\{(\w+)\}ms (\w+)`/)
-  const clear = source.match(/setTimeout\(settle, (\w+)\)/)
+  const maskRun = fold.match(/height \$\{(\w+)\}ms (\w+)`/)
+  const slideRun = fold.match(/transform \$\{(\w+)\}ms (\w+)`/)
+  const clear = fold.match(/setTimeout\(settle, (\w+)\)/)
   if (!maskRun || !slideRun || !clear) {
-    throw new Error('Could not find the fold timings in Outliner.tsx')
+    throw new Error('Could not find the fold timings in useFoldAnimation.ts')
   }
   // Same duration and same easing for the mask and the slide.
   expect(maskRun[1]).toBe(slideRun[1])
@@ -126,8 +129,8 @@ test('the mask and the slide share one clock', () => {
   expect(clear[1]).toBe(maskRun[1])
   // Neither carries a delay — a `ms <n>ms` third value would offset one from the
   // other. The template literals end right after the easing word.
-  expect(source).toMatch(new RegExp(`height \\$\\{${maskRun[1]}\\}ms ${maskRun[2]}\``))
-  expect(source).toMatch(new RegExp(`transform \\$\\{${slideRun[1]}\\}ms ${slideRun[2]}\``))
+  expect(fold).toMatch(new RegExp(`height \\$\\{${maskRun[1]}\\}ms ${maskRun[2]}\``))
+  expect(fold).toMatch(new RegExp(`transform \\$\\{${slideRun[1]}\\}ms ${slideRun[2]}\``))
 })
 
 test("the leaf fold's marker class is not styled by anything else", () => {
