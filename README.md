@@ -29,13 +29,27 @@ MCP server ─┘                (SQLite)            └─ any other tab
 ## Running it
 
 ```bash
+./build.sh
+```
+
+Installs dependencies if they're missing, starts the server and the app, waits
+for each to answer before moving on, and opens the browser. Ctrl-C stops both.
+Set `ANSA_NO_OPEN=1` to skip opening the browser.
+
+To run the two processes yourself instead — separate terminals, server first, so
+the app's first SSE connect finds it up:
+
+```bash
 npm install
-npm run server   # http://127.0.0.1:4000 — start this first
-npm run dev      # http://localhost:5173 — the app
+npm run server   # http://127.0.0.1:4000
+npm run dev      # http://localhost:5173
 ```
 
 The first run seeds the database. The app opens from a localStorage cache for an
 instant first paint, then adopts the server's tree the moment SSE connects.
+
+`npm test` runs the suite. `npm run build` type-checks and builds the app into
+`dist/`.
 
 ## The MCP server
 
