@@ -23,7 +23,15 @@ async function api(path: string, init?: RequestInit): Promise<{ tree: Tree } & R
   try {
     res = await fetch(`${BASE}${path}`, {
       ...init,
-      headers: { 'content-type': 'application/json', 'x-ansa-origin': 'mcp', ...init?.headers },
+      headers: {
+        // Only when there's something to declare a type for. Sending it on a
+        // bodyless request — every DELETE — makes Fastify expect JSON, find an
+        // empty body, and reject with FST_ERR_CTP_EMPTY_JSON_BODY before the
+        // route ever runs.
+        ...(init?.body === undefined ? {} : { 'content-type': 'application/json' }),
+        'x-ansa-origin': 'mcp',
+        ...init?.headers,
+      },
     })
   } catch {
     throw new Error(
@@ -162,6 +170,17 @@ server.registerTool(
       method: 'POST',
       body: JSON.stringify({ parentId, index }),
     })
+    // A rejected move is a silent no-op in the tree model — the same tree comes
+    // back — so success can't be assumed from the call returning. Check where
+    // the node actually landed instead of restating the request. Asking the
+    // result rather than re-deriving the rules keeps this honest if they change.
+    if (!childrenOf(tree, parentId).some((n) => n.id === id)) {
+      return text(
+        `Did not move ${id}: a task cannot be moved into itself or one of its own ` +
+          `descendants. Move it to a parent outside its own subtree, or to the top ` +
+          `level with parentId null.\n\n${renderOutline(tree)}`,
+      )
+    }
     return text(`Moved ${id}.\n\n${renderOutline(tree)}`)
   },
 )
