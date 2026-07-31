@@ -18,35 +18,22 @@ import { dirname, resolve } from 'node:path'
 import Fastify from 'fastify'
 import cors from '@fastify/cors'
 import { Store } from './store.ts'
-import { parseOp } from '../../shared/ops.ts'
+import { parseOp, parseSpecs } from '../../shared/ops.ts'
 import { broadcast, subscribe } from './bus.ts'
 import { seedTree } from '../../shared/seed.ts'
+import { invalidTree } from '../../shared/tree.ts'
 import type { SubtreeSpec, Tree } from '../../shared/tree.ts'
 
 /**
- * Validate an untrusted nested outline into a SubtreeSpec. Each node must have a
- * string `text` and, optionally, an array of the same shape. Returns null with a
- * reason on the first violation so the caller can send a usable 400.
+ * Validate an untrusted nested outline into a SubtreeSpec, wrapping parseSpecs
+ * in the { nodes } | { error } shape the routes here reply with.
+ *
+ * The walk itself lives in shared/ops.ts, where the same shape is validated for
+ * the addSubtree op. Two copies drifted apart is exactly how one write path ends
+ * up accepting what the other rejects.
  */
 function parseSubtree(input: unknown): { nodes: SubtreeSpec[] } | { error: string } {
-  const walk = (val: unknown, path: string): SubtreeSpec[] | string => {
-    if (!Array.isArray(val)) return `${path} must be an array of nodes`
-    const out: SubtreeSpec[] = []
-    for (let i = 0; i < val.length; i++) {
-      const n = val[i] as Record<string, unknown>
-      if (typeof n !== 'object' || n === null) return `${path}[${i}] must be an object`
-      if (typeof n.text !== 'string') return `${path}[${i}].text must be a string`
-      const spec: SubtreeSpec = { text: n.text }
-      if (n.children !== undefined) {
-        const kids = walk(n.children, `${path}[${i}].children`)
-        if (typeof kids === 'string') return kids
-        if (kids.length) spec.children = kids
-      }
-      out.push(spec)
-    }
-    return out
-  }
-  const nodes = walk(input, 'nodes')
+  const nodes = parseSpecs(input, 'nodes')
   return typeof nodes === 'string' ? { error: nodes } : { nodes }
 }
 
@@ -62,7 +49,32 @@ if (store.load().length === 0) {
   store.replaceAll(seedTree())
 }
 
+// Reclaim the write-ahead log periodically. This process holds a connection
+// open for the SSE stream, which stops WAL's own autocheckpoint from ever fully
+// resetting the log — left alone it grows unboundedly against a database that
+// doesn't. Five minutes is far longer than any burst of edits, so this costs
+// nothing on a busy tree and still keeps an idle one tidy.
+const CHECKPOINT_MS = 5 * 60_000
+const checkpointTimer = setInterval(() => store.checkpoint(), CHECKPOINT_MS)
+// Don't let the timer hold the process open on its own.
+checkpointTimer.unref()
+
 const app = Fastify({ logger: false })
+
+// Ctrl-C and `kill` should still close the database, so the WAL is folded back
+// in rather than left for the next start to recover.
+let closing = false
+for (const signal of ['SIGINT', 'SIGTERM'] as const) {
+  process.on(signal, () => {
+    if (closing) return
+    closing = true
+    clearInterval(checkpointTimer)
+    app.close().finally(() => {
+      store.close()
+      process.exit(0)
+    })
+  })
+}
 
 // Private Network Access: a page on localhost calling a server on the local
 // network is a "private network request", and Chrome blocks the preflight
@@ -194,10 +206,16 @@ app.post<{ Body: { op?: unknown } }>('/api/ops', async (req, reply) => {
   return { tree: emit(tree, req), completed }
 })
 
+// Whole-tree replace, used by Import. The only route that takes a tree rather
+// than an op, and the only one where the caller's bytes become the database, so
+// it validates the whole shape before writing. The table's own constraints
+// reject the crude cases, but a coercible one — `order: "3"`, a cyclic
+// parentId — would be stored and then break the walks that read it.
 app.put<{ Body: { tree: unknown } }>('/api/tree', async (req, reply) => {
   const { tree } = req.body ?? {}
-  if (!Array.isArray(tree)) return reply.code(400).send({ error: 'tree must be an array of nodes' })
-  return { tree: emit(store.replaceAll(tree as never), req) }
+  const bad = invalidTree(tree)
+  if (bad) return reply.code(400).send({ error: bad })
+  return { tree: emit(store.replaceAll(tree as Tree), req) }
 })
 
 app

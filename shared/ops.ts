@@ -239,7 +239,7 @@ export function parseOp(input: unknown): { op: Op } | { error: string } {
 }
 
 /** Validate a nested outline into SubtreeSpecs, or return the first problem. */
-function parseSpecs(val: unknown, path: string): SubtreeSpec[] | string {
+export function parseSpecs(val: unknown, path: string): SubtreeSpec[] | string {
   if (!Array.isArray(val)) return `${path} must be an array of nodes`
   const out: SubtreeSpec[] = []
   for (let i = 0; i < val.length; i++) {
