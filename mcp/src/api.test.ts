@@ -27,6 +27,43 @@ test('content-type is only sent when there is a body', () => {
   expect(source).toMatch(/init\?\.body === undefined[\s\S]{0,80}'content-type'/)
 })
 
+test('only view_tree echoes the whole outline', () => {
+  // The server returns the entire tree on every write — right for the browser,
+  // which replaces its state wholesale over SSE. For a model it means every
+  // call spends context re-printing nodes that did not change: measured against
+  // an 86-node tree, adding one task echoed 3413 characters to say 34.
+  //
+  // A bare `renderOutline(tree)` is that unscoped echo. Only view_tree may use
+  // it; every write scopes to what it touched.
+  const unscoped = [...source.matchAll(/renderOutline\(\s*\w+\s*\)/g)]
+  expect(unscoped).toHaveLength(1)
+
+  // And that one is inside view_tree, not somewhere it leaked back into.
+  const viewTree = source.slice(source.indexOf("'view_tree'"))
+  expect(viewTree.slice(0, viewTree.indexOf('\n)'))).toMatch(/renderOutline\(\s*\w+\s*\)/)
+})
+
+test('set_done echoes the project, so the completion rollup stays visible', () => {
+  // Checking the last child auto-completes its parent, and that parent's parent.
+  // Scoping the echo to the checked node would show `[x] c2` and silently hide
+  // every ancestor that flipped — the behaviour the tool description promises.
+  const handler = source.slice(source.indexOf("'set_done'"))
+  const body = handler.slice(0, handler.indexOf('\n)'))
+  expect(body).toMatch(/changed\(tree, projectOf\(tree, id\)\)/)
+})
+
+test('remove_task reads the parent before the node is gone', () => {
+  // After the DELETE there is nothing left to locate the node by, so the echo
+  // has to be scoped by a parent captured beforehand. Reading it afterwards
+  // yields undefined and the tool falls back to printing the whole tree.
+  const handler = source.slice(source.indexOf("'remove_task'"))
+  const body = handler.slice(0, handler.indexOf('\n)'))
+  const lookup = body.indexOf('byId(before, id)')
+  const del = body.indexOf("method: 'DELETE'")
+  expect(lookup).toBeGreaterThan(-1)
+  expect(lookup).toBeLessThan(del)
+})
+
 test('move_task reports what happened rather than assuming success', () => {
   // A move that would form a cycle is rejected as a *silent no-op* in the tree
   // model: the unchanged tree comes back with no error. Reporting "Moved" on

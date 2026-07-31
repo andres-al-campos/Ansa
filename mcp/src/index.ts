@@ -13,7 +13,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod'
-import { childrenOf, progressOf, type NodeId, type Tree } from '../../shared/tree.ts'
+import { byId, childrenOf, progressOf, type Node, type NodeId, type Tree } from '../../shared/tree.ts'
 
 const BASE = process.env.ANSA_API ?? 'http://127.0.0.1:4000'
 
@@ -45,20 +45,82 @@ async function api(path: string, init?: RequestInit): Promise<{ tree: Tree } & R
   return res.json() as Promise<{ tree: Tree } & Record<string, unknown>>
 }
 
-/** Render the tree as an indented outline with ids and done-state, so the model
- *  can see structure and address nodes by id in the same glance. */
-function renderOutline(tree: Tree): string {
+/** One outline line for a node, at `depth` levels of indent. */
+function renderLine(n: Node, depth: number): string {
+  const box = n.done ? '[x]' : '[ ]'
+  const fold = n.collapsed ? ' (collapsed)' : ''
+  return `${'  '.repeat(depth)}- ${box} ${n.text || '(untitled)'}  {${n.id}}${fold}`
+}
+
+/**
+ * Render the tree as an indented outline with ids and done-state, so the model
+ * can see structure and address nodes by id in the same glance.
+ *
+ * `root` scopes it to one subtree, including the root node itself. Omit it for
+ * the whole tree.
+ */
+function renderOutline(tree: Tree, root: NodeId | null = null): string {
   const lines: string[] = []
   const walk = (parentId: NodeId | null, depth: number) => {
     for (const n of childrenOf(tree, parentId)) {
-      const box = n.done ? '[x]' : '[ ]'
-      const fold = n.collapsed ? ' (collapsed)' : ''
-      lines.push(`${'  '.repeat(depth)}- ${box} ${n.text || '(untitled)'}  {${n.id}}${fold}`)
+      lines.push(renderLine(n, depth))
       walk(n.id, depth + 1)
     }
   }
-  walk(null, 0)
+  if (root === null) {
+    walk(null, 0)
+  } else {
+    const node = byId(tree, root)
+    if (!node) return `(${root} is no longer in the tree)`
+    lines.push(renderLine(node, 0))
+    walk(root, 1)
+  }
   return lines.length ? lines.join('\n') : '(empty — no tasks yet)'
+}
+
+/**
+ * Just the top-level projects, one line each, with no children.
+ *
+ * The echo for a change to the project list itself — a project deleted, or one
+ * moved to the top level. Printing every project's full contents to show that
+ * the *list* changed is the whole-tree cost this scoping exists to avoid.
+ */
+function renderProjects(tree: Tree): string {
+  const lines = childrenOf(tree, null).map((n) => renderLine(n, 0))
+  return lines.length
+    ? `${lines.join('\n')}\n\n(Top-level projects only. Use view_tree for the whole outline.)`
+    : '(empty — no tasks yet)'
+}
+
+/**
+ * What a write tool echoes back: the affected subtree, not the whole outline.
+ *
+ * The server returns the entire tree on every write — the right call for the
+ * browser, which replaces its state wholesale over SSE and so can never be
+ * partially updated. A model is a different consumer: re-printing every node
+ * after each call spends context, the scarcest thing in the loop, on lines that
+ * did not change. `view_tree` is still there when the whole picture is wanted.
+ */
+function changed(tree: Tree, id: NodeId): string {
+  return `${renderOutline(tree, id)}\n\n(Subtree shown. Use view_tree for the whole outline.)`
+}
+
+/**
+ * The top-level project a node sits under, or the node itself if it is one.
+ *
+ * Completion propagates upward — a parent auto-completes once its last child is
+ * checked — so echoing only the checked node's own subtree would hide the very
+ * rollup `set_done` advertises. The project is the smallest scope that always
+ * contains every node whose state can have changed.
+ */
+function projectOf(tree: Tree, id: NodeId): NodeId {
+  let node = byId(tree, id)
+  while (node?.parentId) {
+    const parent = byId(tree, node.parentId)
+    if (!parent) break
+    node = parent
+  }
+  return node?.id ?? id
 }
 
 const text = (s: string) => ({ content: [{ type: 'text' as const, text: s }] })
@@ -116,7 +178,7 @@ server.registerTool(
     })
     const ids = res.ids as string[]
     const label = parentId ? `Grafted ${ids.length} tasks under ${parentId}` : `Created a new project with ${ids.length} tasks`
-    return text(`${label} (root ${ids[0]}).\n\n${renderOutline(res.tree)}`)
+    return text(`${label} (root ${ids[0]}).\n\n${changed(res.tree, ids[0])}`)
   },
 )
 
@@ -132,7 +194,7 @@ server.registerTool(
       method: 'PATCH',
       body: JSON.stringify({ text: t }),
     })
-    return text(`Renamed ${id}.\n\n${renderOutline(tree)}`)
+    return text(`Renamed ${id}.\n\n${changed(tree, id)}`)
   },
 )
 
@@ -149,7 +211,9 @@ server.registerTool(
       method: 'PATCH',
       body: JSON.stringify({ done }),
     })
-    return text(`Set ${id} ${done ? 'done' : 'not done'}.\n\n${renderOutline(tree)}`)
+    // Scoped to the project, not the node: completion rolls up through every
+    // ancestor, and those lines are the point of the call.
+    return text(`Set ${id} ${done ? 'done' : 'not done'}.\n\n${changed(tree, projectOf(tree, id))}`)
   },
 )
 
@@ -178,10 +242,15 @@ server.registerTool(
       return text(
         `Did not move ${id}: a task cannot be moved into itself or one of its own ` +
           `descendants. Move it to a parent outside its own subtree, or to the top ` +
-          `level with parentId null.\n\n${renderOutline(tree)}`,
+          `level with parentId null.\n\n${changed(tree, projectOf(tree, id))}`,
       )
     }
-    return text(`Moved ${id}.\n\n${renderOutline(tree)}`)
+    // Show the destination, which is what confirms the move landed where asked.
+    // A move to the top level has no destination subtree, so the whole outline
+    // is the only honest scope for it.
+    return text(
+      `Moved ${id}.\n\n${parentId === null ? renderProjects(tree) : changed(tree, parentId)}`,
+    )
   },
 )
 
@@ -194,7 +263,7 @@ server.registerTool(
   },
   async ({ id }) => {
     const { tree } = await api(`/api/nodes/${id}/toggle-collapsed`, { method: 'POST' })
-    return text(`Toggled fold on ${id}.\n\n${renderOutline(tree)}`)
+    return text(`Toggled fold on ${id}.\n\n${changed(tree, id)}`)
   },
 )
 
@@ -206,8 +275,17 @@ server.registerTool(
     inputSchema: { id: z.string() },
   },
   async ({ id }) => {
+    // Where the node sat, read before it goes: afterwards there is nothing left
+    // to locate it by, and the useful echo is the list it was removed from.
+    const { tree: before } = await api('/api/tree')
+    const parentId = byId(before, id)?.parentId ?? null
     const { tree } = await api(`/api/nodes/${id}`, { method: 'DELETE' })
-    return text(`Deleted ${id} and its subtree.\n\n${renderOutline(tree)}`)
+    // A deleted project has no surviving parent to show, so fall back to the
+    // top-level list — which is exactly what changed in that case.
+    return text(
+      `Deleted ${id} and its subtree.\n\n` +
+        (parentId === null ? renderProjects(tree) : changed(tree, parentId)),
+    )
   },
 )
 
