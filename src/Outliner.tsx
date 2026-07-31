@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { exportTree, parseTree, saveTree } from './storage'
 import { putTree } from './api'
+import { dropTargetAt, measureRows, type DropTarget } from './dropTarget'
 import { useFoldAnimation } from './useFoldAnimation'
 import { useOutlinerSync } from './useOutlinerSync'
 import { applyOp, type Op } from '@shared/ops'
@@ -8,9 +9,7 @@ import {
   addChild,
   byId,
   childrenOf,
-  depthAtGap,
   insertAtDepth,
-  isAncestor,
   isLeaf,
   leavesUnder,
   lineageOf,
@@ -71,22 +70,6 @@ const DRAG_HOLD = 300
 const WORM_RUN = 400
 const WORM_STAGGER = 100
 const WORM_CAP = 1000
-
-/**
- * Where a dragged node would land relative to the row under the pointer.
- * 'return' is the item's own vacated slot — drop there to put it back untouched.
- * 'into' nests as the hovered row's first child. 'before'/'after' insert in a
- * gap; there `depth` is the level the pointer picked (via its X), so the same
- * gap can mean "sibling of the row above", "child of it", or any shallower
- * ancestor level — the insertion line's indent shows which.
- */
-type DropMode = 'before' | 'after' | 'into' | 'return'
-interface DropTarget {
-  id: NodeId
-  mode: DropMode
-  /** For 'before'/'after': the chosen indent level to insert at. */
-  depth?: number
-}
 
 interface VisibleRow {
   id: NodeId
@@ -386,57 +369,21 @@ export default function Outliner({ initial }: { initial: Tree }) {
   // at that child's level, or outdent to any shallower ancestor level, or (if
   // the row above can take children) nest one deeper. depthAtGap works out the
   // legal range for the gap and clamps X into it.
+  // Resolve the pointer to a drop target. The measuring stays here (it reads the
+  // live DOM); the decision is in dropTarget.ts, where it can be tested.
   function hitTest(clientX: number, clientY: number): DropTarget | null {
     const dragging = dragIdRef.current
     if (!dragging) return null
-    const t = treeRef.current
-    const visible = rowsRef.current
-    const rowEls = document.querySelectorAll<HTMLElement>('.row[data-id]')
-    for (const el of rowEls) {
-      const id = el.dataset.id!
-      const r = el.getBoundingClientRect()
-      if (clientY < r.top || clientY > r.bottom) continue
-      // The item's own slot: dropping here returns it to where it started.
-      if (id === dragging) return { id, mode: 'return' }
-      // Belt and braces — a descendant shouldn't be rendered, but never nest
-      // into one if it somehow is.
-      if (isAncestor(t, dragging, id)) return null
-      const rel = (clientY - r.top) / r.height
-      if (rel >= 0.25 && rel <= 0.75) return { id, mode: 'into' }
-
-      // An insertion gap. Name the rows that bound it: `above` sits just over
-      // the gap, `below` just under. The top quarter is the gap above this row
-      // (above = previous visible row); the bottom quarter is the gap below it.
-      // The lifted item still holds a slim slot in `visible`; skip past it when
-      // naming neighbours, or its old depth would wrongly bound the drop.
-      const i = visible.findIndex((v) => v.id === id)
-      const prev = (k: number) => {
-        for (let j = k; j >= 0; j--) if (visible[j].id !== dragging) return visible[j]
-        return undefined
-      }
-      const next = (k: number) => {
-        for (let j = k; j < visible.length; j++) if (visible[j].id !== dragging) return visible[j]
-        return undefined
-      }
-      const above = rel < 0.25 ? prev(i - 1) : prev(i)
-      const below = rel < 0.25 ? next(i) : next(i + 1)
-      // depthAtGap measures X from the row's own left edge, where the nesting
-      // guides live (GUIDE_X0 + d*INDENT); clientX is viewport-absolute, so
-      // rebase it onto the row.
-      const depth = depthAtGap(
-        clientX - r.left,
-        above ? above.depth : null,
-        below ? below.depth : null,
-        GUIDE_X0,
-        INDENT,
-      )
-      // Anchor to the row above the gap when there is one, inserting after it;
-      // at the very top there's no row above, so anchor before the first row.
-      return above
-        ? { id: above.id, mode: 'after', depth }
-        : { id: below!.id, mode: 'before', depth }
-    }
-    return null
+    return dropTargetAt(
+      clientX,
+      clientY,
+      dragging,
+      treeRef.current,
+      rowsRef.current,
+      measureRows(),
+      GUIDE_X0,
+      INDENT,
+    )
   }
 
   /** Drop the drag state without moving anything. */
