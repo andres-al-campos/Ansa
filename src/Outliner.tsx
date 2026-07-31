@@ -4,6 +4,7 @@ import { putTree } from './api'
 import { dropTargetAt, measureRows, type DropTarget } from './dropTarget'
 import { useFoldAnimation } from './useFoldAnimation'
 import { useOutlinerSync } from './useOutlinerSync'
+import { useWorm } from './useWorm'
 import { applyOp, type Op } from '@shared/ops'
 import {
   addChild,
@@ -63,13 +64,6 @@ export const GEOMETRY = { ROW_PAD, INDENT, GUTTER, ROW_GAP, BULLET, GUIDE_W, GUI
 // how long a real click lasts (~80-150ms) or clicks arm drags by accident.
 const DRAG_SLOP = 5
 const DRAG_HOLD = 300
-
-// Completion worm: each row wiggles for WORM_RUN, offset from the previous by
-// WORM_STAGGER. On long waves the stagger tightens so the whole sweep clears
-// within WORM_CAP instead of crawling — same little wave, just faster.
-const WORM_RUN = 400
-const WORM_STAGGER = 100
-const WORM_CAP = 1000
 
 interface VisibleRow {
   id: NodeId
@@ -236,9 +230,8 @@ export default function Outliner({ initial }: { initial: Tree }) {
   // its Delete item has been armed into its two-step "Delete? ✓ ✕" confirm.
   const [menuOpen, setMenuOpen] = useState<NodeId | null>(null)
   const [menuArmed, setMenuArmed] = useState(false)
-  /** ids currently running the worm, with their ripple index */
-  const [worm, setWorm] = useState<Map<NodeId, number>>(new Map())
-  const wormTimer = useRef<number | undefined>(undefined)
+  // The completion wave, fired when finishing a branch. Owns its own timer.
+  const worm = useWorm()
 
   // ------------------------------------------------------------ drag state
   const [dragId, setDragId] = useState<NodeId | null>(null)
@@ -273,8 +266,6 @@ export default function Outliner({ initial }: { initial: Tree }) {
   // A row Escape just backed out of. Its input blurs as it unmounts, and that
   // blur must not commit the text Escape deliberately discarded.
   const cancelled = useRef<NodeId | null>(null)
-
-  useEffect(() => () => window.clearTimeout(wormTimer.current), [])
 
   // Close the sidebar ⋯ menu on any outside click or Escape, resetting its
   // armed-delete step so it never reopens mid-confirm.
@@ -588,25 +579,8 @@ export default function Outliner({ initial }: { initial: Tree }) {
       const topId = completed.length ? completed[completed.length - 1] : id
       const inSubtree = new Set(subtreeOf(next, topId).map((n) => n.id))
       inSubtree.add(topId)
-
       // Ripple in visible order; collapsed descendants aren't on screen.
-      const wave = rows.filter((r) => inSubtree.has(r.id))
-
-      // A little wave that travels down the list at a constant shape: each row
-      // wiggles for WORM_RUN, staggered by WORM_STAGGER. On long waves the
-      // stagger tightens so the whole thing clears within WORM_CAP rather than
-      // crawling — the wave just moves faster, it doesn't change shape.
-      const stagger =
-        wave.length > 1
-          ? Math.round(Math.min(WORM_STAGGER, Math.max(20, (WORM_CAP - WORM_RUN) / (wave.length - 1))))
-          : WORM_STAGGER
-
-      const map = new Map<NodeId, number>()
-      wave.forEach((r, i) => map.set(r.id, i * stagger))
-      setWorm(map)
-      window.clearTimeout(wormTimer.current)
-      const last = Math.max(0, ...map.values())
-      wormTimer.current = window.setTimeout(() => setWorm(new Map()), last + WORM_RUN + 100)
+      worm.start(rows.filter((r) => inSubtree.has(r.id)).map((r) => r.id))
     }
   }
 
@@ -1345,7 +1319,7 @@ export default function Outliner({ initial }: { initial: Tree }) {
             // A root is a project: draw it with the parent bullet (grey halo)
             // even before it has children, so it never shows the green leaf dot.
             const bulletParent = parent || node.parentId === null
-            const wormDelay = worm.get(id)
+            const wormDelay = worm.delayFor(id)
 
             // A check is green once its whole sibling group is done — i.e. its
             // parent is done (or it's a finished root). Otherwise a done item is
