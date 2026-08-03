@@ -9,7 +9,7 @@
  * it without clicking.
  */
 
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { NodeId } from '@shared/tree'
 
 // Each row wiggles for WORM_RUN, offset from the previous by WORM_STAGGER. On
@@ -58,7 +58,11 @@ export function useWorm(): Worm {
 
   useEffect(() => () => window.clearTimeout(timer.current), [])
 
-  const start = (ids: NodeId[]) => {
+  // Stable for the hook's lifetime: it only touches setWave and the timer ref,
+  // both of which React guarantees are themselves stable. Worth pinning because
+  // a handler that changes identity every render is a silent trap for the first
+  // effect or memo that lists it as a dependency.
+  const start = useCallback((ids: NodeId[]) => {
     const next = wormWave(ids)
     setWave(next)
     window.clearTimeout(timer.current)
@@ -66,7 +70,12 @@ export function useWorm(): Worm {
     // class outlives the animation rather than cutting it off.
     const last = Math.max(0, ...next.values())
     timer.current = window.setTimeout(() => setWave(new Map()), last + WORM_RUN + 100)
-  }
+  }, [])
 
-  return { delayFor: (id) => wave.get(id), start }
+  // This one *should* change when the wave does — that identity change is what
+  // re-renders the rows as the wave starts and clears. Memoised on the wave
+  // rather than pinned, so it stays correct rather than merely stable.
+  const delayFor = useCallback((id: NodeId) => wave.get(id), [wave])
+
+  return { delayFor, start }
 }
