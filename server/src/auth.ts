@@ -31,6 +31,17 @@ export interface Identified {
  */
 const DEV_OWNER: OwnerId = process.env.ANSA_DEV_USER ?? 'legacy'
 
+// The stub trusts a header, so production is the one place it must never run —
+// including when a stray ANSA_DEV_AUTH=1 rides along in a deploy env. Refusing
+// to boot beats booting with every request impersonatable.
+if (process.env.ANSA_DEV_AUTH === '1' && process.env.NODE_ENV === 'production') {
+  throw new Error(
+    'ANSA_DEV_AUTH=1 with NODE_ENV=production: the dev auth stub trusts the ' +
+      'x-ansa-user header, so anyone could act as any user. Unset ANSA_DEV_AUTH ' +
+      'in this environment and wire a real auth provider in server/src/auth.ts.',
+  )
+}
+
 const DEV_AUTH = process.env.ANSA_DEV_AUTH === '1'
 
 /**
