@@ -14,7 +14,7 @@ API_PORT=4000
 APP_URL="http://localhost:${APP_PORT}"
 
 # Set ANSA_NO_OPEN=1 to skip auto-opening the browser (e.g. on a headless box).
-OPEN_BROWSER=${ANSA_NO_OPEN:-}
+NO_OPEN=${ANSA_NO_OPEN:-}
 
 # Print a URL as a terminal hyperlink (OSC 8) so it's clickable, falling back to
 # plain text on terminals that don't support it — they just show the URL.
@@ -36,6 +36,23 @@ if [ ! -d node_modules ]; then
   echo "Installing dependencies…"
   npm install
 fi
+
+# Refuse to start on top of something already holding a port. Without this the
+# readiness check below would see the *other* process answering, call it "up",
+# and carry on with a child that died of EADDRINUSE.
+check_port_free() {
+  local port=$1 what=$2
+  local pid
+  pid=$(lsof -tiTCP:"$port" -sTCP:LISTEN 2>/dev/null | head -1) || true
+  if [ -n "$pid" ]; then
+    echo "Port ${port} is already in use by pid ${pid} ($(ps -p "$pid" -o comm= 2>/dev/null))." >&2
+    echo "That's probably an Ansa ${what} you started earlier." >&2
+    echo "Stop it and re-run, or: kill ${pid}" >&2
+    exit 1
+  fi
+}
+check_port_free "$API_PORT" "server"
+check_port_free "$APP_PORT" "app"
 
 # Track child PIDs so Ctrl-C (or any exit) takes both processes down with us,
 # rather than orphaning the server in the background.
@@ -62,20 +79,29 @@ cleanup() {
 }
 trap cleanup INT TERM EXIT
 
+# Local dev trusts the x-ansa-user header. Without this the server 401s every
+# request and the app loads to an empty screen. Never set in a deployed env.
+export ANSA_DEV_AUTH=${ANSA_DEV_AUTH:-1}
+
 echo "Starting server on http://127.0.0.1:${API_PORT} …"
 npm run server &
 pids+=($!)
 
 # Wait for the API to answer before starting the app, so the app's first SSE
 # connect finds the server already up.
-until curl -sf "http://127.0.0.1:${API_PORT}/api/tree" >/dev/null 2>&1; do
-  sleep 0.3
-  # If the server process died during startup, don't loop forever.
+while ! curl -sf "http://127.0.0.1:${API_PORT}/api/health" >/dev/null 2>&1; do
+  # Check the child first: a dead child plus a healthy curl means something
+  # else is on the port, which is a lie we don't want to wait on.
   if ! kill -0 "${pids[0]}" 2>/dev/null; then
     echo "Server failed to start. Check the output above." >&2
     exit 1
   fi
+  sleep 0.3
 done
+if ! kill -0 "${pids[0]}" 2>/dev/null; then
+  echo "Server exited during startup — port ${API_PORT} is being served by something else." >&2
+  exit 1
+fi
 echo "Server is up."
 
 echo "Starting app on ${APP_URL} …"
@@ -84,12 +110,12 @@ pids+=($!)
 
 # Wait for Vite to actually serve before opening a browser at it, so the tab
 # doesn't land on a connection error. Bail if the app process dies meanwhile.
-until curl -sf "${APP_URL}" >/dev/null 2>&1; do
-  sleep 0.3
+while ! curl -sf "${APP_URL}" >/dev/null 2>&1; do
   if ! kill -0 "${pids[1]}" 2>/dev/null; then
     echo "App failed to start. Check the output above." >&2
     exit 1
   fi
+  sleep 0.3
 done
 
 echo ""
@@ -98,7 +124,7 @@ printf '  app  →  %s\n' "$(link "${APP_URL}")"
 printf '  api  →  %s\n' "$(link "http://127.0.0.1:${API_PORT}")"
 echo ""
 
-if [ -z "$OPEN_BROWSER" ]; then
+if [ -z "$NO_OPEN" ]; then
   echo "Opening ${APP_URL} …"
   open_url "${APP_URL}"
 fi
