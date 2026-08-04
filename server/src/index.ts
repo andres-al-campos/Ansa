@@ -279,6 +279,12 @@ app.put<{ Body: { tree: unknown } }>('/api/tree', async (req, reply) => {
   return { tree: emit(owner, store.replaceAll(owner, tree as Tree), req) }
 })
 
+// Liveness, deliberately unauthenticated: "is the server up" is not a question
+// about who's asking. Scripts wait on this rather than on /api/tree, which
+// answers 401 when auth isn't configured and so can't tell "down" apart from
+// "not signed in".
+app.get('/api/health', async () => ({ ok: true, auth: isDevAuth ? 'dev' : 'none' }))
+
 app
   .listen({ port: PORT, host: '127.0.0.1' })
   .then(() => {
