@@ -16,7 +16,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { Store } from './store.ts'
-import { roots } from '../../shared/tree.ts'
+import { invalidTree, roots } from '../../shared/tree.ts'
+import { seedTree } from '../../shared/seed.ts'
 
 const A = 'user-a'
 const B = 'user-b'
@@ -150,9 +151,9 @@ describe("an owner can't reach across to another's nodes by id", () => {
 })
 
 describe('ids are unique across owners', () => {
-  // Node ids are the table's primary key, so two owners generating the same id
-  // would collide on insert. Generated ids make this vanishingly unlikely, but
-  // the failure mode would be a write throwing rather than data mixing.
+  // Node ids are the table's primary key — one id space for everyone — so
+  // anything that mints ids has to keep them unique across accounts, not just
+  // within one tree.
   it('two owners building trees in parallel both persist', () => {
     for (let i = 0; i < 20; i++) {
       store.addChild(A, null, `a${i}`)
@@ -160,5 +161,30 @@ describe('ids are unique across owners', () => {
     }
     expect(store.load(A)).toHaveLength(20)
     expect(store.load(B)).toHaveLength(20)
+  })
+
+  // This one is here because it actually happened. seedTree() returned fixed
+  // literal ids, which was correct while only one tree could ever exist; the
+  // second user to sign in got a 500 from a primary-key collision on their very
+  // first request. The unit tests all passed — they built trees with generated
+  // ids and never went near the seed.
+  it('two owners can both be seeded', () => {
+    expect(() => {
+      store.replaceAll(A, seedTree())
+      store.replaceAll(B, seedTree())
+    }).not.toThrow()
+    expect(store.load(A).length).toBeGreaterThan(0)
+    expect(store.load(B)).toHaveLength(store.load(A).length)
+    // ...and the two seeds share no ids at all.
+    const aIds = new Set(store.load(A).map((n) => n.id))
+    expect(store.load(B).some((n) => aIds.has(n.id))).toBe(false)
+  })
+
+  it('a seeded tree is internally valid', () => {
+    // Remapping parent references is the part of fresh-id seeding that can go
+    // subtly wrong: miss the parentId and every child points at an id that no
+    // longer exists.
+    store.replaceAll(A, seedTree())
+    expect(invalidTree(store.load(A))).toBeNull()
   })
 })

@@ -61,7 +61,12 @@ function toggleFirstTask(container: HTMLElement) {
 
 test('an edit before the first SSE sync is held, then sent once the server tree lands', async () => {
   const { default: Outliner } = await import('./Outliner')
-  const { container } = render(<Outliner initial={seedTree()} />)
+  // One tree, rendered and then echoed back: the scenario is the server
+  // confirming the tree this client already holds. Two separate seedTree() calls
+  // would be two *different* trees — the seed mints fresh ids each call — which
+  // is a wholesale replacement, not a sync.
+  const seed = seedTree()
+  const { container } = render(<Outliner initial={seed} />)
   scopeIntoProject(container)
 
   // The stale-cache trap: the edit lands before the server's tree has been
@@ -74,7 +79,7 @@ test('an edit before the first SSE sync is held, then sent once the server tree 
   // order they were made. Opening the project is itself a change (it stamps the
   // project as visited), so it queues ahead of the edit.
   await act(async () => {
-    live!.emit(seedTree())
+    live!.emit(seed)
   })
   expect(sentOps()).toEqual(['markOpened', 'setDone'])
 
@@ -87,11 +92,12 @@ test('an edit before the first SSE sync is held, then sent once the server tree 
 
 test('the whole tree is never pushed for an ordinary edit', async () => {
   const { default: Outliner } = await import('./Outliner')
-  const { container } = render(<Outliner initial={seedTree()} />)
+  const seed = seedTree()
+  const { container } = render(<Outliner initial={seed} />)
   scopeIntoProject(container)
 
   await act(async () => {
-    live!.emit(seedTree())
+    live!.emit(seed)
   })
   await act(async () => {
     toggleFirstTask(container)
