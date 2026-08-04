@@ -17,9 +17,10 @@ import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
 import Fastify from 'fastify'
 import cors from '@fastify/cors'
-import { Store } from './store.ts'
+import { RejectedWriteError, Store, type OwnerId } from './store.ts'
 import { parseOp, parseSpecs } from '../../shared/ops.ts'
 import { broadcast, subscribe } from './bus.ts'
+import { isDevAuth, ownerOf } from './auth.ts'
 import { seedTree } from '../../shared/seed.ts'
 import { invalidTree } from '../../shared/tree.ts'
 import type { SubtreeSpec, Tree } from '../../shared/tree.ts'
@@ -43,11 +44,6 @@ const DB_PATH = process.env.ANSA_DB ?? resolve(here, '../../ansa.db')
 const PORT = Number(process.env.PORT ?? 4000)
 
 const store = new Store(DB_PATH)
-
-// First run: an empty database opens onto a blank app, so seed it once.
-if (store.load().length === 0) {
-  store.replaceAll(seedTree())
-}
 
 // Reclaim the write-ahead log periodically. This process holds a connection
 // open for the SSE stream, which stops WAL's own autocheckpoint from ever fully
@@ -76,6 +72,14 @@ for (const signal of ['SIGINT', 'SIGTERM'] as const) {
   })
 }
 
+// A write the store refused is the caller's fault, not a server fault — reply
+// 400 with the store's message, which says what to do about it. Anything else
+// is a genuine bug and keeps Fastify's default 500.
+app.setErrorHandler((err, _req, reply) => {
+  if (err instanceof RejectedWriteError) return reply.code(400).send({ error: err.message })
+  throw err
+})
+
 // Private Network Access: a page on localhost calling a server on the local
 // network is a "private network request", and Chrome blocks the preflight
 // unless the response opts in with this header. Without it every non-simple
@@ -92,7 +96,7 @@ app.addHook('onRequest', async (req, reply) => {
 await app.register(cors, {
   origin: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['content-type', 'x-ansa-origin'],
+  allowedHeaders: ['content-type', 'x-ansa-origin', 'x-ansa-user'],
 })
 
 // The client that made the write, from the x-ansa-origin header. Echoed back in
@@ -101,14 +105,51 @@ const originOf = (req: { headers: Record<string, unknown> }): string | null => {
   const h = req.headers['x-ansa-origin']
   return typeof h === 'string' ? h : null
 }
-// Push the resulting tree to every open stream, then hand it back to the caller.
-const emit = (tree: Tree, req: { headers: Record<string, unknown> }): Tree => {
-  broadcast(tree, originOf(req))
+// Push the resulting tree to that owner's open streams, then hand it back.
+const emit = (owner: OwnerId, tree: Tree, req: { headers: Record<string, unknown> }): Tree => {
+  broadcast(owner, tree, originOf(req))
   return tree
 }
 
-// SSE stream: hold the connection open and push the tree whenever it changes.
+/**
+ * The signed-in owner, replying 401 if there isn't one.
+ *
+ * Returns null when it has already sent the reply, so every handler starts with
+ * `const owner = await requireOwner(...); if (!owner) return`. Deliberately not
+ * a preHandler hook writing onto the request: a hook that fails open — one route
+ * added without it, one ordering mistake — serves another user's tree, whereas
+ * a missing call here is a type error at the first use of `owner`.
+ */
+type Reply = { code: (n: number) => { send: (body: unknown) => unknown } }
+function requireOwner(req: { headers: Record<string, unknown> }, reply: Reply): OwnerId | null {
+  const owner = ownerOf(req)
+  if (!owner) {
+    reply.code(401).send({ error: 'Not signed in. Sign in and retry the request.' })
+    return null
+  }
+  return owner
+}
+
+/**
+ * One owner's tree, seeding it the first time they ask for it.
+ *
+ * Seeding used to happen once at boot against the single global tree. With
+ * accounts there is no such moment — each user's tree starts empty whenever they
+ * first arrive — so the check moves to the read path, where "empty" is knowable
+ * per person.
+ */
+function loadOrSeed(owner: OwnerId): Tree {
+  const tree = store.load(owner)
+  return tree.length === 0 ? store.replaceAll(owner, seedTree()) : tree
+}
+
+// SSE stream: hold the connection open and push the owner's tree when it changes.
 app.get('/api/events', (req, reply) => {
+  const owner = ownerOf(req)
+  if (!owner) {
+    reply.code(401).send({ error: 'Not signed in. Sign in and reconnect the stream.' })
+    return
+  }
   reply.raw.writeHead(200, {
     'content-type': 'text/event-stream',
     'cache-control': 'no-cache',
@@ -117,8 +158,8 @@ app.get('/api/events', (req, reply) => {
     'access-control-allow-origin': '*',
   })
   // Send the current tree immediately so a fresh subscriber is in sync at once.
-  reply.raw.write(`data: ${JSON.stringify({ tree: store.load(), origin: null })}\n\n`)
-  const unsubscribe = subscribe(reply.raw)
+  reply.raw.write(`data: ${JSON.stringify({ tree: loadOrSeed(owner), origin: null })}\n\n`)
+  const unsubscribe = subscribe(owner, reply.raw)
   // A comment line every 25s keeps proxies from culling an idle connection.
   const keepAlive = setInterval(() => reply.raw.write(': keep-alive\n\n'), 25000)
   req.raw.on('close', () => {
@@ -127,21 +168,29 @@ app.get('/api/events', (req, reply) => {
   })
 })
 
-app.get('/api/tree', async () => ({ tree: store.load() }))
+app.get('/api/tree', async (req, reply) => {
+  const owner = requireOwner(req, reply)
+  if (!owner) return
+  return { tree: loadOrSeed(owner) }
+})
 
 app.post<{ Body: { parentId: string | null; text?: string } }>('/api/nodes', async (req, reply) => {
+  const owner = requireOwner(req, reply)
+  if (!owner) return
   const { parentId, text } = req.body ?? { parentId: null }
   if (parentId !== null && typeof parentId !== 'string') {
     return reply.code(400).send({ error: 'parentId must be a string or null' })
   }
-  const { tree, id } = store.addChild(parentId, text ?? '')
-  return { tree: emit(tree, req), id }
+  const { tree, id } = store.addChild(owner, parentId, text ?? '')
+  return { tree: emit(owner, tree, req), id }
 })
 
 // Graft a whole nested subtree in one write. parentId null makes a new project
 // (root); a parent id nests it under an existing task. Returns the created ids
 // depth-first, first id being the subtree's own root.
 app.post<{ Body: { parentId?: string | null; nodes?: unknown } }>('/api/nodes/subtree', async (req, reply) => {
+  const owner = requireOwner(req, reply)
+  if (!owner) return
   const { parentId = null, nodes } = req.body ?? {}
   if (parentId !== null && typeof parentId !== 'string') {
     return reply.code(400).send({ error: 'parentId must be a string or null' })
@@ -158,41 +207,49 @@ app.post<{ Body: { parentId?: string | null; nodes?: unknown } }>('/api/nodes/su
         'A new project needs exactly one top-level node (the project itself); put the rest under its children. To add several tasks to an existing project, pass its id as parentId.',
     })
   }
-  const { tree, ids } = store.addSubtree(parentId, parsed.nodes)
-  return { tree: emit(tree, req), ids }
+  const { tree, ids } = store.addSubtree(owner, parentId, parsed.nodes)
+  return { tree: emit(owner, tree, req), ids }
 })
 
 app.patch<{ Params: { id: string }; Body: { text?: string; done?: boolean; pinned?: boolean } }>(
   '/api/nodes/:id',
   async (req, reply) => {
+    const owner = requireOwner(req, reply)
+    if (!owner) return
     const { id } = req.params
     const { text, done, pinned } = req.body ?? {}
-    if (typeof text === 'string') return { tree: emit(store.rename(id, text), req) }
+    if (typeof text === 'string') return { tree: emit(owner, store.rename(owner, id, text), req) }
     if (typeof done === 'boolean') {
-      const { tree, completed } = store.setDone(id, done)
-      return { tree: emit(tree, req), completed }
+      const { tree, completed } = store.setDone(owner, id, done)
+      return { tree: emit(owner, tree, req), completed }
     }
-    if (typeof pinned === 'boolean') return { tree: emit(store.setPinned(id, pinned), req) }
+    if (typeof pinned === 'boolean') return { tree: emit(owner, store.setPinned(owner, id, pinned), req) }
     return reply.code(400).send({ error: 'provide text (string), done (boolean), or pinned (boolean)' })
   },
 )
 
-app.delete<{ Params: { id: string } }>('/api/nodes/:id', async (req) => ({
-  tree: emit(store.remove(req.params.id), req),
-}))
+app.delete<{ Params: { id: string } }>('/api/nodes/:id', async (req, reply) => {
+  const owner = requireOwner(req, reply)
+  if (!owner) return
+  return { tree: emit(owner, store.remove(owner, req.params.id), req) }
+})
 
 app.post<{ Params: { id: string }; Body: { parentId: string | null; index: number } }>(
   '/api/nodes/:id/move',
   async (req, reply) => {
+    const owner = requireOwner(req, reply)
+    if (!owner) return
     const { parentId, index } = req.body ?? { parentId: null, index: 0 }
     if (typeof index !== 'number') return reply.code(400).send({ error: 'index must be a number' })
-    return { tree: emit(store.move(req.params.id, parentId, index), req) }
+    return { tree: emit(owner, store.move(owner, req.params.id, parentId, index), req) }
   },
 )
 
-app.post<{ Params: { id: string } }>('/api/nodes/:id/toggle-collapsed', async (req) => ({
-  tree: emit(store.toggleCollapsed(req.params.id), req),
-}))
+app.post<{ Params: { id: string } }>('/api/nodes/:id/toggle-collapsed', async (req, reply) => {
+  const owner = requireOwner(req, reply)
+  if (!owner) return
+  return { tree: emit(owner, store.toggleCollapsed(owner, req.params.id), req) }
+})
 
 // The app's write path. Takes a named operation rather than a tree, and applies
 // it to whatever the stored tree is *now* — so two clients writing at once
@@ -200,10 +257,12 @@ app.post<{ Params: { id: string } }>('/api/nodes/:id/toggle-collapsed', async (r
 // one broadcast, which also keeps multi-move ops like adoptFollowing atomic on
 // every other tab. The fine-grained /api/nodes routes below stay for the MCP.
 app.post<{ Body: { op?: unknown } }>('/api/ops', async (req, reply) => {
+  const owner = requireOwner(req, reply)
+  if (!owner) return
   const parsed = parseOp(req.body?.op ?? req.body)
   if ('error' in parsed) return reply.code(400).send({ error: parsed.error })
-  const { tree, completed } = store.applyOp(parsed.op)
-  return { tree: emit(tree, req), completed }
+  const { tree, completed } = store.applyOp(owner, parsed.op)
+  return { tree: emit(owner, tree, req), completed }
 })
 
 // Whole-tree replace, used by Import. The only route that takes a tree rather
@@ -212,15 +271,24 @@ app.post<{ Body: { op?: unknown } }>('/api/ops', async (req, reply) => {
 // reject the crude cases, but a coercible one — `order: "3"`, a cyclic
 // parentId — would be stored and then break the walks that read it.
 app.put<{ Body: { tree: unknown } }>('/api/tree', async (req, reply) => {
+  const owner = requireOwner(req, reply)
+  if (!owner) return
   const { tree } = req.body ?? {}
   const bad = invalidTree(tree)
   if (bad) return reply.code(400).send({ error: bad })
-  return { tree: emit(store.replaceAll(tree as Tree), req) }
+  return { tree: emit(owner, store.replaceAll(owner, tree as Tree), req) }
 })
 
 app
   .listen({ port: PORT, host: '127.0.0.1' })
-  .then(() => console.log(`Ansa server on http://127.0.0.1:${PORT}  (db: ${DB_PATH})`))
+  .then(() => {
+    console.log(`Ansa server on http://127.0.0.1:${PORT}  (db: ${DB_PATH})`)
+    if (isDevAuth) {
+      console.log('auth: DEV STUB — the x-ansa-user header is trusted as-is. Not for a public deploy.')
+    } else {
+      console.log('auth: none configured — every request will 401. Set ANSA_DEV_AUTH=1 for local use.')
+    }
+  })
   .catch((err) => {
     console.error(err)
     process.exit(1)

@@ -10,6 +10,17 @@
  * A single-user local tool doesn't need row-level updates or clever diffing:
  * the whole tree is a few KB, and rewriting it inside one transaction keeps the
  * DB and the in-memory tree impossible to desync.
+ *
+ * ## Ownership
+ *
+ * Every method takes an `owner` and every statement filters on it. This file is
+ * the *only* place ownership exists: shared/tree.ts stays a set of pure
+ * functions over a flat array, with no idea that more than one user's nodes
+ * were ever in the same table. That boundary is deliberate. If `roots()` or
+ * `descendants()` took an ownerId, every future call site would be somewhere a
+ * filter could be forgotten — and forgetting it once is a data leak. Here there
+ * is one filter to get right, and `load(owner)` hands the tree functions a tree
+ * that is already only one person's.
  */
 
 import Database from 'better-sqlite3'
@@ -17,6 +28,7 @@ import { applyOp, type Op } from '../../shared/ops.ts'
 import {
   addChild,
   addSubtree,
+  invalidTree,
   markOpened,
   moveNode,
   removeNode,
@@ -29,6 +41,22 @@ import {
   type Tree,
 } from '../../shared/tree.ts'
 
+/**
+ * Who a tree belongs to. Opaque here — the server decides what a user id is
+ * (today the signed-in user's id); the store only ever compares it for equality.
+ */
+export type OwnerId = string
+
+/**
+ * The owner assigned to rows that predate ownership existing.
+ *
+ * The database this migration runs against is mine, so backfilling to a
+ * placeholder and then claiming it is a step I'd have to remember to do. It is
+ * set from ANSA_LEGACY_OWNER instead, so the first deploy can point the existing
+ * tree at a real account id in one go.
+ */
+const LEGACY_OWNER: OwnerId = process.env.ANSA_LEGACY_OWNER ?? 'legacy'
+
 export class Store {
   private db: Database.Database
 
@@ -38,6 +66,7 @@ export class Store {
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS nodes (
         id        TEXT PRIMARY KEY,
+        ownerId   TEXT NOT NULL,
         parentId  TEXT REFERENCES nodes(id) ON DELETE CASCADE,
         text      TEXT NOT NULL,
         done      INTEGER NOT NULL DEFAULT 0,
@@ -54,11 +83,21 @@ export class Store {
     // Add columns to DBs created before the projects navigator existed.
     if (!has('pinned')) this.db.exec('ALTER TABLE nodes ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0')
     if (!has('lastOpenedAt')) this.db.exec('ALTER TABLE nodes ADD COLUMN lastOpenedAt INTEGER')
+    // Add ownership to single-user DBs. Every existing row is by definition mine,
+    // so they all get the same owner. NOT NULL needs a default to add in place;
+    // the literal is safe because it's a constant, not user input.
+    if (!has('ownerId')) {
+      this.db.exec(
+        `ALTER TABLE nodes ADD COLUMN ownerId TEXT NOT NULL DEFAULT '${LEGACY_OWNER.replace(/'/g, "''")}'`,
+      )
+    }
+    // Every query filters on ownerId first, so it leads the index.
+    this.db.exec('CREATE INDEX IF NOT EXISTS idx_nodes_owner ON nodes(ownerId, parentId)')
   }
 
-  /** The whole tree, as the flat Node array the app and shared ops expect. */
-  load(): Tree {
-    const rows = this.db.prepare('SELECT * FROM nodes').all() as Array<{
+  /** One owner's whole tree, as the flat Node array the app and shared ops expect. */
+  load(owner: OwnerId): Tree {
+    const rows = this.db.prepare('SELECT * FROM nodes WHERE ownerId = ?').all(owner) as Array<{
       id: string
       parentId: string | null
       text: string
@@ -83,23 +122,28 @@ export class Store {
   }
 
   /**
-   * Replace the entire nodes table with `tree`, in one transaction. Wholesale
+   * Replace one owner's nodes with `tree`, in one transaction. Wholesale
    * rewrite rather than a computed diff: it's cheap at this scale and removes
    * any chance of the DB drifting from the tree the op produced.
+   *
+   * The delete is scoped to the owner. An unscoped `DELETE FROM nodes` here
+   * would wipe every account on any write, so the WHERE clause is the single
+   * most load-bearing thing in this file.
    */
-  private replace(tree: Tree): Tree {
-    const wipe = this.db.prepare('DELETE FROM nodes')
+  private replace(owner: OwnerId, tree: Tree): Tree {
+    const wipe = this.db.prepare('DELETE FROM nodes WHERE ownerId = ?')
     const insert = this.db.prepare(
-      `INSERT INTO nodes (id, parentId, text, done, "order", collapsed, pinned, lastOpenedAt, createdAt)
-       VALUES (@id, @parentId, @text, @done, @order, @collapsed, @pinned, @lastOpenedAt, @createdAt)`,
+      `INSERT INTO nodes (id, ownerId, parentId, text, done, "order", collapsed, pinned, lastOpenedAt, createdAt)
+       VALUES (@id, @ownerId, @parentId, @text, @done, @order, @collapsed, @pinned, @lastOpenedAt, @createdAt)`,
     )
     const tx = this.db.transaction((t: Tree) => {
-      wipe.run()
+      wipe.run(owner)
       // Parents must exist before children for the FK — insert in depth order.
       // A tree from a pure op is already acyclic; sort roots-first by walking.
       for (const n of sortForInsert(t)) {
         insert.run({
           id: n.id,
+          ownerId: owner,
           parentId: n.parentId,
           text: n.text,
           done: n.done ? 1 : 0,
@@ -117,43 +161,49 @@ export class Store {
 
   // --- atomic operations, each: load → pure op → persist → return new tree ---
 
-  addChild(parentId: NodeId | null, text: string): { tree: Tree; id: NodeId } {
-    const { tree, id } = addChild(this.load(), parentId, text)
-    return { tree: this.replace(tree), id }
+  addChild(owner: OwnerId, parentId: NodeId | null, text: string): { tree: Tree; id: NodeId } {
+    const tree = this.load(owner)
+    requireOwnParent(tree, parentId)
+    const added = addChild(tree, parentId, text)
+    return { tree: this.replace(owner, added.tree), id: added.id }
   }
 
-  addSubtree(parentId: NodeId | null, nodes: SubtreeSpec[]): { tree: Tree; ids: NodeId[] } {
-    const { tree, ids } = addSubtree(this.load(), parentId, nodes)
-    return { tree: this.replace(tree), ids }
+  addSubtree(owner: OwnerId, parentId: NodeId | null, nodes: SubtreeSpec[]): { tree: Tree; ids: NodeId[] } {
+    const tree = this.load(owner)
+    requireOwnParent(tree, parentId)
+    const added = addSubtree(tree, parentId, nodes)
+    return { tree: this.replace(owner, added.tree), ids: added.ids }
   }
 
-  remove(id: NodeId): Tree {
-    return this.replace(removeNode(this.load(), id))
+  remove(owner: OwnerId, id: NodeId): Tree {
+    return this.replace(owner, removeNode(this.load(owner), id))
   }
 
-  rename(id: NodeId, text: string): Tree {
-    return this.replace(setText(this.load(), id, text))
+  rename(owner: OwnerId, id: NodeId, text: string): Tree {
+    return this.replace(owner, setText(this.load(owner), id, text))
   }
 
-  setDone(id: NodeId, done: boolean): { tree: Tree; completed: NodeId[] } {
-    const { tree, completed } = setDone(this.load(), id, done)
-    return { tree: this.replace(tree), completed }
+  setDone(owner: OwnerId, id: NodeId, done: boolean): { tree: Tree; completed: NodeId[] } {
+    const { tree, completed } = setDone(this.load(owner), id, done)
+    return { tree: this.replace(owner, tree), completed }
   }
 
-  move(id: NodeId, newParentId: NodeId | null, index: number): Tree {
-    return this.replace(moveNode(this.load(), id, newParentId, index))
+  move(owner: OwnerId, id: NodeId, newParentId: NodeId | null, index: number): Tree {
+    const tree = this.load(owner)
+    requireOwnParent(tree, newParentId)
+    return this.replace(owner, moveNode(tree, id, newParentId, index))
   }
 
-  toggleCollapsed(id: NodeId): Tree {
-    return this.replace(toggleCollapsed(this.load(), id))
+  toggleCollapsed(owner: OwnerId, id: NodeId): Tree {
+    return this.replace(owner, toggleCollapsed(this.load(owner), id))
   }
 
-  setPinned(id: NodeId, pinned: boolean): Tree {
-    return this.replace(setPinned(this.load(), id, pinned))
+  setPinned(owner: OwnerId, id: NodeId, pinned: boolean): Tree {
+    return this.replace(owner, setPinned(this.load(owner), id, pinned))
   }
 
-  markOpened(id: NodeId): Tree {
-    return this.replace(markOpened(this.load(), id))
+  markOpened(owner: OwnerId, id: NodeId): Tree {
+    return this.replace(owner, markOpened(this.load(owner), id))
   }
 
   /**
@@ -163,15 +213,29 @@ export class Store {
    * on whatever the tree is now, not on the snapshot the client held when it
    * made the change. Two clients editing different branches therefore both land,
    * where a whole-tree write would have let the later one erase the earlier.
+   *
+   * An op names node ids the caller picked, so a caller could name someone
+   * else's node — but `load(owner)` hands the op a tree those ids aren't in, so
+   * the pure op finds nothing and no-ops. The isolation comes from the filtered
+   * load rather than from checking each id, which is why it can't be forgotten
+   * for one op and not another.
    */
-  applyOp(op: Op): { tree: Tree; completed: NodeId[] } {
-    const { tree, completed } = applyOp(this.load(), op)
-    return { tree: this.replace(tree), completed }
+  applyOp(owner: OwnerId, op: Op): { tree: Tree; completed: NodeId[] } {
+    const { tree, completed } = applyOp(this.load(owner), op)
+    // Several ops carry a caller-chosen parentId (addChild, addSubtree,
+    // moveNode). Pointed at a node this owner doesn't have, the pure op happily
+    // produces a tree with a dangling parentId — which, if that id is another
+    // account's real row, persists as a live cross-owner link. Checking the
+    // result rather than each op's parentId means every op is covered by one
+    // check, including any added later.
+    const bad = invalidTree(tree)
+    if (bad) throw new RejectedWriteError(`That change would corrupt the tree (${bad}); nothing was saved.`)
+    return { tree: this.replace(owner, tree), completed }
   }
 
-  /** Overwrite the whole tree — used by import and by first-run seeding. */
-  replaceAll(tree: Tree): Tree {
-    return this.replace(tree)
+  /** Overwrite one owner's tree — used by import and by first-run seeding. */
+  replaceAll(owner: OwnerId, tree: Tree): Tree {
+    return this.replace(owner, tree)
   }
 
   /**
@@ -198,6 +262,44 @@ export class Store {
     this.checkpoint()
     this.db.close()
   }
+}
+
+/**
+ * A write the store refused. The routes turn this into a 400 — it means the
+ * request was bad, not that the server broke.
+ */
+export class RejectedWriteError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'RejectedWriteError'
+  }
+}
+
+/** Raised when a request names a parent node the owner doesn't have. */
+export class UnknownParentError extends RejectedWriteError {
+  constructor(parentId: NodeId) {
+    super(`No such parent task: ${parentId}. Check the id, or pass null to make a new project.`)
+    this.name = 'UnknownParentError'
+  }
+}
+
+/**
+ * Reject a parentId that isn't in this owner's tree.
+ *
+ * The pure tree functions don't require a parent to exist: `addChild` appends a
+ * node carrying whatever parentId it was given, and `moveNode` reparents onto
+ * one. With a single user that was harmless, because a missing id meant a typo
+ * and produced an orphan. With accounts it isn't: the id might be a *real* row
+ * belonging to someone else, and the write would store a live cross-owner
+ * parentId — a tree that fails its own validator, and one that a stranger's
+ * delete would cascade into.
+ *
+ * The filtered load is what makes this checkable here: a parent the owner can't
+ * see isn't in `tree`, so "exists" and "is mine" are the same question.
+ */
+function requireOwnParent(tree: Tree, parentId: NodeId | null): void {
+  if (parentId === null) return
+  if (!tree.some((n) => n.id === parentId)) throw new UnknownParentError(parentId)
 }
 
 /**

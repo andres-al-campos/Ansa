@@ -28,7 +28,29 @@ const BASE =
  */
 export const ORIGIN = `web-${Math.random().toString(36).slice(2, 10)}`
 
-export const EVENTS_URL = `${BASE}/api/events`
+/**
+ * Who this client is acting as, while auth is still the dev stub.
+ *
+ * The server trusts this header as-is, so it is not authentication — it's the
+ * seam a real provider's token will replace. Set VITE_ANSA_USER to run a second
+ * account in another browser profile and check that the two trees stay apart.
+ */
+const USER = import.meta.env.VITE_ANSA_USER ?? 'legacy'
+
+/**
+ * The headers every write carries. One place, so adding a call site can't mean
+ * silently omitting identity and getting someone else's tree.
+ */
+const headers = (): Record<string, string> => ({
+  'content-type': 'application/json',
+  'x-ansa-origin': ORIGIN,
+  'x-ansa-user': USER,
+})
+
+// EventSource can't set headers, so the stream identifies itself in the query
+// string instead. Fine for the stub; with real auth this carries a short-lived
+// token, or the cookie the browser sends on its own.
+export const EVENTS_URL = `${BASE}/api/events?user=${encodeURIComponent(USER)}`
 
 /**
  * Persist the whole tree. Returns false if the save didn't reach the server.
@@ -41,7 +63,7 @@ export async function putTree(tree: Tree): Promise<boolean> {
   try {
     const res = await fetch(`${BASE}/api/tree`, {
       method: 'PUT',
-      headers: { 'content-type': 'application/json', 'x-ansa-origin': ORIGIN },
+      headers: headers(),
       body: JSON.stringify({ tree }),
     })
     return res.ok
@@ -60,7 +82,7 @@ export async function sendOp(op: Op): Promise<boolean> {
   try {
     const res = await fetch(`${BASE}/api/ops`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-ansa-origin': ORIGIN },
+      headers: headers(),
       body: JSON.stringify({ op }),
     })
     return res.ok

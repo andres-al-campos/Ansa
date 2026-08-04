@@ -17,6 +17,16 @@ import { byId, childrenOf, progressOf, type Node, type NodeId, type Tree } from 
 
 const BASE = process.env.ANSA_API ?? 'http://127.0.0.1:4000'
 
+/**
+ * Whose tree this MCP server edits.
+ *
+ * A stdio MCP server is launched by one person's client, so it acts as that one
+ * user — there's no session to derive it from. While auth is the dev stub this
+ * is just a header; with a real provider it becomes an API key or token issued
+ * to that account, but the shape doesn't change: one process, one user.
+ */
+const USER = process.env.ANSA_USER ?? 'legacy'
+
 /** Call the server; throw a readable error the model can act on. */
 async function api(path: string, init?: RequestInit): Promise<{ tree: Tree } & Record<string, unknown>> {
   let res: Response
@@ -30,6 +40,7 @@ async function api(path: string, init?: RequestInit): Promise<{ tree: Tree } & R
         // route ever runs.
         ...(init?.body === undefined ? {} : { 'content-type': 'application/json' }),
         'x-ansa-origin': 'mcp',
+        'x-ansa-user': USER,
         ...init?.headers,
       },
     })
