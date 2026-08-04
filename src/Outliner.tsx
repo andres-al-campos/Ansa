@@ -12,7 +12,7 @@ import {
 } from './edits'
 import { useFoldAnimation } from './useFoldAnimation'
 import { useOutlinerSync } from './useOutlinerSync'
-import { useWorm } from './useWorm'
+import { useRipple } from './useRipple'
 import type { Op } from '@shared/ops'
 import {
   addChild,
@@ -238,7 +238,7 @@ export default function Outliner({ initial }: { initial: Tree }) {
   const [menuOpen, setMenuOpen] = useState<NodeId | null>(null)
   const [menuArmed, setMenuArmed] = useState(false)
   // The completion wave, fired when finishing a branch. Owns its own timer.
-  const worm = useWorm()
+  const ripple = useRipple()
 
   // ------------------------------------------------------------ drag state
   const [dragId, setDragId] = useState<NodeId | null>(null)
@@ -572,7 +572,7 @@ export default function Outliner({ initial }: { initial: Tree }) {
     const { tree: next, completed } = setDone(tree, id, willComplete)
     setTree(next, { op: 'setDone', id, done: willComplete })
 
-    // The worm is the reward for *finishing* something, so it fires only when a
+    // The ripple is the reward for *finishing* something, so it fires only when a
     // group closes out — not on every individual tick. A lone leaf that doesn't
     // complete its parent stays quiet; the payoff is saved for the moment a
     // branch actually finishes. Two ways a click finishes a branch: it ticks a
@@ -580,14 +580,14 @@ export default function Outliner({ initial }: { initial: Tree }) {
     // flips an ancestor to done. `completed` lists only the ancestors that
     // flipped, never the clicked node, so check the click for children too.
     // The topmost completed root is the highest flipped ancestor, else the
-    // clicked parent itself. Un-checking never worms.
+    // clicked parent itself. Un-checking never ripples.
     const clickedIsParent = childrenOf(tree, id).length > 0
     if (willComplete && (completed.length || clickedIsParent)) {
       const topId = completed.length ? completed[completed.length - 1] : id
       const inSubtree = new Set(subtreeOf(next, topId).map((n) => n.id))
       inSubtree.add(topId)
       // Ripple in visible order; collapsed descendants aren't on screen.
-      worm.start(rows.filter((r) => inSubtree.has(r.id)).map((r) => r.id))
+      ripple.start(rows.filter((r) => inSubtree.has(r.id)).map((r) => r.id))
     }
   }
 
@@ -1240,7 +1240,7 @@ export default function Outliner({ initial }: { initial: Tree }) {
             // A root is a project: draw it with the parent bullet (grey halo)
             // even before it has children, so it never shows the green leaf dot.
             const bulletParent = parent || node.parentId === null
-            const wormDelay = worm.delayFor(id)
+            const rippleDelay = ripple.delayFor(id)
 
             // A check is green once its whole sibling group is done — i.e. its
             // parent is done (or it's a finished root). Otherwise a done item is
@@ -1271,7 +1271,7 @@ export default function Outliner({ initial }: { initial: Tree }) {
                   'row' +
                   (node.done ? ' done' : '') +
                   (node.collapsed && parent && !flat ? ' collapsed' : '') +
-                  (wormDelay !== undefined ? ' worm' : '') +
+                  (rippleDelay !== undefined ? ' ripple' : '') +
                   (dropHere === 'into' ? ' drop-into' : '') +
                   (dropHere === 'before' ? ' drop-before' : '') +
                   (dropHere === 'after' ? ' drop-after' : '')
@@ -1279,7 +1279,7 @@ export default function Outliner({ initial }: { initial: Tree }) {
                 style={
                   {
                     paddingLeft: flat ? ROW_PAD : ROW_PAD + depth * INDENT,
-                    ...(wormDelay !== undefined ? { ['--worm-delay' as string]: `${wormDelay}ms` } : {}),
+                    ...(rippleDelay !== undefined ? { ['--ripple-delay' as string]: `${rippleDelay}ms` } : {}),
                     ...(dropIndent !== null ? { ['--drop-x' as string]: `${dropIndent}px` } : {}),
                   } as React.CSSProperties
                 }

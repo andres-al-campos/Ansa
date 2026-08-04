@@ -898,7 +898,7 @@ body:has(.row.gap-slot) { cursor: default; }
   border-width: 0 2px 2px 0;
   transform: translate(-50%, -60%) rotate(42deg);
 }
-/* Both check colors transition, so a parent-tick fades blue→green with the worm. */
+/* Both check colors transition, so a parent-tick fades blue→green with the ripple. */
 .check { transition: background-color 0.25s ease, border-color 0.25s ease; }
 
 .body { flex: 1; min-width: 0; }
@@ -1110,11 +1110,11 @@ body:has(.row.gap-slot) { cursor: default; }
 .proj-card.new:hover { color: var(--brass-ink); border-color: var(--brass); }
 
 /*
- * The worm: rows ripple one after another, top to bottom, rather than shaking
- * at once. --worm-delay is each row's start offset, computed in JS so the
- * stagger can tighten on long waves and keep the whole sweep short.
+ * The completion ripple: rows wiggle one after another, top to bottom, rather
+ * than shaking at once. --ripple-delay is each row's start offset, computed in
+ * JS so the stagger can tighten on long waves and keep the whole sweep short.
  */
-@keyframes worm {
+@keyframes ripple {
   0% { transform: translateX(0); }
   33% { transform: translateX(2px); }
   66% { transform: translateX(-2px); }
@@ -1125,9 +1125,9 @@ body:has(.row.gap-slot) { cursor: default; }
  * along with it — the structure would appear to sway. Targeting everything
  * except the guides keeps the lines dead still while the bullet, check and
  * label ripple. */
-.row.worm > :not(.guide) {
-  animation: worm 0.4s ease-in-out;
-  animation-delay: var(--worm-delay, 0ms);
+.row.ripple > :not(.guide) {
+  animation: ripple 0.4s ease-in-out;
+  animation-delay: var(--ripple-delay, 0ms);
 }
 
 /* The fold mask: a fixed, clipped box parked over the band of children that a
@@ -1165,7 +1165,7 @@ body:has(.row.gap-slot) { cursor: default; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .row.worm > :not(.guide) { animation: none; }
+  .row.ripple > :not(.guide) { animation: none; }
   .pbar i { transition: none; }
   .twisty { transition: none; }
   /* The fold's slide and fade are both driven from JS, which reads this same

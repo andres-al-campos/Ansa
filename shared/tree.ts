@@ -216,7 +216,7 @@ export function progressOf(tree: Tree, id: NodeId): Progress {
  * ancestors when you untick something.
  *
  * Returns the ids of parents that flipped to done in this call, so the caller
- * can fire the worm animation on their children.
+ * can fire the ripple animation on their children.
  */
 export function setDone(tree: Tree, id: NodeId, done: boolean): { tree: Tree; completed: NodeId[] } {
   const next = tree.map((n) => ({ ...n }))
