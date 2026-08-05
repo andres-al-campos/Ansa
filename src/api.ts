@@ -111,6 +111,25 @@ export async function putTree(tree: Tree): Promise<boolean> {
 }
 
 /**
+ * Ask the server to give a brand-new account its tutorial project.
+ *
+ * Safe to call on every boot: the server refuses when the tree is non-empty, so
+ * this can't overwrite anything. Keeping the "have I run before?" state on the
+ * server rather than in localStorage is deliberate — localStorage is per-browser,
+ * and a second device would otherwise re-seed an account that already has data.
+ *
+ * Failure is silent by design. An empty outliner is a working outliner; the
+ * tutorial is a nicety and not worth an error screen.
+ */
+export async function seedIfEmpty(): Promise<void> {
+  try {
+    await fetch(`${BASE}/api/seed`, { method: 'POST', headers: await headers() })
+  } catch {
+    // Offline, or the server is down. The SSE stream will sync when it returns.
+  }
+}
+
+/**
  * Send one operation. The server replays it against its current tree, so an op
  * made against a slightly stale local tree still merges instead of clobbering.
  * Returns false if it didn't reach the server, matching putTree's contract —

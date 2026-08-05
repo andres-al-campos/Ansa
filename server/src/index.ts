@@ -21,7 +21,7 @@ import { RejectedWriteError, Store, type OwnerId } from './store.ts'
 import { parseOp, parseSpecs } from '../../shared/ops.ts'
 import { broadcast, subscribe } from './bus.ts'
 import { isClerkAuth, isDevAuth, ownerOf } from './auth.ts'
-import { seedTree } from '../../shared/seed.ts'
+import { tutorialTree } from '../../shared/tutorial.ts'
 import { invalidTree } from '../../shared/tree.ts'
 import type { SubtreeSpec, Tree } from '../../shared/tree.ts'
 
@@ -134,16 +134,20 @@ async function requireOwner(
 }
 
 /**
- * One owner's tree, seeding it the first time they ask for it.
+ * One owner's tree. A read, and only a read.
  *
- * Seeding used to happen once at boot against the single global tree. With
- * accounts there is no such moment — each user's tree starts empty whenever they
- * first arrive — so the check moves to the read path, where "empty" is knowable
- * per person.
+ * This used to seed an empty tree in place, which meant a GET could create 26
+ * rows. That's wrong in two ways. Merely opening the SSE stream furnished an
+ * account nobody had typed anything into — and worse, an import that arrives
+ * while a client is connected races rows the read path is busy inventing. The
+ * data migration is the whole point of the hosted instance, so the read path
+ * has to be inert.
+ *
+ * A new account gets an empty tree here and the tutorial from POST /api/seed,
+ * which the app calls once, deliberately.
  */
-function loadOrSeed(owner: OwnerId): Tree {
-  const tree = store.load(owner)
-  return tree.length === 0 ? store.replaceAll(owner, seedTree()) : tree
+function loadTree(owner: OwnerId): Tree {
+  return store.load(owner)
 }
 
 // SSE stream: hold the connection open and push the owner's tree when it changes.
@@ -165,7 +169,7 @@ app.get('/api/events', async (req, reply) => {
     'access-control-allow-origin': '*',
   })
   // Send the current tree immediately so a fresh subscriber is in sync at once.
-  reply.raw.write(`data: ${JSON.stringify({ tree: loadOrSeed(owner), origin: null })}\n\n`)
+  reply.raw.write(`data: ${JSON.stringify({ tree: loadTree(owner), origin: null })}\n\n`)
   const unsubscribe = subscribe(owner, reply.raw)
   // A comment line every 25s keeps proxies from culling an idle connection.
   const keepAlive = setInterval(() => reply.raw.write(': keep-alive\n\n'), 25000)
@@ -178,7 +182,27 @@ app.get('/api/events', async (req, reply) => {
 app.get('/api/tree', async (req, reply) => {
   const owner = await requireOwner(req, reply)
   if (!owner) return
-  return { tree: loadOrSeed(owner) }
+  return { tree: loadTree(owner) }
+})
+
+/**
+ * Give a brand-new account its tutorial project.
+ *
+ * Refuses when the owner already has anything, so it can't clobber a real tree
+ * — that guard is what makes it safe for the client to call on every boot
+ * without tracking whether it has run before. It also means an interrupted
+ * phase-2 import can't be "helpfully" re-seeded on top of.
+ *
+ * Returns seeded:false rather than an error when the tree is non-empty: not
+ * seeding an existing account is the expected outcome, not a failure.
+ */
+app.post('/api/seed', async (req, reply) => {
+  const owner = await requireOwner(req, reply)
+  if (!owner) return
+  if (store.load(owner).length > 0) return { seeded: false }
+  const tree = store.replaceAll(owner, tutorialTree())
+  broadcast(owner, tree, originOf(req))
+  return { seeded: true, tree }
 })
 
 app.post<{ Body: { parentId: string | null; text?: string } }>('/api/nodes', async (req, reply) => {

@@ -14,7 +14,7 @@
 
 import { useEffect, type ReactNode } from 'react'
 import { ClerkProvider, SignedIn, SignedOut, SignIn, useAuth } from '@clerk/clerk-react'
-import { setTokenSource } from './api'
+import { seedIfEmpty, setTokenSource } from './api'
 
 const KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY ?? ''
 
@@ -28,6 +28,10 @@ function InstallToken({ children }: { children: ReactNode }) {
   const { getToken } = useAuth()
   useEffect(() => {
     setTokenSource(() => getToken())
+    // Only now — the request needs the token that was just installed. The server
+    // no-ops when the account already has a tree, so running this on every boot
+    // costs one request and can't overwrite anything.
+    void seedIfEmpty()
   }, [getToken])
   return <>{children}</>
 }
