@@ -8,6 +8,8 @@ dist-ssr/
 
 .DS_Store
 .claude/settings.local.json
+# Background agent tasks check the repo out here, nested inside itself.
+.claude/worktrees/
 
 *.log
 npm-debug.log*
