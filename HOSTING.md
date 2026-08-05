@@ -108,10 +108,11 @@ serving my real data to anyone. Do auth first, locally, where it's debuggable.
 - Wire Clerk (see below) behind the existing `ownerOf()` — that function's
   signature is the entire contract, so this shouldn't reach past `auth.ts` and
   the sign-in UI.
-- The owner id becomes Clerk's stable user id rather than `legacy`. **My
-  existing 81 nodes are owned by `legacy` and need remapping to that id** —
-  a one-time `UPDATE nodes SET ownerId = ?`. Get this right before the data is
-  somewhere harder to reach.
+- The owner id becomes Clerk's stable user id rather than `legacy`. **Every
+  existing node is owned by `legacy` and needs remapping to that id** — a
+  one-time `UPDATE nodes SET ownerId = ?`. Count the rows at migration time
+  rather than trusting a number written here; the tree changes daily, which is
+  the whole point of it.
 - The SSE route can't send headers; the stub works around that with a `user`
   query param. A real provider uses a cookie, which `EventSource` does send, so
   that workaround goes away rather than being ported.
@@ -168,7 +169,8 @@ those two facts is the migration, and it deserves more care than the deploy:
   out of. Seed on explicit account creation, never on a read finding nothing.
 
 **Done when:** I can open Ansa on my phone, over cellular, and edit a task that
-shows up on my desktop — and my 81 nodes are there, counted, not assumed.
+shows up on my desktop — and my whole tree is there, counted against the local
+copy at migration time, not assumed.
 
 ## Phase 3 — Postgres on Neon
 

@@ -79,6 +79,22 @@ cleanup() {
 }
 trap cleanup INT TERM EXIT
 
+# Secrets come from the macOS Keychain locally and from the platform's own
+# secret store when deployed. The server only ever reads process.env, so it
+# doesn't know or care which one filled it — keep it that way.
+#
+# Add the secret with (it prompts, so it stays out of shell history):
+#   security add-generic-password -a "$USER" -s ansa-clerk-secret -w
+keychain_secret() {
+  security find-generic-password -s "$1" -w 2>/dev/null || true
+}
+
+# An already-set env var wins, so CI and Railway work with this same script.
+if [ -z "${CLERK_SECRET_KEY:-}" ]; then
+  CLERK_SECRET_KEY=$(keychain_secret ansa-clerk-secret)
+  export CLERK_SECRET_KEY
+fi
+
 # Local dev trusts the x-ansa-user header. Without this the server 401s every
 # request and the app loads to an empty screen. Never set in a deployed env.
 export ANSA_DEV_AUTH=${ANSA_DEV_AUTH:-1}
