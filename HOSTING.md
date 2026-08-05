@@ -108,11 +108,17 @@ serving my real data to anyone. Do auth first, locally, where it's debuggable.
 - Wire Clerk (see below) behind the existing `ownerOf()` — that function's
   signature is the entire contract, so this shouldn't reach past `auth.ts` and
   the sign-in UI.
-- The owner id becomes Clerk's stable user id rather than `legacy`. **Every
-  existing node is owned by `legacy` and needs remapping to that id** — a
-  one-time `UPDATE nodes SET ownerId = ?`. Count the rows at migration time
-  rather than trusting a number written here; the tree changes daily, which is
-  the whole point of it.
+- **No data migration in this phase.** Existing nodes stay owned by `legacy` and
+  the local dev stub keeps returning `legacy`, so my tree is untouched by adding
+  Clerk. The alternative — `UPDATE nodes SET ownerId = '<clerk id>'` — was
+  considered and rejected: it rewrites every row for no benefit, and its failure
+  mode is "the tree looks empty", which is the condition that preceded the data
+  loss on 2026-08-04.
+- The `legacy` → Clerk-id migration instead happens **once, in phase 2**, as the
+  import into the hosted instance: sign in to the deployed app as a fresh
+  account, then `PUT /api/tree` the local export. Rows are written with the
+  right `ownerId` from the start, and the local database is never modified —
+  it stays as the backup.
 - The SSE route can't send headers; the stub works around that with a `user`
   query param. A real provider uses a cookie, which `EventSource` does send, so
   that workaround goes away rather than being ported.
@@ -120,7 +126,8 @@ serving my real data to anyone. Do auth first, locally, where it's debuggable.
   outlives its purpose is the thing that eventually ships.
 
 **Done when:** signing out makes the tree inaccessible, and two real accounts on
-the local server see different trees with no header involved.
+the local server see different trees with no header involved — with my own tree
+still readable through the dev stub, unmodified.
 
 ## Phase 2 — Deploy it, still on SQLite
 
@@ -156,8 +163,10 @@ those two facts is the migration, and it deserves more care than the deploy:
 
 - **Export from local, import to the deployed instance,** over the API rather
   than by copying the file — `PUT /api/tree` already takes a whole tree and
-  validates it. Copying `ansa.db` onto the volume would also work, and is worth
-  preferring only if the node count makes the API route unwieldy.
+  validates it, and it writes rows under whatever account is signed in, which is
+  exactly the `legacy` → Clerk-id remap happening as a side effect of the
+  import. Copying `ansa.db` onto the volume would skip that and leave the rows
+  owned by `legacy`, so prefer the API.
 - **Keep the local file untouched** until the hosted copy is verified by node
   count and by reading the tree back. Local becomes the backup during the
   transition, which is the one job it's still good for.
