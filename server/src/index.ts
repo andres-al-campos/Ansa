@@ -295,8 +295,15 @@ app.get('/api/health', async () => ({
   auth: isClerkAuth ? 'clerk' : isDevAuth ? 'dev' : 'none',
 }))
 
+// 'localhost' rather than '127.0.0.1' so this binds both loopback stacks —
+// 127.0.0.1 *and* ::1 — while still refusing connections from off the machine.
+//
+// Vite binds ::1 only. Safari resolves localhost to ::1 first and does not fall
+// back to IPv4 the way Chrome does, so an IPv4-only API meant the page loaded
+// and then every request to it failed: the app worked in one browser and not
+// the other, with nothing in the server log either way.
 app
-  .listen({ port: PORT, host: '127.0.0.1' })
+  .listen({ port: PORT, host: 'localhost' })
   .then(() => {
     console.log(`Ansa server on http://127.0.0.1:${PORT}  (db: ${DB_PATH})`)
     if (isClerkAuth) {
