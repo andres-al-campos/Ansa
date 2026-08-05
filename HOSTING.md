@@ -8,9 +8,12 @@ becomes a development environment.
 Five phases, each one landing on its own. The order is chosen so that when
 something breaks there's one candidate cause rather than four.
 
-Phase 1 is done. Phase 1.5 (real auth) was originally folded into phase 1 as
-"see below"; it's now its own phase, because the stub that's in the tree today
-cannot be exposed to the internet.
+Phases 1 and 1.5 are done: ownership, and Clerk verifying real sessions. The dev
+stub still exists but Clerk overrides it wherever it's configured, and the
+process refuses to boot with the stub under `NODE_ENV=production`.
+
+Phase 2 is next, and the deploy is the small half of it. The migration of my 59
+nodes off `legacy` is the part that deserves the care.
 
 ## What already works, and what doesn't
 
@@ -33,8 +36,9 @@ reaches only that owner's connections. Writes still send the whole tree to those
 connections — wasteful at large tree sizes, but no longer a leak, and the cost
 now grows with one user's tree rather than with users × tree size.
 
-**Not done: authentication.** The user id comes off a trusted header. See
-phase 1.5 — this is the one thing that must land before a public URL exists.
+**Done in phase 1.5: authentication.** Clerk verifies a session JWT and the user
+id is its `sub` claim. The header stub still exists for local work, but Clerk
+overrides it wherever a secret key is set, so it can't downgrade a deployment.
 
 **Not done: my data lives locally.** `ansa.db` is gitignored, uncommitted, and
 holds the only copy of my tree. Under the new goal that file stops being the
@@ -88,7 +92,7 @@ name when it's removed; plus an end-to-end HTTP run on a throwaway database
 where three accounts seeded with zero id overlap and one account's SSE stream
 carried none of another's text.
 
-## Phase 1.5 — Real auth, before anything is publicly reachable
+## Phase 1.5 — Real auth, before anything is publicly reachable ✅ DONE
 
 What's in the tree today is a stub that reads the user id off the `x-ansa-user`
 header and trusts it. On localhost that's fine and deliberate: it let ownership
@@ -129,6 +133,43 @@ serving my real data to anyone. Do auth first, locally, where it's debuggable.
 the local server see different trees with no header involved — with my own tree
 still readable through the dev stub, unmodified.
 
+### What actually happened
+
+Two of the bullets above were predictions, and both were wrong. Recorded here
+rather than edited away, because the reasoning that produced them is still the
+reasoning that will produce the next one.
+
+- **The query-param workaround stayed.** It was going to be replaced by a cookie
+  `EventSource` sends automatically. Clerk session tokens aren't cookies —
+  they're short-lived JWTs fetched per request — so `eventsUrl()` still puts the
+  token in the query string. Acceptable because the token expires in about a
+  minute, which is the property that makes a URL-borne credential tolerable; a
+  long-lived one there would not be.
+- **The stub is still in the tree.** "Delete it in the same commit that replaces
+  it" was written before the stub had a second job. It's now the only way to
+  reach `legacy`, and `legacy` holds my 59 nodes until the phase-2 import. It
+  stays until that import is verified, then goes.
+- **Clerk wins whenever it's configured** (`auth.ts`), so the stub can't
+  downgrade a real deployment even while it exists. That, plus the refusal to
+  boot under `NODE_ENV=production`, is what makes keeping it survivable rather
+  than merely convenient.
+- **Seeding moved off the read path** (`0c0cb6a`). Not planned for this phase; it
+  surfaced when a fresh Clerk sign-in visibly replaced the localStorage tree with
+  demo projects. `loadOrSeed` was creating 26 rows from a GET, which is precisely
+  the "seed-if-empty on a read" that phase 2 warns about — see below. New accounts
+  now get one tutorial project from an explicit `POST /api/seed` that refuses a
+  non-empty tree.
+
+**Verified**, against a throwaway copy of the database rather than the real one:
+
+- Clerk mode: `/api/tree`, `/api/ops`, `/api/seed` and `/api/events` all 401 with
+  no credentials, with a forged bearer token, and with the stub's `x-ansa-user`
+  header. `/api/health` stays open, deliberately.
+- Two accounts: each seeded to 18 nodes. Alice renaming her own root works (the
+  control), and Bob sending `setText` and `removeNode` against Alice's node id —
+  named explicitly, not guessed — changes nothing and returns Bob's own tree.
+- `legacy` sat at 59 nodes throughout, unmodified.
+
 ## Phase 2 — Deploy it, still on SQLite
 
 Railway, with a volume mounted for the database file. Free tier: 1 vCPU,
@@ -161,6 +202,12 @@ Also in this phase:
 The volume mounts empty. My tree is in a local, gitignored `ansa.db`. Between
 those two facts is the migration, and it deserves more care than the deploy:
 
+- **Settle which Clerk account is "me" before importing.** Clerk's `sub` is per
+  *account*, not per person: signing up with Google and then with email-password
+  produced two ids locally, and each got its own tree. Importing into one and
+  later signing in with the other reads as total data loss. Turn on account
+  linking (match on verified email) in the Clerk dashboard, then confirm the same
+  `sub` comes back from both sign-in methods before the import — not after.
 - **Export from local, import to the deployed instance,** over the API rather
   than by copying the file — `PUT /api/tree` already takes a whole tree and
   validates it, and it writes rows under whatever account is signed in, which is
@@ -176,6 +223,12 @@ those two facts is the migration, and it deserves more care than the deploy:
   temporarily invisible and the seed check read that as a fresh install. On a
   hosted instance the same pair would be worse: no local file to carve rows back
   out of. Seed on explicit account creation, never on a read finding nothing.
+
+  Done in phase 1.5 (`0c0cb6a`), ahead of schedule and not by choice — the path
+  existed and was firing. Reads are now inert: `POST /api/seed` is the only way
+  rows get created from nothing, and it refuses an owner who already has any.
+  That guard is what makes an interrupted import safe to retry, which matters
+  more here than the tutorial does.
 
 **Done when:** I can open Ansa on my phone, over cellular, and edit a task that
 shows up on my desktop — and my whole tree is there, counted against the local
