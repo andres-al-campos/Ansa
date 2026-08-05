@@ -6,7 +6,7 @@
  * undo/redo and animations stay instant) and sends the *operation* with
  * `sendOp`, which the server replays against its own tree. Changes made
  * elsewhere — another tab, or a Claude driving the MCP — arrive over the SSE
- * stream at EVENTS_URL rather than by polling.
+ * stream at `eventsUrl()` rather than by polling.
  */
 
 import type { Op } from '@shared/ops'
@@ -29,28 +29,66 @@ const BASE =
 export const ORIGIN = `web-${Math.random().toString(36).slice(2, 10)}`
 
 /**
- * Who this client is acting as, while auth is still the dev stub.
+ * Who this client is acting as when the server is running the dev stub.
  *
- * The server trusts this header as-is, so it is not authentication — it's the
- * seam a real provider's token will replace. Set VITE_ANSA_USER to run a second
- * account in another browser profile and check that the two trees stay apart.
+ * The server trusts this header as-is, so it is not authentication. It's only
+ * used when the server has no Clerk key configured; a Clerk-backed server
+ * ignores it entirely. Set VITE_ANSA_USER to run a second account in another
+ * browser profile and check that the two trees stay apart.
  */
 const USER = import.meta.env.VITE_ANSA_USER ?? 'legacy'
 
 /**
+ * How to get the current Clerk session token, installed by the provider at
+ * startup.
+ *
+ * A function rather than a value because these tokens are short-lived — Clerk
+ * rotates them roughly every minute, so anything cached here would start
+ * failing a few minutes into a session. A module-level setter rather than
+ * threading a token through every call site: this file is imported by non-React
+ * code (the persist effect, the SSE wiring) and shouldn't need a hook.
+ */
+type TokenSource = () => Promise<string | null>
+let getToken: TokenSource = async () => null
+
+export function setTokenSource(source: TokenSource): void {
+  getToken = source
+}
+
+/**
  * The headers every write carries. One place, so adding a call site can't mean
  * silently omitting identity and getting someone else's tree.
+ *
+ * Sends both credentials: the bearer token for a Clerk server, the user header
+ * for a stub server. Each ignores the other's, so one client works against
+ * either without a build flag.
  */
-const headers = (): Record<string, string> => ({
-  'content-type': 'application/json',
-  'x-ansa-origin': ORIGIN,
-  'x-ansa-user': USER,
-})
+const headers = async (): Promise<Record<string, string>> => {
+  const base: Record<string, string> = {
+    'content-type': 'application/json',
+    'x-ansa-origin': ORIGIN,
+    'x-ansa-user': USER,
+  }
+  const token = await getToken()
+  if (token) base.authorization = `Bearer ${token}`
+  return base
+}
 
-// EventSource can't set headers, so the stream identifies itself in the query
-// string instead. Fine for the stub; with real auth this carries a short-lived
-// token, or the cookie the browser sends on its own.
-export const EVENTS_URL = `${BASE}/api/events?user=${encodeURIComponent(USER)}`
+/**
+ * The SSE stream's URL, including a credential in the query string because
+ * EventSource cannot set headers.
+ *
+ * Async and a function — not the constant it used to be — because the token has
+ * to be fetched, and because a reconnect needs a *fresh* one rather than the
+ * one this module happened to see at import time.
+ */
+export async function eventsUrl(): Promise<string> {
+  const token = await getToken()
+  const credential = token
+    ? `token=${encodeURIComponent(token)}`
+    : `user=${encodeURIComponent(USER)}`
+  return `${BASE}/api/events?${credential}`
+}
 
 /**
  * Persist the whole tree. Returns false if the save didn't reach the server.
@@ -63,7 +101,7 @@ export async function putTree(tree: Tree): Promise<boolean> {
   try {
     const res = await fetch(`${BASE}/api/tree`, {
       method: 'PUT',
-      headers: headers(),
+      headers: await headers(),
       body: JSON.stringify({ tree }),
     })
     return res.ok
@@ -82,7 +120,7 @@ export async function sendOp(op: Op): Promise<boolean> {
   try {
     const res = await fetch(`${BASE}/api/ops`, {
       method: 'POST',
-      headers: headers(),
+      headers: await headers(),
       body: JSON.stringify({ op }),
     })
     return res.ok

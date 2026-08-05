@@ -1,6 +1,7 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import Outliner from './Outliner'
+import AuthGate from './AuthGate'
 import { seedTree } from '@shared/seed'
 import { loadTree } from './storage'
 import './index.css'
@@ -13,6 +14,8 @@ const initial = loadTree() ?? seedTree()
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <Outliner initial={initial} />
+    <AuthGate>
+      <Outliner initial={initial} />
+    </AuthGate>
   </StrictMode>,
 )

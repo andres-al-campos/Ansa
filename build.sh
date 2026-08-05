@@ -97,7 +97,22 @@ fi
 
 # Local dev trusts the x-ansa-user header. Without this the server 401s every
 # request and the app loads to an empty screen. Never set in a deployed env.
+#
+# auth.ts makes Clerk win when both are configured, so this only takes effect
+# when the Keychain had no secret — local then behaves exactly as it did before
+# auth landed.
 export ANSA_DEV_AUTH=${ANSA_DEV_AUTH:-1}
+
+# The Clerk *publishable* key is public by design — it ships in the JS bundle
+# and identifies the instance, it doesn't authorise anything. It lives here
+# rather than in .env because .env is gitignored and a fresh clone has to work.
+#
+# The client gates on sign-in only when this is set. Leave it unset (or run with
+# no Keychain secret) to get the old no-login local behaviour; set both to run
+# local exactly the way production will run.
+if [ -n "${CLERK_SECRET_KEY:-}" ]; then
+  export VITE_CLERK_PUBLISHABLE_KEY=${VITE_CLERK_PUBLISHABLE_KEY:-pk_test_cmFwaWQtYmVlLTIwLmNsZXJrLmFjY291bnRzLmRldiQ}
+fi
 
 echo "Starting server on http://127.0.0.1:${API_PORT} …"
 npm run server &

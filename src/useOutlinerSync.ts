@@ -25,7 +25,7 @@
 import { useCallback, useEffect, useRef } from 'react'
 import type { Op } from '@shared/ops'
 import type { Tree } from '@shared/tree'
-import { EVENTS_URL, ORIGIN, sendOp } from './api'
+import { eventsUrl, ORIGIN, sendOp } from './api'
 
 export interface OutlinerSync {
   /** Queue ops to send, in order. Applied locally by the caller already. */
@@ -92,8 +92,14 @@ export function useOutlinerSync({
   }, [])
 
   useEffect(() => {
-    const es = new EventSource(EVENTS_URL)
-    es.onmessage = (e) => {
+    // Fetching the token is async, so the stream opens a tick later than it used
+    // to. `cancelled` covers the unmount-during-await case: without it a
+    // StrictMode double-mount (or a fast navigation) leaves an EventSource that
+    // nothing holds a reference to and nothing ever closes.
+    let cancelled = false
+    let es: EventSource | null = null
+
+    const onMessage = (e: MessageEvent) => {
       const { tree: next, origin } = JSON.parse(e.data) as { tree: Tree; origin: string | null }
       if (origin === ORIGIN) {
         // The echo of our own write. The local tree already has it, but this is
@@ -116,7 +122,17 @@ export function useOutlinerSync({
       // replay against.
       void drain()
     }
-    return () => es.close()
+
+    void eventsUrl().then((url) => {
+      if (cancelled) return
+      es = new EventSource(url)
+      es.onmessage = onMessage
+    })
+
+    return () => {
+      cancelled = true
+      es?.close()
+    }
   }, [adopt, drain])
 
   // The user stopped editing or dragging — apply whatever arrived meanwhile.

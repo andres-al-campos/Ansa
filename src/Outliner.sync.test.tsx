@@ -4,7 +4,7 @@ import { seedTree } from '@shared/seed'
 import type { Op } from '@shared/ops'
 import type { Tree } from '@shared/tree'
 
-// Spy on the write path. Everything else in the api module (EVENTS_URL, ORIGIN)
+// Spy on the write path. Everything else in the api module (eventsUrl, ORIGIN)
 // stays real so the component wires up exactly as in the app.
 const sendOp = vi.fn(async (_op: Op) => true)
 const putTree = vi.fn(async (_tree: Tree) => true)
@@ -44,6 +44,14 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
+// The stream URL is now fetched asynchronously (the Clerk token has to be
+// awaited), so the EventSource is constructed a microtask after render rather
+// than during it. Flush that before any test reaches for `live`.
+async function streamOpen() {
+  await act(async () => {})
+  return live!
+}
+
 // The home view lists projects; task rows (with checkboxes) only appear once
 // scoped into one. Click into "Sort out the flat" so real rows render.
 function scopeIntoProject(container: HTMLElement) {
@@ -67,6 +75,7 @@ test('an edit before the first SSE sync is held, then sent once the server tree 
   // is a wholesale replacement, not a sync.
   const seed = seedTree()
   const { container } = render(<Outliner initial={seed} />)
+  const stream = await streamOpen()
   scopeIntoProject(container)
 
   // The stale-cache trap: the edit lands before the server's tree has been
@@ -79,7 +88,7 @@ test('an edit before the first SSE sync is held, then sent once the server tree 
   // order they were made. Opening the project is itself a change (it stamps the
   // project as visited), so it queues ahead of the edit.
   await act(async () => {
-    live!.emit(seed)
+    stream.emit(seed)
   })
   expect(sentOps()).toEqual(['markOpened', 'setDone'])
 
@@ -94,10 +103,11 @@ test('the whole tree is never pushed for an ordinary edit', async () => {
   const { default: Outliner } = await import('./Outliner')
   const seed = seedTree()
   const { container } = render(<Outliner initial={seed} />)
+  const stream = await streamOpen()
   scopeIntoProject(container)
 
   await act(async () => {
-    live!.emit(seed)
+    stream.emit(seed)
   })
   await act(async () => {
     toggleFirstTask(container)
