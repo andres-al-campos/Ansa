@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "preserver": "pid=$(lsof -tiTCP:${PORT:-4000} -sTCP:LISTEN 2>/dev/null | head -1); if [ -n \"$pid\" ]; then echo \"Port ${PORT:-4000} is already in use by pid $pid — an Ansa server is probably already running.\" >&2; echo \"Stop it (Ctrl-C its terminal), or: kill $pid\" >&2; exit 1; fi",
     "server": "tsx watch server/src/index.ts",
     "mcp": "tsx mcp/src/index.ts",
     "build": "tsc -b && vite build",

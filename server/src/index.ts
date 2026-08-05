@@ -342,6 +342,16 @@ app
     }
   })
   .catch((err) => {
-    console.error(err)
+    // A lost port race is the common case, and the raw stack hides it. Say what
+    // happened and how to fix it, then exit — so a stray `npm run server` dies
+    // instead of leaving `tsx watch` spinning on a server that never bound.
+    if (err?.code === 'EADDRINUSE') {
+      console.error(
+        `Port ${PORT} is already in use — an Ansa server is probably already running.\n` +
+          `Stop it first (Ctrl-C its terminal), or find it with:  lsof -tiTCP:${PORT} -sTCP:LISTEN`,
+      )
+    } else {
+      console.error(err)
+    }
     process.exit(1)
   })
