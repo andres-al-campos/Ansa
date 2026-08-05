@@ -20,7 +20,7 @@ import cors from '@fastify/cors'
 import { RejectedWriteError, Store, type OwnerId } from './store.ts'
 import { parseOp, parseSpecs } from '../../shared/ops.ts'
 import { broadcast, subscribe } from './bus.ts'
-import { isDevAuth, ownerOf } from './auth.ts'
+import { isClerkAuth, isDevAuth, ownerOf } from './auth.ts'
 import { seedTree } from '../../shared/seed.ts'
 import { invalidTree } from '../../shared/tree.ts'
 import type { SubtreeSpec, Tree } from '../../shared/tree.ts'
@@ -96,7 +96,7 @@ app.addHook('onRequest', async (req, reply) => {
 await app.register(cors, {
   origin: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['content-type', 'x-ansa-origin', 'x-ansa-user'],
+  allowedHeaders: ['content-type', 'x-ansa-origin', 'x-ansa-user', 'authorization'],
 })
 
 // The client that made the write, from the x-ansa-origin header. Echoed back in
@@ -121,8 +121,11 @@ const emit = (owner: OwnerId, tree: Tree, req: { headers: Record<string, unknown
  * a missing call here is a type error at the first use of `owner`.
  */
 type Reply = { code: (n: number) => { send: (body: unknown) => unknown } }
-function requireOwner(req: { headers: Record<string, unknown> }, reply: Reply): OwnerId | null {
-  const owner = ownerOf(req)
+async function requireOwner(
+  req: { headers: Record<string, unknown> },
+  reply: Reply,
+): Promise<OwnerId | null> {
+  const owner = await ownerOf(req)
   if (!owner) {
     reply.code(401).send({ error: 'Not signed in. Sign in and retry the request.' })
     return null
@@ -144,8 +147,12 @@ function loadOrSeed(owner: OwnerId): Tree {
 }
 
 // SSE stream: hold the connection open and push the owner's tree when it changes.
-app.get('/api/events', (req, reply) => {
-  const owner = ownerOf(req)
+//
+// Async only because verifying a token is. Everything after that writes to
+// reply.raw and returns nothing, so the socket outlives the handler's promise —
+// Fastify only takes over the response if you return a value or call send().
+app.get('/api/events', async (req, reply) => {
+  const owner = await ownerOf(req)
   if (!owner) {
     reply.code(401).send({ error: 'Not signed in. Sign in and reconnect the stream.' })
     return
@@ -169,13 +176,13 @@ app.get('/api/events', (req, reply) => {
 })
 
 app.get('/api/tree', async (req, reply) => {
-  const owner = requireOwner(req, reply)
+  const owner = await requireOwner(req, reply)
   if (!owner) return
   return { tree: loadOrSeed(owner) }
 })
 
 app.post<{ Body: { parentId: string | null; text?: string } }>('/api/nodes', async (req, reply) => {
-  const owner = requireOwner(req, reply)
+  const owner = await requireOwner(req, reply)
   if (!owner) return
   const { parentId, text } = req.body ?? { parentId: null }
   if (parentId !== null && typeof parentId !== 'string') {
@@ -189,7 +196,7 @@ app.post<{ Body: { parentId: string | null; text?: string } }>('/api/nodes', asy
 // (root); a parent id nests it under an existing task. Returns the created ids
 // depth-first, first id being the subtree's own root.
 app.post<{ Body: { parentId?: string | null; nodes?: unknown } }>('/api/nodes/subtree', async (req, reply) => {
-  const owner = requireOwner(req, reply)
+  const owner = await requireOwner(req, reply)
   if (!owner) return
   const { parentId = null, nodes } = req.body ?? {}
   if (parentId !== null && typeof parentId !== 'string') {
@@ -214,7 +221,7 @@ app.post<{ Body: { parentId?: string | null; nodes?: unknown } }>('/api/nodes/su
 app.patch<{ Params: { id: string }; Body: { text?: string; done?: boolean; pinned?: boolean } }>(
   '/api/nodes/:id',
   async (req, reply) => {
-    const owner = requireOwner(req, reply)
+    const owner = await requireOwner(req, reply)
     if (!owner) return
     const { id } = req.params
     const { text, done, pinned } = req.body ?? {}
@@ -229,7 +236,7 @@ app.patch<{ Params: { id: string }; Body: { text?: string; done?: boolean; pinne
 )
 
 app.delete<{ Params: { id: string } }>('/api/nodes/:id', async (req, reply) => {
-  const owner = requireOwner(req, reply)
+  const owner = await requireOwner(req, reply)
   if (!owner) return
   return { tree: emit(owner, store.remove(owner, req.params.id), req) }
 })
@@ -237,7 +244,7 @@ app.delete<{ Params: { id: string } }>('/api/nodes/:id', async (req, reply) => {
 app.post<{ Params: { id: string }; Body: { parentId: string | null; index: number } }>(
   '/api/nodes/:id/move',
   async (req, reply) => {
-    const owner = requireOwner(req, reply)
+    const owner = await requireOwner(req, reply)
     if (!owner) return
     const { parentId, index } = req.body ?? { parentId: null, index: 0 }
     if (typeof index !== 'number') return reply.code(400).send({ error: 'index must be a number' })
@@ -246,7 +253,7 @@ app.post<{ Params: { id: string }; Body: { parentId: string | null; index: numbe
 )
 
 app.post<{ Params: { id: string } }>('/api/nodes/:id/toggle-collapsed', async (req, reply) => {
-  const owner = requireOwner(req, reply)
+  const owner = await requireOwner(req, reply)
   if (!owner) return
   return { tree: emit(owner, store.toggleCollapsed(owner, req.params.id), req) }
 })
@@ -257,7 +264,7 @@ app.post<{ Params: { id: string } }>('/api/nodes/:id/toggle-collapsed', async (r
 // one broadcast, which also keeps multi-move ops like adoptFollowing atomic on
 // every other tab. The fine-grained /api/nodes routes below stay for the MCP.
 app.post<{ Body: { op?: unknown } }>('/api/ops', async (req, reply) => {
-  const owner = requireOwner(req, reply)
+  const owner = await requireOwner(req, reply)
   if (!owner) return
   const parsed = parseOp(req.body?.op ?? req.body)
   if ('error' in parsed) return reply.code(400).send({ error: parsed.error })
@@ -271,7 +278,7 @@ app.post<{ Body: { op?: unknown } }>('/api/ops', async (req, reply) => {
 // reject the crude cases, but a coercible one — `order: "3"`, a cyclic
 // parentId — would be stored and then break the walks that read it.
 app.put<{ Body: { tree: unknown } }>('/api/tree', async (req, reply) => {
-  const owner = requireOwner(req, reply)
+  const owner = await requireOwner(req, reply)
   if (!owner) return
   const { tree } = req.body ?? {}
   const bad = invalidTree(tree)
@@ -283,16 +290,24 @@ app.put<{ Body: { tree: unknown } }>('/api/tree', async (req, reply) => {
 // about who's asking. Scripts wait on this rather than on /api/tree, which
 // answers 401 when auth isn't configured and so can't tell "down" apart from
 // "not signed in".
-app.get('/api/health', async () => ({ ok: true, auth: isDevAuth ? 'dev' : 'none' }))
+app.get('/api/health', async () => ({
+  ok: true,
+  auth: isClerkAuth ? 'clerk' : isDevAuth ? 'dev' : 'none',
+}))
 
 app
   .listen({ port: PORT, host: '127.0.0.1' })
   .then(() => {
     console.log(`Ansa server on http://127.0.0.1:${PORT}  (db: ${DB_PATH})`)
-    if (isDevAuth) {
+    if (isClerkAuth) {
+      console.log('auth: Clerk — session tokens are verified.')
+    } else if (isDevAuth) {
       console.log('auth: DEV STUB — the x-ansa-user header is trusted as-is. Not for a public deploy.')
     } else {
-      console.log('auth: none configured — every request will 401. Set ANSA_DEV_AUTH=1 for local use.')
+      console.log(
+        'auth: none configured — every request will 401. Set CLERK_SECRET_KEY, ' +
+          'or ANSA_DEV_AUTH=1 for local use without a sign-in.',
+      )
     }
   })
   .catch((err) => {
