@@ -197,6 +197,61 @@ Also in this phase:
   but not infinite, and an always-open SSE reader is exactly the condition that
   stops autocheckpoint from truncating.
 
+### What's built, ahead of the account
+
+Decided: the frontend is served by Fastify itself, one Railway service, one
+domain. Same origin means CORS stops being a thing to configure rather than a
+thing configured correctly — and CORS has already cost this project two separate
+debugging sessions. Moving to a CDN later is a config change; the API doesn't
+care who serves the HTML.
+
+- `Dockerfile` + `railway.json` (`0171967`). A Dockerfile rather than
+  autodetection because `better-sqlite3` is native: it needs python3/make/g++ in
+  the image and a pinned Node major, since a silent ABI bump is a crash at
+  `require()`.
+- Production/dev switches in `server/src/deployment.ts` (`89cf702`), tested at
+  both settings. Binds `0.0.0.0` in production — a container's traffic doesn't
+  arrive on loopback, so a localhost bind means the health check never connects
+  and the deploy fails with a server whose own logs look fine. CORS reflects any
+  origin in dev and allows nothing cross-origin in production.
+- `scripts/migrate.ts` (`b47fb41`) — export/import/verify. Rehearsed end to end
+  between two local instances: 59 nodes out, in under a different owner, verified
+  identical. The refusals were tested too, not just the happy path: re-import
+  into a populated account is refused, a malformed tree is rejected before any
+  write, and `verify` catches a flipped done-state that a node count matches
+  straight through.
+
+Unverified: the Docker build itself, since Docker isn't installed on this
+machine. The two commands it runs (`npm run build`, `npm run start`) both work.
+First `railway up` is where the image gets its real test.
+
+**Railway settings the deploy needs:**
+
+| Where | Name | Value |
+| --- | --- | --- |
+| Variables | `CLERK_SECRET_KEY` | Clerk dashboard → API keys → Secret key |
+| Variables | `VITE_CLERK_PUBLISHABLE_KEY` | Publishable key. Read at *build* time — Vite inlines it, and the build now fails rather than shipping an app with no sign-in gate. |
+| Variables | `NODE_ENV` | `production` |
+| Variables | `ANSA_DB` | `/data/ansa.db` — must be inside the volume, or the database dies with the container on every deploy |
+| Volume | mount path | `/data` |
+
+`PORT` is injected by Railway; don't set it. After the first deploy, add the
+Railway domain to Clerk's allowed origins and redirect URLs, or sign-in bounces.
+
+**Migration, once it's up:**
+
+```
+# 1. Which account am I? Sign in on the deployed app, read the ownerId panel.
+# 2. Grab a session token from devtools (they expire in ~1 min — do this last).
+npx tsx scripts/migrate.ts import ~/Desktop/ansa-legacy-2026-08-05.json \
+  --url https://<app>.up.railway.app --token <jwt>
+npx tsx scripts/migrate.ts verify ~/Desktop/ansa-legacy-2026-08-05.json \
+  --url https://<app>.up.railway.app --token <jwt>
+```
+
+Import the *plain* export, not the id-remapped one — the remap exists only for
+rehearsing locally against a database that already holds those ids.
+
 ### Getting my data there — the dangerous part
 
 The volume mounts empty. My tree is in a local, gitignored `ansa.db`. Between
@@ -205,9 +260,13 @@ those two facts is the migration, and it deserves more care than the deploy:
 - **Settle which Clerk account is "me" before importing.** Clerk's `sub` is per
   *account*, not per person: signing up with Google and then with email-password
   produced two ids locally, and each got its own tree. Importing into one and
-  later signing in with the other reads as total data loss. Turn on account
-  linking (match on verified email) in the Clerk dashboard, then confirm the same
-  `sub` comes back from both sign-in methods before the import — not after.
+  later signing in with the other reads as total data loss.
+
+  Not solved by account linking — those were two genuinely separate accounts,
+  with nothing to link. So the check is simply: sign in on the deployed app the
+  way you intend to sign in from now on, read the ownerId off the whoami panel,
+  and import while signed in as that account. The migration script's refusal to
+  write into a non-empty account is the backstop if the wrong one is used.
 - **Export from local, import to the deployed instance,** over the API rather
   than by copying the file — `PUT /api/tree` already takes a whole tree and
   validates it, and it writes rows under whatever account is signed in, which is
