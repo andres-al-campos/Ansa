@@ -1,7 +1,8 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import {
   addChild,
   addSubtree,
+  newId,
   adoptFollowing,
   childrenOf,
   depthAtGap,
@@ -633,5 +634,41 @@ describe('invalidTree', () => {
       node(`n${i}`, i === 0 ? null : `n${i - 1}`),
     )
     expect(invalidTree(chain)).toBeNull()
+  })
+})
+
+describe('newId', () => {
+  /**
+   * Node ids are unique across the whole `nodes` table, not per owner, so a
+   * collision is a failed write for whoever mints second. Both of the schemes
+   * this replaced looked fine in a single-process test suite: the timestamp
+   * version only collided across processes, and the ~41-bit random version
+   * only at scale.
+   */
+  it('does not repeat within one process', () => {
+    const ids = Array.from({ length: 100_000 }, () => newId())
+    expect(new Set(ids).size).toBe(ids.length)
+  })
+
+  it('does not collide across processes minting at the same moment', async () => {
+    // The regression, and the reason this needs a fresh module registry rather
+    // than a loop: ids were `n${Date.now()}${++seq}` off a module-level
+    // counter. Two tabs (or a tab and the MCP server) starting in the same
+    // millisecond both began at seq=1 and minted byte-identical ids. Resetting
+    // the module is what a second process actually does.
+    const fresh = async () => {
+      vi.resetModules()
+      return (await import('./tree')).newId
+    }
+
+    const [a, b] = [await fresh(), await fresh()]
+    const now = Date.now()
+    const batch = (mint: () => string) => Array.from({ length: 500 }, () => mint())
+    const ids = [...batch(a), ...batch(b)]
+
+    // Guard the premise: if this took longer than a millisecond the old scheme
+    // would have passed on timestamp alone and the test would prove nothing.
+    expect(Date.now() - now).toBeLessThan(50)
+    expect(new Set(ids).size).toBe(ids.length)
   })
 })
