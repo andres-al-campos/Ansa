@@ -223,6 +223,14 @@ those two facts is the migration, and it deserves more care than the deploy:
   of the export; import the plain one into the cloud. Verified 2026-08-05: the
   plain export 500s locally, the remapped one round-trips to 59/59 with the tree
   structure intact.
+
+  New ids are UUIDs as of `5d7659b`, which chasing that collision turned up.
+  `newId()` had been a timestamp plus a module-level counter, so two clients
+  minting in the same millisecond both started at 1 and produced identical ids —
+  a tab and the MCP server were enough, and the losing write fails on the primary
+  key. That mattered before the deploy because phase 2 is the first time two
+  clients are routinely live at once. The 59 rows in the export keep their old
+  short ids; nothing parses them, they only have to stay distinct.
 - **Keep the local file untouched** until the hosted copy is verified by node
   count and by reading the tree back. Local becomes the backup during the
   transition, which is the one job it's still good for.
