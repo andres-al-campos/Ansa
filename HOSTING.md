@@ -214,6 +214,15 @@ those two facts is the migration, and it deserves more care than the deploy:
   exactly the `legacy` → Clerk-id remap happening as a side effect of the
   import. Copying `ansa.db` onto the volume would skip that and leave the rows
   owned by `legacy`, so prefer the API.
+- **Node ids are globally unique, not per-owner** (`id TEXT PRIMARY KEY`). On the
+  cloud instance this is invisible — the volume mounts empty, so nothing
+  collides. It bites in the local dry run: importing `legacy`'s export into a
+  second account on the *same* database fails with
+  `SQLITE_CONSTRAINT_PRIMARYKEY: UNIQUE constraint failed: nodes.id`, because
+  those ids are already there under `legacy`. Rehearse with an id-remapped copy
+  of the export; import the plain one into the cloud. Verified 2026-08-05: the
+  plain export 500s locally, the remapped one round-trips to 59/59 with the tree
+  structure intact.
 - **Keep the local file untouched** until the hosted copy is verified by node
   count and by reading the tree back. Local becomes the backup during the
   transition, which is the one job it's still good for.
