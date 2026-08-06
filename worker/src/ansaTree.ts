@@ -1,0 +1,173 @@
+/**
+ * One owner's tree, as a Durable Object: their SQLite database and their open
+ * connections, in one place.
+ *
+ * This replaces server/src/bus.ts, whose own comment predicted this change —
+ * "scaling to multiple server instances later means swapping this for a shared
+ * pub/sub; the call sites don't change". The Map<OwnerId, Set<ServerResponse>>
+ * is gone: Cloudflare routes every request for an owner to that owner's single
+ * object, so the set of connections to broadcast to is just this object's own
+ * sockets. Broadcasting to the wrong owner is not a bug that can be written
+ * here, because another owner's sockets are attached to a different object.
+ *
+ * ## Why WebSockets rather than the SSE the Node server used
+ *
+ * Not preference — the free plan. An SSE response holds the object in memory
+ * for as long as it is open, and duration is billed: 13,000 GB-s/day free is
+ * about 29 object-hours at 128 MB, so a couple of tabs left open all day would
+ * exhaust the daily allowance and every further request would fail until 00:00
+ * UTC. Hibernatable WebSockets accrue no duration while idle, so an open tab
+ * that nobody is typing in costs nothing.
+ *
+ * Hibernation is why the socket handlers are methods on this class rather than
+ * closures over local state: between two messages the object may be evicted
+ * from memory entirely and reconstructed, so anything held in a field would be
+ * gone. ctx.getWebSockets() survives that; a Set in a field would not.
+ */
+
+import { DurableObject } from 'cloudflare:workers'
+import { RejectedWriteError, TreeStore } from './treeStore.ts'
+import { parseOp, parseSpecs } from '../../shared/ops.ts'
+import { invalidTree, type Tree } from '../../shared/tree.ts'
+import { tutorialTree } from '../../shared/tutorial.ts'
+
+/** What a client sends on the socket. Writes go over HTTP; this is read-side only. */
+interface ClientHello {
+  type: 'hello'
+  origin: string
+}
+
+export class AnsaTree extends DurableObject {
+  private store: TreeStore
+
+  constructor(ctx: DurableObjectState, env: unknown) {
+    super(ctx as never, env as never)
+    this.store = new TreeStore(ctx.storage.sql)
+  }
+
+  // ---------------------------------------------------------------- reads
+
+  load(): Tree {
+    return this.store.load()
+  }
+
+  /**
+   * Seed the tutorial, but only into an account that has nothing.
+   *
+   * The guard is the point. A read that seeds is how 26 rows appeared under
+   * accounts that had never typed anything, and on a hosted instance there is
+   * no local file to carve the real rows back out of. It also makes an
+   * interrupted import safe to retry.
+   */
+  seedIfEmpty(): { seeded: boolean; tree: Tree } {
+    const existing = this.store.load()
+    if (existing.length > 0) return { seeded: false, tree: existing }
+    const tree = this.store.replaceAll(tutorialTree())
+    this.broadcast(tree, null)
+    return { seeded: true, tree }
+  }
+
+  // --------------------------------------------------------------- writes
+
+  /**
+   * Apply a client op and push the result to every open socket.
+   *
+   * Wrapped in transactionSync so a throw from the pure op or the validity
+   * check leaves the table untouched — the load/replace pair is two statements
+   * and a failure between them would persist half a write.
+   */
+  applyOp(rawOp: unknown, origin: string | null): { tree: Tree; completed: string[] } {
+    const parsed = parseOp(rawOp)
+    if ('error' in parsed) throw new RejectedWriteError(parsed.error)
+    const result = this.ctx.storage.transactionSync(() => this.store.applyOp(parsed.op))
+    this.broadcast(result.tree, origin)
+    return result
+  }
+
+  addSubtree(parentId: string | null, rawSpecs: unknown, origin: string | null): { tree: Tree; ids: string[] } {
+    // parseSpecs returns the specs or the first problem as a string — the same
+    // wrapper the Fastify route puts around it, for the same reason: one walk,
+    // so the two write paths can't drift into accepting different shapes.
+    const parsed = parseSpecs(rawSpecs, 'nodes')
+    if (typeof parsed === 'string') throw new RejectedWriteError(parsed)
+    const result = this.ctx.storage.transactionSync(() => this.store.addSubtree(parentId, parsed))
+    this.broadcast(result.tree, origin)
+    return result
+  }
+
+  /** Whole-tree replace. Used by Import and by the migration script. */
+  replaceAll(tree: unknown, origin: string | null): Tree {
+    const bad = invalidTree(tree)
+    if (bad) throw new RejectedWriteError(`That tree is not valid (${bad}); nothing was saved.`)
+    const next = this.ctx.storage.transactionSync(() => this.store.replaceAll(tree as Tree))
+    this.broadcast(next, origin)
+    return next
+  }
+
+  // ---------------------------------------------------------- connections
+
+  /**
+   * Upgrade a request to a hibernatable WebSocket carrying this owner's tree.
+   *
+   * ctx.acceptWebSocket rather than server.accept(): the latter keeps the
+   * object resident and billing for the life of the connection, which is the
+   * whole problem this design avoids.
+   *
+   * Not named `connect` — that is the base class's TCP socket handler, and
+   * overriding it with a different signature is a type error rather than a
+   * subtle one.
+   */
+  subscribe(): Response {
+    const [client, server] = Object.values(new WebSocketPair())
+    this.ctx.acceptWebSocket(server)
+    // The current tree immediately, so a client that just connected doesn't
+    // render empty while it waits for someone else to make a change.
+    server.send(JSON.stringify({ tree: this.store.load(), origin: null }))
+    return new Response(null, { status: 101, webSocket: client })
+  }
+
+  /**
+   * The only message a client sends is its origin tag, so this object can label
+   * broadcasts with who caused them. Writes go over HTTP, deliberately: they
+   * need Clerk verification, and a socket message would bypass the auth the
+   * fetch handler does.
+   */
+  webSocketMessage(ws: WebSocket, message: string | ArrayBuffer): void {
+    if (typeof message !== 'string') return
+    try {
+      const parsed = JSON.parse(message) as ClientHello
+      // Attached to the socket rather than a field: this object may hibernate
+      // between messages, and serializeAttachment survives that.
+      if (parsed?.type === 'hello' && typeof parsed.origin === 'string') {
+        ws.serializeAttachment({ origin: parsed.origin })
+      }
+    } catch {
+      // A malformed frame is the client's problem; dropping it beats killing
+      // the connection and the live sync along with it.
+    }
+  }
+
+  webSocketClose(ws: WebSocket, code: number, reason: string): void {
+    // 1005 means "no status received", which close() rejects as invalid.
+    ws.close(code === 1005 ? 1000 : code, reason)
+  }
+
+  /**
+   * Push a tree to every open socket, tagged with the client that caused it.
+   *
+   * That tag is what lets a client ignore the echo of its own write — it
+   * already holds that state, and re-adopting it is what used to clobber a
+   * local edit mid-keystroke.
+   */
+  private broadcast(tree: Tree, origin: string | null): void {
+    const payload = JSON.stringify({ tree, origin })
+    for (const ws of this.ctx.getWebSockets()) {
+      try {
+        ws.send(payload)
+      } catch {
+        // A socket that's gone but not yet cleaned up throws; skipping it beats
+        // letting one dead connection stop the rest of the broadcast.
+      }
+    }
+  }
+}
