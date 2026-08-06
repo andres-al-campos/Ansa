@@ -18,6 +18,7 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { Store } from './store.ts'
 import { tutorialTree } from '../../shared/tutorial.ts'
+import { parseJsonBody } from './jsonBody.ts'
 import { invalidTree, roots } from '../../shared/tree.ts'
 
 const A = 'user-a'
@@ -91,6 +92,42 @@ describe('seeding refuses a non-empty account', () => {
   it('seeding one owner leaves another owner empty', () => {
     seed(A)
     expect(store.load(B)).toEqual([])
+  })
+})
+
+describe('a bodyless POST is accepted', () => {
+  // The bug this guards: POST /api/seed carries no body, but the client sends
+  // its usual content-type: application/json. Fastify's default parser rejects
+  // that with FST_ERR_CTP_EMPTY_JSON_BODY *before* the route runs, so a fresh
+  // account got no tutorial — and the client ignored the 400, so no error
+  // either. Reproduced against a real Fastify instance because the defect was
+  // entirely in the framework's parser, not in any code of ours.
+  it('treats an empty application/json body as {}', async () => {
+    const { default: Fastify } = await import('fastify')
+    const app = Fastify()
+    // The parser the real server installs, imported rather than reimplemented —
+    // a copy pasted in here would stay green while production broke.
+    app.addContentTypeParser('application/json', { parseAs: 'string' }, parseJsonBody)
+    app.post('/seed', async () => ({ seeded: true }))
+
+    const empty = await app.inject({
+      method: 'POST',
+      url: '/seed',
+      headers: { 'content-type': 'application/json' },
+      payload: '',
+    })
+    expect(empty.statusCode).toBe(200)
+
+    // Still strict about bodies that are present and wrong — and a client's
+    // malformed JSON is a 400, not a 500 blaming the server.
+    const bad = await app.inject({
+      method: 'POST',
+      url: '/seed',
+      headers: { 'content-type': 'application/json' },
+      payload: '{not json',
+    })
+    expect(bad.statusCode).toBe(400)
+    await app.close()
   })
 })
 

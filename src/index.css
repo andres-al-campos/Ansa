@@ -366,6 +366,18 @@ button { font: inherit; color: inherit; }
 .data-actions button:hover { border-color: var(--brass); color: var(--ink); }
 .data-note { margin: 8px 0 0; }
 
+/* Account identity. The id wraps rather than truncating: a Clerk id is long and
+ * the reason it's shown at all is to be compared character by character against
+ * the database, which an ellipsis would defeat. */
+.whoami { margin: 0 0 10px; padding: 0 0 10px; border-bottom: 1px solid var(--edge-soft); }
+.whoami-id {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.92em;
+  overflow-wrap: anywhere;
+  user-select: all; /* one click selects the whole id to paste */
+}
+.whoami-tag { opacity: 0.7; font-style: italic; }
+
 /* ----------------------------------------------------------- main pane */
 
 /* scrollbar-gutter holds the scrollbar's track open even when there's nothing

@@ -13,6 +13,7 @@ import {
 import { useFoldAnimation } from './useFoldAnimation'
 import { useOutlinerSync } from './useOutlinerSync'
 import { useRipple } from './useRipple'
+import WhoAmIPanel from './WhoAmI'
 import type { Op } from '@shared/ops'
 import {
   addChild,
@@ -1012,6 +1013,7 @@ export default function Outliner({ initial }: { initial: Tree }) {
 
         <details className="data-fold">
           <summary>Backup &amp; transfer</summary>
+          <WhoAmIPanel />
           <p className="fine data-note">
             Saved automatically in this browser. Export a copy only to keep it elsewhere or move to
             another machine.

@@ -22,6 +22,7 @@ import { parseOp, parseSpecs } from '../../shared/ops.ts'
 import { broadcast, subscribe } from './bus.ts'
 import { isClerkAuth, isDevAuth, ownerOf } from './auth.ts'
 import { tutorialTree } from '../../shared/tutorial.ts'
+import { parseJsonBody } from './jsonBody.ts'
 import { invalidTree } from '../../shared/tree.ts'
 import type { SubtreeSpec, Tree } from '../../shared/tree.ts'
 
@@ -91,6 +92,9 @@ app.addHook('onRequest', async (req, reply) => {
     reply.header('access-control-allow-private-network', 'true')
   }
 })
+
+// An empty body sent as application/json is `{}`, not an error — see jsonBody.ts.
+app.addContentTypeParser('application/json', { parseAs: 'string' }, parseJsonBody)
 
 // The app is served from vite (a different port in dev), so allow cross-origin.
 await app.register(cors, {
@@ -177,6 +181,25 @@ app.get('/api/events', async (req, reply) => {
     clearInterval(keepAlive)
     unsubscribe()
   })
+})
+
+/**
+ * Who the server thinks you are, and how it decided.
+ *
+ * Exists because "no projects" and "signed in as an account that isn't the one
+ * holding my data" look identical from the app, and the second is the likelier
+ * cause while `legacy` and Clerk ids coexist. Returns the ownerId rows are
+ * actually filtered on, not a display name — the point is to match it against
+ * the database.
+ */
+app.get('/api/whoami', async (req, reply) => {
+  const owner = await requireOwner(req, reply)
+  if (!owner) return
+  return {
+    ownerId: owner,
+    auth: isClerkAuth ? 'clerk' : 'dev',
+    nodes: store.load(owner).length,
+  }
 })
 
 app.get('/api/tree', async (req, reply) => {

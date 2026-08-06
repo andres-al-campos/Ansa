@@ -110,6 +110,24 @@ export async function putTree(tree: Tree): Promise<boolean> {
   }
 }
 
+/** What the server reports about the current session. */
+export interface WhoAmI {
+  /** The id rows are filtered on — match this against the database, not a name. */
+  ownerId: string
+  auth: 'clerk' | 'dev'
+  nodes: number
+}
+
+/** Who the server thinks this tab is. Null when the session isn't accepted. */
+export async function whoami(): Promise<WhoAmI | null> {
+  try {
+    const res = await fetch(`${BASE}/api/whoami`, { headers: await headers() })
+    return res.ok ? ((await res.json()) as WhoAmI) : null
+  } catch {
+    return null
+  }
+}
+
 /**
  * Ask the server to give a brand-new account its tutorial project.
  *
@@ -121,11 +139,24 @@ export async function putTree(tree: Tree): Promise<boolean> {
  * Failure is silent by design. An empty outliner is a working outliner; the
  * tutorial is a nicety and not worth an error screen.
  */
-export async function seedIfEmpty(): Promise<void> {
+export async function seedIfEmpty(): Promise<boolean> {
   try {
-    await fetch(`${BASE}/api/seed`, { method: 'POST', headers: await headers() })
+    // No content-type: this POST has no body, and Fastify rejects an empty body
+    // declared as application/json with FST_ERR_CTP_EMPTY_JSON_BODY before the
+    // route ever runs. That 400 is how this silently did nothing at first — a
+    // fresh account got no tutorial and no error.
+    const { 'content-type': _omit, ...rest } = await headers()
+    const res = await fetch(`${BASE}/api/seed`, { method: 'POST', headers: rest })
+    if (!res.ok) {
+      // Not thrown: an empty outliner still works, and a failed tutorial isn't
+      // worth blocking the app. Logged because silence is what hid this.
+      console.warn(`Ansa: seeding the tutorial failed (${res.status}).`)
+      return false
+    }
+    return true
   } catch {
     // Offline, or the server is down. The SSE stream will sync when it returns.
+    return false
   }
 }
 
