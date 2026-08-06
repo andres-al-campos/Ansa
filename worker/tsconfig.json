@@ -1,0 +1,19 @@
+{
+  // The worker's own config: Cloudflare's globals instead of the DOM's.
+  //
+  // The root tsconfig loads lib.dom, where `WebSocket` is the browser client
+  // class with no send-from-server half and no serializeAttachment. Checking
+  // this directory against that would type the Durable Object's sockets as the
+  // wrong WebSocket and quietly accept calls that don't exist at runtime.
+  //
+  // So the root tsconfig deliberately does not include `worker`, and this is the
+  // only config that checks it. `npm run typecheck` runs both — without that,
+  // these files are checked by nothing, which is how the moveNode op in
+  // treeStore.test.ts sat here naming a field that doesn't exist.
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "lib": ["ES2022"],
+    "types": ["@cloudflare/workers-types"]
+  },
+  "include": [".", "../shared"]
+}

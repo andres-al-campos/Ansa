@@ -166,7 +166,7 @@ describe('rejected writes', () => {
   it('refuses an op that would leave the tree invalid', () => {
     const { id } = storeA.addChild(null, 'project')
     expect(() =>
-      storeA.applyOp({ op: 'moveNode', id, newParentId: 'ghost', index: 0, at: Date.now() }),
+      storeA.applyOp({ op: 'moveNode', id, parentId: 'ghost', index: 0 }),
     ).toThrow(RejectedWriteError)
     // Nothing was saved — the tree is still the one good node.
     expect(storeA.load()).toHaveLength(1)
@@ -185,7 +185,7 @@ describe('rejected writes', () => {
 describe('ops replay against current state', () => {
   it('applies a client op to whatever the tree is now', () => {
     const { id } = storeA.addChild(null, 'project')
-    const { tree } = storeA.applyOp({ op: 'setText', id, text: 'renamed', at: Date.now() })
+    const { tree } = storeA.applyOp({ op: 'setText', id, text: 'renamed' })
     expect(tree.find((n) => n.id === id)!.text).toBe('renamed')
     expect(storeA.load().find((n) => n.id === id)!.text).toBe('renamed')
   })
