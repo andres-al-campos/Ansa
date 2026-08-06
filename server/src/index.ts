@@ -23,6 +23,7 @@ import { broadcast, subscribe } from './bus.ts'
 import { isClerkAuth, isDevAuth, ownerOf } from './auth.ts'
 import { tutorialTree } from '../../shared/tutorial.ts'
 import { parseJsonBody } from './jsonBody.ts'
+import { bindHost, corsOrigin, fatalMisconfiguration, isProduction } from './deployment.ts'
 import { invalidTree } from '../../shared/tree.ts'
 import type { SubtreeSpec, Tree } from '../../shared/tree.ts'
 
@@ -96,9 +97,11 @@ app.addHook('onRequest', async (req, reply) => {
 // An empty body sent as application/json is `{}`, not an error — see jsonBody.ts.
 app.addContentTypeParser('application/json', { parseAs: 'string' }, parseJsonBody)
 
-// The app is served from vite (a different port in dev), so allow cross-origin.
+// Cross-origin in dev, where the app is served from Vite on another port. In
+// production this server serves the app too, so nothing is cross-origin and the
+// default allows nothing — see deployment.ts.
 await app.register(cors, {
-  origin: true,
+  origin: corsOrigin(process.env),
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['content-type', 'x-ansa-origin', 'x-ansa-user', 'authorization'],
 })
@@ -342,6 +345,37 @@ app.get('/api/health', async () => ({
   auth: isClerkAuth ? 'clerk' : isDevAuth ? 'dev' : 'none',
 }))
 
+/**
+ * In production this server also serves the built frontend, so the app and the
+ * API share an origin and nothing is cross-origin. In dev this is skipped and
+ * Vite serves the app.
+ *
+ * Registered *after* every /api route, and the fallback checks the prefix:
+ * a catch-all that answered /api/* with index.html would turn a typo'd route
+ * into a 200 full of HTML, which surfaces as a JSON parse error in the client
+ * rather than as the 404 it is.
+ */
+if (isProduction(process.env)) {
+  const dist = resolve(here, '../../dist')
+  await app.register(await import('@fastify/static').then((m) => m.default), { root: dist })
+
+  app.setNotFoundHandler((req, reply) => {
+    if (req.url.startsWith('/api/')) {
+      return reply.code(404).send({ error: `No such route: ${req.method} ${req.url}` })
+    }
+    // Any other path is client-side routing; hand back the shell.
+    return reply.sendFile('index.html')
+  })
+}
+
+// Refuse to boot rather than serve the world with dev auth — see deployment.ts.
+const fatal = fatalMisconfiguration(process.env, isClerkAuth)
+if (fatal) {
+  console.error(fatal)
+  process.exit(1)
+}
+
+// 0.0.0.0 in a container, where traffic doesn't arrive on loopback. Locally
 // 'localhost' rather than '127.0.0.1' so this binds both loopback stacks —
 // 127.0.0.1 *and* ::1 — while still refusing connections from off the machine.
 //
@@ -350,9 +384,10 @@ app.get('/api/health', async () => ({
 // and then every request to it failed: the app worked in one browser and not
 // the other, with nothing in the server log either way.
 app
-  .listen({ port: PORT, host: 'localhost' })
+  .listen({ port: PORT, host: bindHost(process.env) })
   .then(() => {
-    console.log(`Ansa server on http://127.0.0.1:${PORT}  (db: ${DB_PATH})`)
+    const where = isProduction(process.env) ? `${bindHost(process.env)}:${PORT}` : `http://127.0.0.1:${PORT}`
+    console.log(`Ansa server on ${where}  (db: ${DB_PATH})`)
     if (isClerkAuth) {
       console.log('auth: Clerk — session tokens are verified.')
     } else if (isDevAuth) {
