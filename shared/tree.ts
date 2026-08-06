@@ -251,10 +251,26 @@ export function setDone(tree: Tree, id: NodeId, done: boolean): { tree: Tree; co
   return { tree: next, completed }
 }
 
-let seq = 0
+/**
+ * Mint a node id.
+ *
+ * Node ids are unique across the whole `nodes` table — `ownerId` is not part of
+ * the primary key — so this has to be unique globally, not just within one
+ * tree. Two things ruled out the obvious cheaper schemes:
+ *
+ * A timestamp plus a process-local counter (what this was) collides outright
+ * whenever two clients mint in the same millisecond, since each starts counting
+ * from zero. Two tabs and the MCP server are three such processes.
+ *
+ * `Math.random().toString(36).slice(2, 10)` is ~41 bits, which puts a first
+ * collision in reach around tens of thousands of rows.
+ *
+ * A v4 UUID is 122 bits from a cryptographic source, which retires the question
+ * rather than moving it. Ids already in the database keep working — nothing
+ * parses them, they only have to be distinct.
+ */
 export function newId(): NodeId {
-  seq += 1
-  return `n${Date.now().toString(36)}${seq.toString(36)}`
+  return crypto.randomUUID()
 }
 
 /**

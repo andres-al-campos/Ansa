@@ -25,8 +25,12 @@ const BASE =
  * broadcast, so this tab can recognise the echo of its own change and skip
  * re-adopting it — which is what stops a local edit being clobbered by its own
  * broadcast (and by any adopt that would otherwise race the save).
+ *
+ * A UUID because two tabs sharing an origin is a silent bug, not a loud one:
+ * each would mistake the other's broadcasts for its own echo and skip them, so
+ * the tabs quietly stop syncing to each other.
  */
-export const ORIGIN = `web-${Math.random().toString(36).slice(2, 10)}`
+export const ORIGIN = `web-${crypto.randomUUID()}`
 
 /**
  * Who this client is acting as when the server is running the dev stub.

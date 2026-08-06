@@ -1,3 +1,4 @@
+import { newId } from './tree'
 import type { Tree } from './tree'
 
 /**
@@ -43,11 +44,11 @@ const SPEC: Array<[string, string | null, string, boolean]> = [
  * new ones. They used to be used verbatim, which was fine while exactly one
  * seeded tree could ever exist. With accounts, node ids are unique across the
  * whole table, so a second user seeding the same 26 literal ids collides on the
- * primary key and their first request fails.
+ * primary key and their first request fails. See newId().
  */
 export function seedTree(): Tree {
   const now = Date.now()
-  const fresh = new Map(SPEC.map(([id]) => [id, `s${Math.random().toString(36).slice(2, 10)}`]))
+  const fresh = new Map(SPEC.map(([id]) => [id, newId()]))
   return SPEC.map(([id, parentId, text, done], i) => ({
     id: fresh.get(id)!,
     parentId: parentId === null ? null : fresh.get(parentId)!,

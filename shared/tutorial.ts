@@ -1,3 +1,4 @@
+import { newId } from './tree'
 import type { Tree } from './tree'
 
 /**
@@ -46,11 +47,11 @@ const SPEC: Array<[string, string | null, string, boolean]> = [
  *
  * Mints new ids on every call for the same reason seedTree() does: node ids are
  * unique across the whole table, so two accounts starting the same literal ids
- * would collide on the primary key.
+ * would collide on the primary key. See newId().
  */
 export function tutorialTree(): Tree {
   const now = Date.now()
-  const fresh = new Map(SPEC.map(([id]) => [id, `t${Math.random().toString(36).slice(2, 10)}`]))
+  const fresh = new Map(SPEC.map(([id]) => [id, newId()]))
   return SPEC.map(([id, parentId, text, done], i) => ({
     id: fresh.get(id)!,
     parentId: parentId === null ? null : fresh.get(parentId)!,
