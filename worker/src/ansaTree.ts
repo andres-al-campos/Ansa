@@ -207,9 +207,38 @@ export class AnsaTree extends DurableObject {
     }
   }
 
+  /**
+   * A client went away.
+   *
+   * Nothing to tear down: the socket set is ctx.getWebSockets(), which the
+   * runtime maintains, so a closed connection leaves it without help. The
+   * close() call is belt-and-braces — from compatibility date 2026-04-07 the
+   * runtime auto-replies to Close frames, and this worker is pinned past that,
+   * so it is safe but not required.
+   *
+   * 1005 means "no status received" and is not a code close() accepts, so it
+   * has to be mapped rather than echoed back.
+   */
   webSocketClose(ws: WebSocket, code: number, reason: string): void {
-    // 1005 means "no status received", which close() rejects as invalid.
     ws.close(code === 1005 ? 1000 : code, reason)
+  }
+
+  /**
+   * A socket failed rather than closing cleanly.
+   *
+   * Without this handler an errored connection is left for the runtime to
+   * reap on its own schedule, and until it does, broadcast() keeps trying to
+   * send to it. Sends to a dead socket are already caught one by one, so the
+   * cost is wasted work rather than a dropped broadcast — but closing it here
+   * ends that immediately.
+   */
+  webSocketError(ws: WebSocket): void {
+    try {
+      ws.close(1011, 'socket error')
+    } catch {
+      // Already gone. Nothing to do, and throwing from this handler would
+      // take the object down with it.
+    }
   }
 
   /**

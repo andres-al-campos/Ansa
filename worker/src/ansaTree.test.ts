@@ -288,6 +288,23 @@ describe('socket messages', () => {
     expect(ws.closedWith).toBeNull()
   })
 
+  it('closes a socket that errored', () => {
+    const ws = fakeSocket()
+    tree.webSocketError(ws as never)
+    expect(ws.closedWith?.code).toBe(1011)
+  })
+
+  it('survives an error on a socket that is already gone', () => {
+    // close() throws on an already-closed socket, and a throw out of this
+    // handler takes the whole object down — along with every other client's
+    // live connection.
+    const ws = fakeSocket()
+    ws.close = () => {
+      throw new Error('already closed')
+    }
+    expect(() => tree.webSocketError(ws as never)).not.toThrow()
+  })
+
   it('closes with 1000 when the peer sent no status', () => {
     // 1005 means "no status received" and close() rejects it as an argument, so
     // echoing it back verbatim would throw inside the close handler.
