@@ -216,8 +216,9 @@ describe('broadcast', () => {
     tree.applyOp({ op: 'addChild', id: 'a', parentId: null, text: 'project', at: 1 }, null)
     const ws = fakeSocket()
     ctx.acceptWebSocket(ws)
-    // subscribe() builds a real WebSocketPair, which node has no global for;
-    // the send-on-connect is asserted through the same path the DO uses.
+    // fetch() builds a real WebSocketPair, which node has no global for, so the
+    // upgrade itself is verified against wrangler dev instead — see the note at
+    // the top of this file. What is asserted here is only the payload shape.
     const payload = JSON.stringify({ tree: tree.load(), origin: null })
     ws.send(payload)
     expect(received(ws)[0].tree).toHaveLength(1)

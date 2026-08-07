@@ -95,6 +95,61 @@ export class AnsaTree extends DurableObject {
     return result
   }
 
+  /**
+   * The fine-grained mutations, kept for the MCP server.
+   *
+   * The app itself writes through applyOp — one named op, applied to whatever
+   * the tree is now. These stay because the MCP tools call them directly, and
+   * because collapsing them into ops would change that interface for no gain.
+   *
+   * Each is the same three steps: mutate inside a transaction, broadcast,
+   * return. The repetition is deliberate — a generic dispatcher here would
+   * take a method name from the caller, and "which method" is exactly the kind
+   * of thing that should not be data.
+   */
+  addChild(parentId: string | null, text: string, origin: string | null): { tree: Tree; id: string } {
+    const result = this.ctx.storage.transactionSync(() => this.store.addChild(parentId, text))
+    this.broadcast(result.tree, origin)
+    return result
+  }
+
+  rename(id: string, text: string, origin: string | null): Tree {
+    return this.write(() => this.store.rename(id, text), origin)
+  }
+
+  setDone(id: string, done: boolean, origin: string | null): { tree: Tree; completed: string[] } {
+    const result = this.ctx.storage.transactionSync(() => this.store.setDone(id, done))
+    this.broadcast(result.tree, origin)
+    return result
+  }
+
+  setPinned(id: string, pinned: boolean, origin: string | null): Tree {
+    return this.write(() => this.store.setPinned(id, pinned), origin)
+  }
+
+  remove(id: string, origin: string | null): Tree {
+    return this.write(() => this.store.remove(id), origin)
+  }
+
+  move(id: string, parentId: string | null, index: number, origin: string | null): Tree {
+    return this.write(() => this.store.move(id, parentId, index), origin)
+  }
+
+  toggleCollapsed(id: string, origin: string | null): Tree {
+    return this.write(() => this.store.toggleCollapsed(id), origin)
+  }
+
+  markOpened(id: string, origin: string | null): Tree {
+    return this.write(() => this.store.markOpened(id), origin)
+  }
+
+  /** Run a tree-returning mutation in a transaction and broadcast the result. */
+  private write(mutate: () => Tree, origin: string | null): Tree {
+    const tree = this.ctx.storage.transactionSync(mutate)
+    this.broadcast(tree, origin)
+    return tree
+  }
+
   /** Whole-tree replace. Used by Import and by the migration script. */
   replaceAll(tree: unknown, origin: string | null): Tree {
     const bad = invalidTree(tree)
@@ -113,11 +168,16 @@ export class AnsaTree extends DurableObject {
    * object resident and billing for the life of the connection, which is the
    * whole problem this design avoids.
    *
-   * Not named `connect` — that is the base class's TCP socket handler, and
-   * overriding it with a different signature is a type error rather than a
-   * subtle one.
+   * Reached through fetch() rather than as an RPC method, and that is not
+   * stylistic. A Response carrying a `webSocket` cannot cross the RPC boundary
+   * — returning one from a method fails with DataCloneError, "Could not
+   * serialize object of type WebSocket". fetch() is the one path that hands a
+   * live socket back to the worker.
    */
-  subscribe(): Response {
+  override fetch(req: Request): Response {
+    if (req.headers.get('upgrade') !== 'websocket') {
+      return new Response('This endpoint expects a WebSocket upgrade.', { status: 426 })
+    }
     const [client, server] = Object.values(new WebSocketPair())
     this.ctx.acceptWebSocket(server)
     // The current tree immediately, so a client that just connected doesn't
