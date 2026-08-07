@@ -1,0 +1,38 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "ansa",
+  "main": "worker/src/index.ts",
+  // Workers runs a recent V8 with node compatibility for the APIs @clerk/backend
+  // reaches for. The date pins runtime behaviour so a redeploy months from now
+  // doesn't silently pick up different semantics.
+  "compatibility_date": "2026-08-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": { "enabled": true },
+
+  "durable_objects": {
+    "bindings": [{ "name": "ANSA_TREE", "class_name": "AnsaTree" }]
+  },
+
+  "migrations": [
+    {
+      "tag": "v1",
+      // new_sqlite_classes, not new_classes. The key-value backend it would
+      // otherwise get is unavailable on the free plan, and this object's whole
+      // design is one SQLite database per owner.
+      "new_sqlite_classes": ["AnsaTree"]
+    }
+  ],
+
+  "vars": {
+    // The Pages origin the app is served from. Anything not listed gets no CORS
+    // headers, so this must be updated when the frontend's URL is known —
+    // see cors.ts for why it doesn't default open.
+    "ANSA_ALLOWED_ORIGIN": ""
+  }
+
+  // CLERK_SECRET_KEY is a secret, not a var: `wrangler secret put
+  // CLERK_SECRET_KEY`. It must never appear in this file, which is committed.
+  //
+  // ANSA_DEV_AUTH belongs only in .dev.vars (gitignored, local only). A
+  // deployed worker carrying it refuses every request — see misconfiguredAuth.
+}

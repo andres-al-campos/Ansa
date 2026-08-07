@@ -21,3 +21,9 @@ coverage/
 ansa.db
 ansa.db-shm
 ansa.db-wal
+
+# Local worker vars (dev auth stub; never committed)
+.dev.vars
+
+# Wrangler local state (DO SQLite for wrangler dev, build cache)
+.wrangler/
