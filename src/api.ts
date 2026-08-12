@@ -5,8 +5,8 @@
  * The app computes mutations locally with the pure ops in shared/tree.ts (so
  * undo/redo and animations stay instant) and sends the *operation* with
  * `sendOp`, which the server replays against its own tree. Changes made
- * elsewhere — another tab, or a Claude driving the MCP — arrive over the SSE
- * stream at `eventsUrl()` rather than by polling.
+ * elsewhere — another tab, or a Claude driving the MCP — arrive over the
+ * WebSocket at `eventsUrl()` rather than by polling.
  */
 
 import type { Op } from '@shared/ops'
@@ -16,12 +16,28 @@ import type { Tree } from '@shared/tree'
 // `127.0.0.1` as different origins for Private Network Access, and blocks a
 // localhost page from calling 127.0.0.1 — so a hardcoded 127.0.0.1 breaks when
 // the app is served from localhost. Deriving the host sidesteps that entirely.
+//
+// That default is a local-dev convenience and nothing else. A deployed build has
+// no server on port 4000 of its own hostname, so VITE_ANSA_API must point at the
+// Worker — and because Vite inlines it at build time, an unset variable is an
+// empty string rather than an error. Failing here beats shipping a build whose
+// every request goes to a port that isn't listening.
 const BASE =
-  import.meta.env.VITE_ANSA_API ??
-  `${window.location.protocol}//${window.location.hostname}:4000`
+  import.meta.env.VITE_ANSA_API ||
+  (import.meta.env.DEV
+    ? `${window.location.protocol}//${window.location.hostname}:4000`
+    : missingApiBase())
+
+function missingApiBase(): never {
+  throw new Error(
+    'This build has no VITE_ANSA_API, so it does not know where the Ansa API is.\n' +
+      'Set it to the Worker URL (https://ansa.<subdomain>.workers.dev) in the Pages\n' +
+      'project under Settings → Environment variables, then redeploy.',
+  )
+}
 
 /**
- * A per-tab id sent on every write. The server echoes it back on the SSE
+ * A per-tab id sent on every write. The server echoes it back on the
  * broadcast, so this tab can recognise the echo of its own change and skip
  * re-adopting it — which is what stops a local edit being clobbered by its own
  * broadcast (and by any adopt that would otherwise race the save).
@@ -50,7 +66,7 @@ const USER = import.meta.env.VITE_ANSA_USER ?? 'legacy'
  * rotates them roughly every minute, so anything cached here would start
  * failing a few minutes into a session. A module-level setter rather than
  * threading a token through every call site: this file is imported by non-React
- * code (the persist effect, the SSE wiring) and shouldn't need a hook.
+ * code (the persist effect, the socket wiring) and shouldn't need a hook.
  */
 type TokenSource = () => Promise<string | null>
 let getToken: TokenSource = async () => null
@@ -79,8 +95,18 @@ const headers = async (): Promise<Record<string, string>> => {
 }
 
 /**
- * The SSE stream's URL, including a credential in the query string because
- * EventSource cannot set headers.
+ * The live stream's URL: a WebSocket, carrying a credential in the query string.
+ *
+ * The query string is forced, not chosen. Neither EventSource nor the browser's
+ * WebSocket constructor can set an Authorization header, so a handshake has no
+ * other place to put a credential. What makes it acceptable is that a Clerk
+ * session token expires in about a minute — a URL that leaks into a log is
+ * stale by the time anyone reads it. A long-lived key here would not be.
+ *
+ * The scheme has to be derived rather than hardcoded: BASE is http(s) for the
+ * REST calls, and a WebSocket needs ws(s). Hardcoding `wss` breaks local dev
+ * over plain http, and hardcoding `ws` fails on the deployed https origin
+ * because browsers refuse a plaintext socket from a secure page.
  *
  * Async and a function — not the constant it used to be — because the token has
  * to be fetched, and because a reconnect needs a *fresh* one rather than the
@@ -91,7 +117,7 @@ export async function eventsUrl(): Promise<string> {
   const credential = token
     ? `token=${encodeURIComponent(token)}`
     : `user=${encodeURIComponent(USER)}`
-  return `${BASE}/api/events?${credential}`
+  return `${BASE.replace(/^http/, 'ws')}/api/events?${credential}`
 }
 
 /**
@@ -159,7 +185,7 @@ export async function seedIfEmpty(): Promise<boolean> {
     }
     return true
   } catch {
-    // Offline, or the server is down. The SSE stream will sync when it returns.
+    // Offline, or the server is down. The live stream will sync when it returns.
     return false
   }
 }

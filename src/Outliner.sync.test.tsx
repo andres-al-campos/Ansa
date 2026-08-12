@@ -16,13 +16,24 @@ vi.mock('./api', async () => {
   return { ...actual, sendOp, putTree }
 })
 
-// A fake EventSource we drive by hand, so the test decides precisely when the
+// Imported after the mock: a static import would hoist above the factory's
+// variables and crash on `sendOp` before initialization. ORIGIN itself is the
+// real one — the mock only replaces the two write functions.
+const { ORIGIN } = await import('./api')
+
+// A fake WebSocket we drive by hand, so the test decides precisely when the
 // server's first (authoritative) tree arrives.
-let live: FakeEventSource | null = null
-class FakeEventSource {
+let live: FakeSocket | null = null
+class FakeSocket {
   onmessage: ((e: { data: string }) => void) | null = null
+  onopen: (() => void) | null = null
+  // What the client sent us — the hello frame carrying this tab's origin tag.
+  sent: string[] = []
   constructor(public url: string) {
     live = this
+  }
+  send(payload: string) {
+    this.sent.push(payload)
   }
   close() {}
   // Push a server broadcast to the component.
@@ -35,7 +46,7 @@ beforeEach(() => {
   sendOp.mockClear()
   putTree.mockClear()
   live = null
-  vi.stubGlobal('EventSource', FakeEventSource as unknown as typeof EventSource)
+  vi.stubGlobal('WebSocket', FakeSocket as unknown as typeof WebSocket)
   localStorage.clear()
 })
 
@@ -45,8 +56,8 @@ afterEach(() => {
 })
 
 // The stream URL is now fetched asynchronously (the Clerk token has to be
-// awaited), so the EventSource is constructed a microtask after render rather
-// than during it. Flush that before any test reaches for `live`.
+// awaited), so the socket is constructed a microtask after render rather than
+// during it. Flush that before any test reaches for `live`.
 async function streamOpen() {
   await act(async () => {})
   return live!
@@ -67,7 +78,7 @@ function toggleFirstTask(container: HTMLElement) {
   act(() => box.click())
 }
 
-test('an edit before the first SSE sync is held, then sent once the server tree lands', async () => {
+test('an edit before the first sync is held, then sent once the server tree lands', async () => {
   const { default: Outliner } = await import('./Outliner')
   // One tree, rendered and then echoed back: the scenario is the server
   // confirming the tree this client already holds. Two separate seedTree() calls
@@ -83,7 +94,7 @@ test('an edit before the first SSE sync is held, then sent once the server tree 
   toggleFirstTask(container)
   expect(sendOp).not.toHaveBeenCalled()
 
-  // The server's authoritative tree arrives over SSE. The held ops are now safe
+  // The server's authoritative tree arrives over the socket. The held ops are now safe
   // to replay on top of it — they're kept, not dropped, and they go out in the
   // order they were made. Opening the project is itself a change (it stamps the
   // project as visited), so it queues ahead of the edit.
@@ -97,6 +108,21 @@ test('an edit before the first SSE sync is held, then sent once the server tree 
     toggleFirstTask(container)
   })
   expect(sentOps()).toEqual(['markOpened', 'setDone', 'setDone'])
+})
+
+test('announces this tab\'s origin so the server can tag broadcasts', async () => {
+  // Echo suppression rests on this frame. Without it the server has no origin to
+  // label a broadcast with, so this tab can't tell its own write's echo from a
+  // change made elsewhere — and re-adopting its own write is what clobbers an
+  // edit mid-keystroke.
+  const { default: Outliner } = await import('./Outliner')
+  render(<Outliner initial={seedTree()} />)
+  const stream = await streamOpen()
+
+  await act(async () => {
+    stream.onopen?.()
+  })
+  expect(stream.sent.map((s) => JSON.parse(s))).toEqual([{ type: 'hello', origin: ORIGIN }])
 })
 
 test('the whole tree is never pushed for an ordinary edit', async () => {

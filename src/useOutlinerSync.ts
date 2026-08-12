@@ -94,10 +94,10 @@ export function useOutlinerSync({
   useEffect(() => {
     // Fetching the token is async, so the stream opens a tick later than it used
     // to. `cancelled` covers the unmount-during-await case: without it a
-    // StrictMode double-mount (or a fast navigation) leaves an EventSource that
+    // StrictMode double-mount (or a fast navigation) leaves a socket that
     // nothing holds a reference to and nothing ever closes.
     let cancelled = false
-    let es: EventSource | null = null
+    let ws: WebSocket | null = null
 
     const onMessage = (e: MessageEvent) => {
       const { tree: next, origin } = JSON.parse(e.data) as { tree: Tree; origin: string | null }
@@ -125,13 +125,18 @@ export function useOutlinerSync({
 
     void eventsUrl().then((url) => {
       if (cancelled) return
-      es = new EventSource(url)
-      es.onmessage = onMessage
+      ws = new WebSocket(url)
+      ws.onmessage = onMessage
+      // The origin tag goes over the socket rather than in the URL, so the
+      // server can label broadcasts with the tab that caused them. Writes stay
+      // on HTTP — a write accepted over this socket would bypass the token
+      // check the fetch handler does.
+      ws.onopen = () => ws?.send(JSON.stringify({ type: 'hello', origin: ORIGIN }))
     })
 
     return () => {
       cancelled = true
-      es?.close()
+      ws?.close()
     }
   }, [adopt, drain])
 
