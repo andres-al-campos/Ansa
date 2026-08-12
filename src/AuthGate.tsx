@@ -10,6 +10,14 @@
  * path: a server running ANSA_DEV_AUTH doesn't want tokens, and requiring a
  * Clerk account to run the tests or a local throwaway instance would be worse
  * than the risk, since the server is the thing that decides what it accepts.
+ *
+ * In a production build that path is a hole rather than a convenience, and it
+ * fails open — the app renders with no gate at all. This is not hypothetical:
+ * a Docker build shipped exactly that, because Vite inlines the key at BUILD
+ * time and an unset variable is silently an empty string rather than an error.
+ * So a production build with no key refuses to run instead of running unguarded.
+ * The server would still reject every request, but an app that looks signed-in
+ * and fails every call is a worse thing to debug than one that says why.
  */
 
 import { useEffect, type ReactNode } from 'react'
@@ -37,7 +45,24 @@ function InstallToken({ children }: { children: ReactNode }) {
 }
 
 export default function AuthGate({ children }: { children: ReactNode }) {
-  if (!KEY) return <>{children}</>
+  if (!KEY) {
+    if (import.meta.env.DEV) return <>{children}</>
+    return (
+      <div style={{ display: 'grid', placeItems: 'center', minHeight: '100vh', padding: '2rem' }}>
+        <div style={{ maxWidth: '32rem' }}>
+          <h1>Ansa can't start</h1>
+          <p>
+            This build has no Clerk publishable key, so there is no way to sign in. It was built
+            without <code>VITE_CLERK_PUBLISHABLE_KEY</code> set.
+          </p>
+          <p>
+            Set it in the Pages project (Settings → Environment variables) and redeploy. The value
+            starts with <code>pk_</code> and comes from the Clerk dashboard under API keys.
+          </p>
+        </div>
+      </div>
+    )
+  }
   return (
     <ClerkProvider publishableKey={KEY}>
       <SignedIn>
