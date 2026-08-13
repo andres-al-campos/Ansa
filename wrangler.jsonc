@@ -29,11 +29,11 @@
     // open.
     //
     // Only the production origin is listed. Every Pages deployment also gets a
-    // per-deployment preview URL (579b9074.ansa-ac6.pages.dev), and those are
+    // per-deployment preview URL (579b9074.ansaflow.pages.dev), and those are
     // deliberately absent: the hash changes on every deploy, so keeping them
     // working would mean allowing *.pages.dev — which is every Pages site on
     // Cloudflare, not just this one. Test against the production URL.
-    "ANSA_ALLOWED_ORIGIN": "https://ansa-ac6.pages.dev"
+    "ANSA_ALLOWED_ORIGIN": "https://ansaflow.pages.dev"
   }
 
   // CLERK_SECRET_KEY is a secret, not a var: `wrangler secret put
