@@ -20,12 +20,30 @@
  *
  *  - **Interruption.** An incoming tree must not be swapped in while the user is
  *    mid-edit or mid-drag, so it's stashed and adopted the moment they're idle.
+ *
+ *  - **Deafness.** A dropped socket is never noticed on its own, because writes
+ *    go over HTTP and keep working. The tab saves fine and silently stops
+ *    receiving, so two tabs diverge and whoever wrote last appears to win. This
+ *    is why the socket reconnects rather than being opened once.
+ *
+ * That last one only became reachable on Cloudflare. The old SSE server held a
+ * connection open indefinitely and EventSource reconnected by itself; a Durable
+ * Object deliberately hibernates idle sockets to stay inside the free tier, and
+ * the Clerk token in the handshake URL expires in about a minute. So drops are
+ * routine here, and recovering from one is the client's job.
  */
 
 import { useCallback, useEffect, useRef } from 'react'
 import type { Op } from '@shared/ops'
 import type { Tree } from '@shared/tree'
 import { eventsUrl, ORIGIN, sendOp } from './api'
+
+// Reconnect delay, doubling from the first to the second on repeated failure.
+// The floor is short because the common case is a healthy tab whose socket was
+// dropped by the platform, and a second of deafness is already visible. The
+// ceiling keeps a tab that's been offline for an hour from hammering the API.
+const RECONNECT_MIN_MS = 500
+const RECONNECT_MAX_MS = 30_000
 
 export interface OutlinerSync {
   /** Queue ops to send, in order. Applied locally by the caller already. */
@@ -98,6 +116,10 @@ export function useOutlinerSync({
     // nothing holds a reference to and nothing ever closes.
     let cancelled = false
     let ws: WebSocket | null = null
+    let retry: ReturnType<typeof setTimeout> | null = null
+    // How long to wait before the next reconnect, doubling per failure. Reset on
+    // every successful open so a later drop starts fast again.
+    let backoff = RECONNECT_MIN_MS
 
     const onMessage = (e: MessageEvent) => {
       const { tree: next, origin } = JSON.parse(e.data) as { tree: Tree; origin: string | null }
@@ -123,20 +145,60 @@ export function useOutlinerSync({
       void drain()
     }
 
-    void eventsUrl().then((url) => {
-      if (cancelled) return
-      ws = new WebSocket(url)
-      ws.onmessage = onMessage
-      // The origin tag goes over the socket rather than in the URL, so the
-      // server can label broadcasts with the tab that caused them. Writes stay
-      // on HTTP — a write accepted over this socket would bypass the token
-      // check the fetch handler does.
-      ws.onopen = () => ws?.send(JSON.stringify({ type: 'hello', origin: ORIGIN }))
-    })
+    // Reopen after a drop. The URL is rebuilt every time rather than reused:
+    // it carries a Clerk session token that expires in about a minute, so a
+    // reconnect with the original URL would authenticate with a stale token and
+    // be refused — leaving the tab silently deaf, which is the bug this exists
+    // to prevent.
+    const reconnect = () => {
+      if (cancelled || retry) return
+      retry = setTimeout(() => {
+        retry = null
+        backoff = Math.min(backoff * 2, RECONNECT_MAX_MS)
+        connect()
+      }, backoff)
+    }
+
+    const connect = () => {
+      void eventsUrl().then(
+        (url) => {
+          if (cancelled) return
+          const socket = new WebSocket(url)
+          ws = socket
+          socket.onmessage = onMessage
+          // The origin tag goes over the socket rather than in the URL, so the
+          // server can label broadcasts with the tab that caused them. Writes
+          // stay on HTTP — a write accepted over this socket would bypass the
+          // token check the fetch handler does.
+          socket.onopen = () => {
+            backoff = RECONNECT_MIN_MS
+            socket.send(JSON.stringify({ type: 'hello', origin: ORIGIN }))
+          }
+          // Both, because they aren't redundant: onerror fires without onclose
+          // when the handshake itself fails (an expired token is a handshake
+          // failure), and onclose fires alone on a clean server-side drop.
+          // `retry` makes the double case a single reconnect.
+          socket.onclose = reconnect
+          socket.onerror = reconnect
+        },
+        // eventsUrl awaits a token, and that can fail offline or mid-rotation.
+        // Without this the promise rejects unhandled and the tab never retries.
+        () => reconnect(),
+      )
+    }
+
+    connect()
 
     return () => {
       cancelled = true
-      ws?.close()
+      if (retry) clearTimeout(retry)
+      // Detach first: close() fires onclose, which would otherwise schedule a
+      // reconnect for a component that is going away.
+      if (ws) {
+        ws.onclose = null
+        ws.onerror = null
+        ws.close()
+      }
     }
   }, [adopt, drain])
 

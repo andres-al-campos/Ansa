@@ -24,21 +24,35 @@ const { ORIGIN } = await import('./api')
 // A fake WebSocket we drive by hand, so the test decides precisely when the
 // server's first (authoritative) tree arrives.
 let live: FakeSocket | null = null
+// Every socket the component has opened, in order. Reconnection is "a second
+// entry appears", so the count is the assertion.
+let opened: FakeSocket[] = []
 class FakeSocket {
   onmessage: ((e: { data: string }) => void) | null = null
   onopen: (() => void) | null = null
+  onclose: (() => void) | null = null
+  onerror: (() => void) | null = null
+  closed = false
   // What the client sent us — the hello frame carrying this tab's origin tag.
   sent: string[] = []
   constructor(public url: string) {
     live = this
+    opened.push(this)
   }
   send(payload: string) {
     this.sent.push(payload)
   }
-  close() {}
+  close() {
+    this.closed = true
+  }
   // Push a server broadcast to the component.
   emit(tree: Tree, origin: string | null = null) {
     this.onmessage?.({ data: JSON.stringify({ tree, origin }) })
+  }
+  // The server (or the platform) dropping this connection.
+  drop() {
+    this.closed = true
+    this.onclose?.()
   }
 }
 
@@ -46,6 +60,7 @@ beforeEach(() => {
   sendOp.mockClear()
   putTree.mockClear()
   live = null
+  opened = []
   vi.stubGlobal('WebSocket', FakeSocket as unknown as typeof WebSocket)
   localStorage.clear()
 })
@@ -53,6 +68,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup()
   vi.unstubAllGlobals()
+  vi.useRealTimers()
 })
 
 // The stream URL is now fetched asynchronously (the Clerk token has to be
@@ -123,6 +139,94 @@ test('announces this tab\'s origin so the server can tag broadcasts', async () =
     stream.onopen?.()
   })
   expect(stream.sent.map((s) => JSON.parse(s))).toEqual([{ type: 'hello', origin: ORIGIN }])
+})
+
+// The reconnect is a setTimeout followed by an awaited token, so both a timer
+// flush and a microtask flush are needed before the new socket exists.
+async function flushReconnect() {
+  await act(async () => {
+    vi.advanceTimersByTime(60_000)
+  })
+  await act(async () => {})
+}
+
+test('a dropped socket is reopened, so the tab keeps receiving changes', async () => {
+  // The bug this guards: writes go over HTTP and keep working after the socket
+  // dies, so a deaf tab looks healthy. It saves fine, receives nothing, and two
+  // tabs silently diverge until one is reloaded. On Cloudflare drops are normal
+  // — the Durable Object hibernates idle sockets and the token in the handshake
+  // URL expires in about a minute — so not reconnecting means not syncing.
+  vi.useFakeTimers({ shouldAdvanceTime: true })
+  const { default: Outliner } = await import('./Outliner')
+  const seed = seedTree()
+  render(<Outliner initial={seed} />)
+  const first = await streamOpen()
+
+  await act(async () => {
+    first.drop()
+  })
+  await flushReconnect()
+
+  expect(opened.length).toBe(2)
+  const second = opened[1]
+  expect(second).not.toBe(first)
+
+  // The reopened socket is a working one, not just an object that exists: a
+  // broadcast over it has to reach the component.
+  await act(async () => {
+    second.onopen?.()
+  })
+  expect(second.sent.map((s) => JSON.parse(s))).toEqual([{ type: 'hello', origin: ORIGIN }])
+})
+
+test('a reconnect fetches a fresh URL rather than replaying the expired one', async () => {
+  // The handshake URL carries a short-lived Clerk token. Reusing the original
+  // would reconnect with a stale credential and be refused — a reconnect that
+  // exists but never succeeds, which is indistinguishable from no reconnect.
+  vi.useFakeTimers({ shouldAdvanceTime: true })
+  const { default: Outliner } = await import('./Outliner')
+  render(<Outliner initial={seedTree()} />)
+  const first = await streamOpen()
+
+  await act(async () => {
+    first.drop()
+  })
+  await flushReconnect()
+
+  // eventsUrl() is the only thing that can mint a URL, so a second socket at all
+  // means it was called again rather than the first URL being cached.
+  expect(opened.length).toBe(2)
+  expect(typeof opened[1].url).toBe('string')
+})
+
+test('unmounting closes the socket and never reopens it', async () => {
+  // A reconnect after unmount would resurrect the socket for a component that
+  // no longer exists — a leak that survives every navigation and keeps adopting
+  // trees into nothing.
+  //
+  // Two things in the effect prevent it: the `cancelled` flag, and detaching
+  // onclose/onerror before calling close(). Either alone is sufficient today,
+  // so this asserts the observable outcome rather than one mechanism. A late
+  // drop is delivered explicitly, because close() on the fake doesn't fire
+  // onclose by itself — without that the test would pass on an implementation
+  // with no guard at all.
+  vi.useFakeTimers({ shouldAdvanceTime: true })
+  const { default: Outliner } = await import('./Outliner')
+  const { unmount } = render(<Outliner initial={seedTree()} />)
+  const socket = await streamOpen()
+
+  unmount()
+  expect(socket.closed).toBe(true)
+
+  // The platform dropping the connection after unmount, which is the ordering a
+  // real close produces.
+  await act(async () => {
+    socket.onclose?.()
+    socket.onerror?.()
+  })
+  await flushReconnect()
+
+  expect(opened.length).toBe(1)
 })
 
 test('the whole tree is never pushed for an ordinary edit', async () => {
