@@ -33,7 +33,7 @@
  * routine here, and recovering from one is the client's job.
  */
 
-import { useCallback, useEffect, useRef } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Op } from '@shared/ops'
 import type { Tree } from '@shared/tree'
 import { eventsUrl, ORIGIN, sendOp } from './api'
@@ -45,9 +45,24 @@ import { eventsUrl, ORIGIN, sendOp } from './api'
 const RECONNECT_MIN_MS = 500
 const RECONNECT_MAX_MS = 30_000
 
+// Consecutive failed reconnects before the tab is called out of sync. Not one:
+// a single drop is ordinary — the object hibernates, a laptop sleeps, wifi
+// blips — and the reconnect usually wins within a second. Warning on the first
+// failure would flicker during normal use, which teaches people to ignore the
+// one channel that matters when sync is genuinely broken.
+const FAILURES_BEFORE_WARNING = 3
+
 export interface OutlinerSync {
   /** Queue ops to send, in order. Applied locally by the caller already. */
   send: (...ops: Op[]) => void
+  /**
+   * False once the live connection has failed repeatedly.
+   *
+   * Only ever about *receiving*. Writes go over HTTP and are unaffected, which
+   * is why the UI says changes are still saved — a blocked socket costs this
+   * tab other people's edits, not its own.
+   */
+  live: boolean
 }
 
 export function useOutlinerSync({
@@ -68,6 +83,10 @@ export function useOutlinerSync({
   const sending = useRef(false)
   // A tree that arrived while the user was busy, waiting for them to stop.
   const pending = useRef<Tree | null>(null)
+  // Consecutive failed reconnects. Reset by a successful open.
+  const failures = useRef(0)
+  // State rather than a ref: this one drives rendering.
+  const [live, setLive] = useState(true)
 
   const busyRef = useRef(busy)
   busyRef.current = busy
@@ -152,6 +171,10 @@ export function useOutlinerSync({
     // to prevent.
     const reconnect = () => {
       if (cancelled || retry) return
+      // Counted here rather than in the timer so a burst of onclose+onerror for
+      // one dead socket still counts once — `retry` collapses them.
+      failures.current += 1
+      if (failures.current >= FAILURES_BEFORE_WARNING) setLive(false)
       retry = setTimeout(() => {
         retry = null
         backoff = Math.min(backoff * 2, RECONNECT_MAX_MS)
@@ -172,6 +195,8 @@ export function useOutlinerSync({
           // token check the fetch handler does.
           socket.onopen = () => {
             backoff = RECONNECT_MIN_MS
+            failures.current = 0
+            setLive(true)
             socket.send(JSON.stringify({ type: 'hello', origin: ORIGIN }))
           }
           // Both, because they aren't redundant: onerror fires without onclose
@@ -211,5 +236,5 @@ export function useOutlinerSync({
     }
   }, [busy, adopt])
 
-  return { send }
+  return { send, live }
 }
