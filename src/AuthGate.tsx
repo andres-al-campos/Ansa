@@ -34,13 +34,24 @@ const KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY ?? ''
  */
 function InstallToken({ children }: { children: ReactNode }) {
   const { getToken } = useAuth()
+
+  // During render, not in an effect. React runs child effects before parent
+  // ones, and the children here include the outliner — so an effect would
+  // install the token source *after* the outliner had already opened its socket
+  // and fired its first requests. Those went out unauthenticated: the socket
+  // fell back to `?user=legacy` and every call came back 401, which looked like
+  // a sync bug rather than a startup-ordering one.
+  //
+  // Safe during render because this only assigns a module-level variable. It
+  // sets no state and schedules no work, so it can't loop or tear.
+  setTokenSource(() => getToken())
+
   useEffect(() => {
-    setTokenSource(() => getToken())
-    // Only now — the request needs the token that was just installed. The server
-    // no-ops when the account already has a tree, so running this on every boot
-    // costs one request and can't overwrite anything.
+    // The server no-ops when the account already has a tree, so running this on
+    // every boot costs one request and can't overwrite anything.
     void seedIfEmpty()
   }, [getToken])
+
   return <>{children}</>
 }
 
