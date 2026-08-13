@@ -104,7 +104,14 @@ export async function ownerOf(req: Request, env: AuthEnv): Promise<string | null
       // `sub` is Clerk's stable user id. It never changes for an account, which
       // is what makes it safe as the name of the object holding their tree.
       return typeof claims.sub === 'string' && claims.sub.length > 0 ? claims.sub : null
-    } catch {
+    } catch (err) {
+      // The caller is told only "not signed in" — reporting why would leak
+      // whether a token was ever valid. But the operator needs the reason: a
+      // rejected-for-no-visible-reason token looks identical to a broken socket
+      // from the browser, which is exactly how a misconfiguration once read as
+      // "live sync is down". The message names the cause (expired, wrong issuer,
+      // wrong key); the token itself is never logged.
+      console.error('Token rejected:', err instanceof Error ? err.message : err)
       return null
     }
   }
