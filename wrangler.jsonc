@@ -24,10 +24,16 @@
   ],
 
   "vars": {
-    // The Pages origin the app is served from. Anything not listed gets no CORS
-    // headers, so this must be updated when the frontend's URL is known —
-    // see cors.ts for why it doesn't default open.
-    "ANSA_ALLOWED_ORIGIN": ""
+    // The Pages origins the app is served from, comma-separated. Anything not
+    // listed gets no CORS headers — see cors.ts for why this doesn't default
+    // open.
+    //
+    // Only the production origin is listed. Every Pages deployment also gets a
+    // per-deployment preview URL (579b9074.ansa-ac6.pages.dev), and those are
+    // deliberately absent: the hash changes on every deploy, so keeping them
+    // working would mean allowing *.pages.dev — which is every Pages site on
+    // Cloudflare, not just this one. Test against the production URL.
+    "ANSA_ALLOWED_ORIGIN": "https://ansa-ac6.pages.dev"
   }
 
   // CLERK_SECRET_KEY is a secret, not a var: `wrangler secret put
