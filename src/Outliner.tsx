@@ -14,6 +14,7 @@ import { useFoldAnimation } from './useFoldAnimation'
 import { useOutlinerSync } from './useOutlinerSync'
 import { useRipple } from './useRipple'
 import WhoAmIPanel from './WhoAmI'
+import SyncToast from './SyncToast'
 import type { Op } from '@shared/ops'
 import {
   addChild,
@@ -958,6 +959,7 @@ export default function Outliner({ initial }: { initial: Tree }) {
 
   return (
     <div className="app">
+      <SyncToast live={sync.live} />
       <aside className="side">
         <button className="brand" onClick={() => setScope(null)} title="Home — all projects">
           Ansa

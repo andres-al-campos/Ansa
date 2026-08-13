@@ -1208,3 +1208,38 @@ body:has(.row.gap-slot) { cursor: default; }
   .side { border-right: none; border-bottom: 1px solid var(--edge-soft); padding: 18px; }
   .main { padding: 20px 18px 40px; }
 }
+
+/* Sync warning. Fixed rather than absolute so it stays put while the outliner
+   scrolls, and above everything because it explains why the content is stale. */
+.sync-toast {
+  position: fixed; top: 16px; right: 16px; z-index: 50;
+  display: flex; gap: 10px; align-items: flex-start;
+  max-width: 22rem; padding: 12px 12px 12px 14px;
+  background: var(--panel); color: var(--ink);
+  border: 1px solid var(--edge); border-left: 3px solid var(--danger);
+  border-radius: 8px; box-shadow: var(--shadow);
+  animation: sync-toast-in 160ms ease-out;
+}
+.sync-toast-body { display: flex; flex-direction: column; gap: 3px; }
+.sync-toast-title { font-size: 0.86rem; color: var(--danger); }
+.sync-toast-text { margin: 0; font-size: 0.8rem; line-height: 1.45; color: var(--ink-mid); }
+.sync-toast-close {
+  flex: none; padding: 0 4px; border: none; background: none;
+  color: var(--ink-faint); font-size: 1.1rem; line-height: 1; cursor: pointer;
+}
+.sync-toast-close:hover { color: var(--ink); }
+
+@keyframes sync-toast-in {
+  from { opacity: 0; transform: translateY(-6px); }
+  to { opacity: 1; transform: none; }
+}
+
+/* The toast is informational and the outliner stays usable behind it, so on a
+   narrow screen it spans the width rather than covering the corner controls. */
+@media (max-width: 820px) {
+  .sync-toast { left: 12px; right: 12px; max-width: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sync-toast { animation: none; }
+}

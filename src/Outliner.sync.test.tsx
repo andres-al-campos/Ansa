@@ -229,6 +229,84 @@ test('unmounting closes the socket and never reopens it', async () => {
   expect(opened.length).toBe(1)
 })
 
+// Drop the socket `times` times, letting each reconnect attempt complete.
+async function dropRepeatedly(times: number) {
+  for (let i = 0; i < times; i++) {
+    const socket = opened[opened.length - 1]
+    await act(async () => {
+      socket.drop()
+    })
+    await flushReconnect()
+  }
+}
+
+test('a single drop does not warn, because reconnects usually succeed', async () => {
+  // The flicker guard. Hibernation, a sleeping laptop and a wifi blip all drop
+  // the socket during normal use, and warning on each one trains people to
+  // ignore the toast — which then says nothing when sync is really broken.
+  vi.useFakeTimers({ shouldAdvanceTime: true })
+  const { default: Outliner } = await import('./Outliner')
+  const { container } = render(<Outliner initial={seedTree()} />)
+  await streamOpen()
+
+  await dropRepeatedly(1)
+
+  expect(container.querySelector('.sync-toast')).toBeNull()
+})
+
+test('repeated failures warn that this tab is no longer receiving changes', async () => {
+  vi.useFakeTimers({ shouldAdvanceTime: true })
+  const { default: Outliner } = await import('./Outliner')
+  const { container } = render(<Outliner initial={seedTree()} />)
+  await streamOpen()
+
+  await dropRepeatedly(3)
+
+  const toast = container.querySelector('.sync-toast')
+  expect(toast).not.toBeNull()
+  // Writes still land over HTTP, so the message must not read as data loss.
+  expect(toast?.textContent).toMatch(/changes are saved/i)
+})
+
+test('a recovered connection clears the warning', async () => {
+  vi.useFakeTimers({ shouldAdvanceTime: true })
+  const { default: Outliner } = await import('./Outliner')
+  const { container } = render(<Outliner initial={seedTree()} />)
+  await streamOpen()
+
+  await dropRepeatedly(3)
+  expect(container.querySelector('.sync-toast')).not.toBeNull()
+
+  // The next attempt connects.
+  await act(async () => {
+    opened[opened.length - 1].onopen?.()
+  })
+  expect(container.querySelector('.sync-toast')).toBeNull()
+})
+
+test('dismissing hides the warning until sync fails again', async () => {
+  // Dismissal covers this outage only: a drop after a working period is new
+  // information, and a permanently silenced warning is the bug this replaces.
+  vi.useFakeTimers({ shouldAdvanceTime: true })
+  const { default: Outliner } = await import('./Outliner')
+  const { container } = render(<Outliner initial={seedTree()} />)
+  await streamOpen()
+
+  await dropRepeatedly(3)
+  const close = container.querySelector('.sync-toast-close') as HTMLElement
+  await act(async () => {
+    close.click()
+  })
+  expect(container.querySelector('.sync-toast')).toBeNull()
+
+  // Recover, then fail again — the toast has to come back.
+  await act(async () => {
+    opened[opened.length - 1].onopen?.()
+  })
+  await dropRepeatedly(3)
+  expect(container.querySelector('.sync-toast')).not.toBeNull()
+})
+
 test('the whole tree is never pushed for an ordinary edit', async () => {
   const { default: Outliner } = await import('./Outliner')
   const seed = seedTree()
