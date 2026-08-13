@@ -31,12 +31,6 @@ import { parseOp, parseSpecs } from '../../shared/ops.ts'
 import { invalidTree, type Tree } from '../../shared/tree.ts'
 import { tutorialTree } from '../../shared/tutorial.ts'
 
-/** What a client sends on the socket. Writes go over HTTP; this is read-side only. */
-interface ClientHello {
-  type: 'hello'
-  origin: string
-}
-
 export class AnsaTree extends DurableObject {
   private store: TreeStore
 
@@ -186,26 +180,13 @@ export class AnsaTree extends DurableObject {
     return new Response(null, { status: 101, webSocket: client })
   }
 
-  /**
-   * The only message a client sends is its origin tag, so this object can label
-   * broadcasts with who caused them. Writes go over HTTP, deliberately: they
-   * need Clerk verification, and a socket message would bypass the auth the
-   * fetch handler does.
-   */
-  webSocketMessage(ws: WebSocket, message: string | ArrayBuffer): void {
-    if (typeof message !== 'string') return
-    try {
-      const parsed = JSON.parse(message) as ClientHello
-      // Attached to the socket rather than a field: this object may hibernate
-      // between messages, and serializeAttachment survives that.
-      if (parsed?.type === 'hello' && typeof parsed.origin === 'string') {
-        ws.serializeAttachment({ origin: parsed.origin })
-      }
-    } catch {
-      // A malformed frame is the client's problem; dropping it beats killing
-      // the connection and the live sync along with it.
-    }
-  }
+  // No webSocketMessage handler: the socket is receive-only. Writes go over
+  // HTTP, deliberately — they need Clerk verification, and a socket message
+  // would bypass the auth the fetch handler does. There was once a hello frame
+  // carrying the client's origin tag, but the server never needed it: broadcast
+  // stamps one payload with the *writer's* origin and sends that same string to
+  // everyone, and each client compares it against its own. Per-socket state
+  // would only matter if a broadcast differed per recipient.
 
   /**
    * A client went away.

@@ -16,11 +16,6 @@ vi.mock('./api', async () => {
   return { ...actual, sendOp, putTree }
 })
 
-// Imported after the mock: a static import would hoist above the factory's
-// variables and crash on `sendOp` before initialization. ORIGIN itself is the
-// real one — the mock only replaces the two write functions.
-const { ORIGIN } = await import('./api')
-
 // A fake WebSocket we drive by hand, so the test decides precisely when the
 // server's first (authoritative) tree arrives.
 let live: FakeSocket | null = null
@@ -126,19 +121,29 @@ test('an edit before the first sync is held, then sent once the server tree land
   expect(sentOps()).toEqual(['markOpened', 'setDone', 'setDone'])
 })
 
-test('announces this tab\'s origin so the server can tag broadcasts', async () => {
-  // Echo suppression rests on this frame. Without it the server has no origin to
-  // label a broadcast with, so this tab can't tell its own write's echo from a
-  // change made elsewhere — and re-adopting its own write is what clobbers an
-  // edit mid-keystroke.
+test('the socket is receive-only', async () => {
+  // Nothing may travel client-to-server here. The socket handshake is the only
+  // place a Clerk token is checked, so a write accepted over an already-open
+  // socket would skip the per-request auth the fetch handler does. Ops go over
+  // HTTP for that reason, and this asserts the rule stays true.
   const { default: Outliner } = await import('./Outliner')
-  render(<Outliner initial={seedTree()} />)
+  const seed = seedTree()
+  const { container } = render(<Outliner initial={seed} />)
   const stream = await streamOpen()
 
   await act(async () => {
     stream.onopen?.()
   })
-  expect(stream.sent.map((s) => JSON.parse(s))).toEqual([{ type: 'hello', origin: ORIGIN }])
+  scopeIntoProject(container)
+  await act(async () => {
+    stream.emit(seed)
+  })
+  await act(async () => {
+    toggleFirstTask(container)
+  })
+
+  expect(stream.sent).toEqual([])
+  expect(sendOp).toHaveBeenCalled()
 })
 
 // The reconnect is a setTimeout followed by an awaited token, so both a timer
@@ -172,11 +177,16 @@ test('a dropped socket is reopened, so the tab keeps receiving changes', async (
   expect(second).not.toBe(first)
 
   // The reopened socket is a working one, not just an object that exists: a
-  // broadcast over it has to reach the component.
+  // broadcast over it has to reach the component. A tree with a distinct project
+  // name makes arrival visible in the rendered output.
+  const replacement = seed.map((n) =>
+    n.parentId === null ? { ...n, text: 'Arrived after reconnect' } : n,
+  )
   await act(async () => {
     second.onopen?.()
+    second.emit(replacement)
   })
-  expect(second.sent.map((s) => JSON.parse(s))).toEqual([{ type: 'hello', origin: ORIGIN }])
+  expect(document.body.textContent).toContain('Arrived after reconnect')
 })
 
 test('a reconnect fetches a fresh URL rather than replaying the expired one', async () => {

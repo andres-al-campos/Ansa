@@ -274,18 +274,13 @@ describe('broadcast', () => {
 })
 
 describe('socket messages', () => {
-  it('records the origin a client announces', () => {
-    const ws = fakeSocket()
-    tree.webSocketMessage(ws as never, JSON.stringify({ type: 'hello', origin: 'web-abc' }))
-    expect(ws.attachment).toEqual({ origin: 'web-abc' })
-  })
-
-  it('ignores a malformed frame instead of killing the connection', () => {
-    const ws = fakeSocket()
-    expect(() => tree.webSocketMessage(ws as never, 'not json at all')).not.toThrow()
-    expect(() => tree.webSocketMessage(ws as never, JSON.stringify({ type: 'other' }))).not.toThrow()
-    expect(ws.attachment).toBeNull()
-    expect(ws.closedWith).toBeNull()
+  it('accepts nothing from a client', () => {
+    // The socket is receive-only, and deliberately so: the handshake is the only
+    // place a Clerk token is checked, so anything acted on from an already-open
+    // socket would skip auth entirely. Writes go over HTTP for that reason.
+    // Adding a webSocketMessage handler is what would open that door, so its
+    // absence is the thing worth asserting.
+    expect((tree as { webSocketMessage?: unknown }).webSocketMessage).toBeUndefined()
   })
 
   it('closes a socket that errored', () => {

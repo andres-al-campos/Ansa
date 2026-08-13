@@ -189,15 +189,13 @@ export function useOutlinerSync({
           const socket = new WebSocket(url)
           ws = socket
           socket.onmessage = onMessage
-          // The origin tag goes over the socket rather than in the URL, so the
-          // server can label broadcasts with the tab that caused them. Writes
-          // stay on HTTP — a write accepted over this socket would bypass the
-          // token check the fetch handler does.
+          // Nothing is ever sent on this socket — it's receive-only. Ops go over
+          // HTTP, and each op carries this tab's origin, which is what the
+          // server stamps its broadcasts with.
           socket.onopen = () => {
             backoff = RECONNECT_MIN_MS
             failures.current = 0
             setLive(true)
-            socket.send(JSON.stringify({ type: 'hello', origin: ORIGIN }))
           }
           // Both, because they aren't redundant: onerror fires without onclose
           // when the handshake itself fails (an expired token is a handshake
