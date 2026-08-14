@@ -169,6 +169,75 @@ deploy_api() {
   npx wrangler deploy
 }
 
+# What the smoke checks are for: everything above this point verifies what was
+# *uploaded*, which is a different claim from what is being *served*. Today's
+# outage got through a clean build and a clean upload and only showed itself in
+# a browser. These make that gap a failed deploy instead of a bug report.
+#
+# Retried rather than checked once: a deploy takes a few seconds to propagate,
+# so a single immediate probe reports a stale copy and calls it a regression.
+retry_until() {
+  local what=$1 attempts=${2:-10}
+  local i=1
+  while [ "$i" -le "$attempts" ]; do
+    if "check_$what"; then
+      return 0
+    fi
+    sleep 2
+    i=$((i + 1))
+  done
+  return 1
+}
+
+# The Worker answers, and it found its Clerk secret. The second half matters as
+# much as the first: a worker missing CLERK_SECRET_KEY deploys fine and serves
+# fine, and reports auth "dev" or "none" — which would let anyone act as anyone,
+# or refuse every request. Both are silent from the outside.
+check_api() {
+  curl -sf --max-time 10 "${WORKER_API}/api/health" 2>/dev/null | grep -q '"auth":"clerk"'
+}
+
+# The live page serves a bundle carrying both build-time values. Fetched from
+# the public URL rather than read from dist/, because "it's in the file I built"
+# is exactly what was true this morning while the site was broken.
+check_app() {
+  local index js
+  index=$(curl -sf --max-time 10 "https://${PAGES_PROJECT}.pages.dev/" 2>/dev/null) || return 1
+  js=$(printf '%s' "$index" | grep -o '/assets/[^"]*\.js' | head -1)
+  [ -n "$js" ] || return 1
+  local bundle
+  bundle=$(curl -sf --max-time 20 "https://${PAGES_PROJECT}.pages.dev${js}" 2>/dev/null) || return 1
+  printf '%s' "$bundle" | grep -qF "$WORKER_API" || return 1
+  printf '%s' "$bundle" | grep -qF "$VITE_CLERK_PUBLISHABLE_KEY"
+}
+
+smoke_api() {
+  echo "Checking the live API …"
+  if retry_until api; then
+    echo "  API is up and using Clerk auth."
+  else
+    echo "The API deployed but ${WORKER_API}/api/health isn't reporting Clerk auth." >&2
+    echo "If it answers with auth 'dev' or 'none', the worker lost its secret:" >&2
+    echo "  npx wrangler secret put CLERK_SECRET_KEY" >&2
+    echo "The value is in your Keychain as ansa-clerk-secret." >&2
+    exit 1
+  fi
+}
+
+smoke_app() {
+  echo "Checking the live app …"
+  if retry_until app; then
+    echo "  App is serving a bundle with the API URL and Clerk key inlined."
+  else
+    echo "The app deployed but the page being served is missing a value it needs." >&2
+    echo "Open https://${PAGES_PROJECT}.pages.dev and check the console." >&2
+    echo "If it says there is no Clerk publishable key, the build didn't get one —" >&2
+    echo "re-run ./build.sh deploy app rather than setting it in the Pages dashboard," >&2
+    echo "which does nothing here because Cloudflare isn't building this project." >&2
+    exit 1
+  fi
+}
+
 deploy_app() {
   if [ -z "${VITE_CLERK_PUBLISHABLE_KEY:-}" ]; then
     echo "No Clerk publishable key, so the deployed app would have no way to sign in." >&2
@@ -209,11 +278,13 @@ deploy() {
   echo "Running tests …"
   npm test
 
+  # Each half is checked immediately after it ships, not both at the end: when
+  # the API is broken the app deploy should not go out on top of it.
   local target=${1:-both}
   case "$target" in
-    api) deploy_api ;;
-    app) deploy_app ;;
-    both) deploy_api; deploy_app ;;
+    api) deploy_api; smoke_api ;;
+    app) deploy_app; smoke_app ;;
+    both) deploy_api; smoke_api; deploy_app; smoke_app ;;
     *)
       echo "Unknown deploy target: $target" >&2
       echo "Usage: ./build.sh deploy [app|api]" >&2
