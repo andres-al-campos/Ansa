@@ -15,6 +15,7 @@
  */
 
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
+import { silenceSocket } from './testSocket'
 import { act, cleanup, render } from '@testing-library/react'
 import { seedTree } from '@shared/seed'
 import Outliner from './Outliner'
@@ -24,14 +25,8 @@ vi.mock('./api', async () => {
   return { ...actual, sendOp: vi.fn(async () => ({ status: 'ok' }) as const), putTree: vi.fn(async () => true) }
 })
 
-class SilentEventSource {
-  onmessage: ((e: { data: string }) => void) | null = null
-  constructor(public url: string) {}
-  close() {}
-}
-
 beforeEach(() => {
-  vi.stubGlobal('EventSource', SilentEventSource as unknown as typeof EventSource)
+  silenceSocket()
   vi.useFakeTimers()
   localStorage.clear()
 })
