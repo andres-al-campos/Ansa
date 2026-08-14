@@ -317,6 +317,50 @@ test('dismissing hides the warning until sync fails again', async () => {
   expect(container.querySelector('.sync-toast')).not.toBeNull()
 })
 
+test('a rejected op does not block every edit made after it', async () => {
+  // The stall this guards against: drain() stops at the first op the server
+  // won't take and leaves it at the head of the queue. A 400 means the server
+  // looked at that op and refused it, so retrying is futile — but the queue
+  // retries anyway, and every later edit sits behind it forever. The tab keeps
+  // working, localStorage keeps the tree, and nothing reaches the server again.
+  const { default: Outliner } = await import('./Outliner')
+  const seed = seedTree()
+  const { container } = render(<Outliner initial={seed} />)
+  const stream = await streamOpen()
+  scopeIntoProject(container)
+  await act(async () => {
+    stream.emit(seed)
+  })
+
+  // The next op is refused *persistently*. A 400 is a verdict on that specific
+  // op, so the server returns it every time the op is offered — unlike a network
+  // failure, waiting changes nothing.
+  const from = sendOp.mock.calls.length
+  let poison: Op | null = null
+  sendOp.mockImplementation(async (op: Op) => {
+    poison ??= op
+    return op !== poison
+  })
+
+  // The edit the server refuses, then two good edits behind it.
+  await act(async () => {
+    toggleFirstTask(container)
+  })
+  await act(async () => {
+    toggleFirstTask(container)
+  })
+  await act(async () => {
+    toggleFirstTask(container)
+  })
+
+  // Only the poison op is ever offered: the good edits behind it are never
+  // attempted at all, so nothing the user does after this point reaches the
+  // server.
+  const attempted = sendOp.mock.calls.slice(from).map(([op]) => op)
+  const reachedServer = attempted.filter((op) => op !== poison)
+  expect(reachedServer.length).toBeGreaterThan(0)
+})
+
 test('the whole tree is never pushed for an ordinary edit', async () => {
   const { default: Outliner } = await import('./Outliner')
   const seed = seedTree()
