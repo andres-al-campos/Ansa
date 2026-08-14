@@ -14,16 +14,18 @@ MCP server ─┘                (SQLite)            └─ any other tab
 (a Claude)
 ```
 
-The same shape runs in two places. Locally the server is Fastify over a SQLite
-file; deployed it's a Cloudflare Worker over one Durable Object per account.
-The client can't tell them apart — same REST routes, same broadcast.
+The API is a Cloudflare Worker over one Durable Object per account, deployed and
+locally alike — `wrangler dev` runs the same code. Fastify over a SQLite file is
+still there as a second implementation of the same REST routes, but it's on its
+way out.
 
 - **`src/`** — the React app. Reads and writes over REST; subscribes to changes
   over a WebSocket, so an edit from anywhere shows up without a reload. Writes
   go over HTTP rather than the socket, deliberately: the handshake is the only
   place a token is checked, so anything accepted on an open socket would skip
   authentication.
-- **`server/`** — Fastify + SQLite (`ansa.db`), for local development.
+- **`server/`** — Fastify + SQLite (`ansa.db`). The original backend, kept
+  around behind `./build.sh fastify` until the Worker has proven itself.
 - **`worker/`** — the deployed API: a Cloudflare Worker, with an `AnsaTree`
   Durable Object per account holding that account's tree in its own SQLite.
   Clerk verifies the token, and the verified user id picks the object — so the
@@ -42,28 +44,28 @@ The client can't tell them apart — same REST routes, same broadcast.
 ./build.sh
 ```
 
-Installs dependencies if they're missing, starts the server and the app, waits
-for each to answer before moving on, and opens the browser. Ctrl-C stops both.
-Set `ANSA_NO_OPEN=1` to skip opening the browser.
+Installs dependencies if they're missing, starts the API and the app, waits for
+each to answer before moving on, and opens the browser. Ctrl-C stops both. Set
+`ANSA_NO_OPEN=1` to skip opening the browser.
 
-To run the two processes yourself instead — separate terminals, server first, so
-the app finds it up:
+The API is the Worker itself, under `wrangler dev` on port 8787 with real
+Durable Objects — the same code the deploy ships. Cold start is around 20s.
 
 ```bash
-npm install
-npm run server   # http://127.0.0.1:4000
-npm run dev      # http://localhost:5173
+./build.sh fastify
 ```
 
-The first run seeds the database. The app opens from a localStorage cache for an
-instant first paint, then adopts the server's tree once the live connection is
-established.
+runs the older Fastify + `ansa.db` server on port 4000 instead. Live sync
+doesn't work there: the client opens a WebSocket and Fastify still serves SSE,
+so edits save but a second tab won't see them until reload.
 
-**Known gap:** live sync doesn't currently work against the local server. The
-client opens a WebSocket; the Fastify server still serves the older SSE stream
-and has no WebSocket support, so the connection fails and the app shows "Not
-syncing". Edits still save — writes go over HTTP — but a second local tab won't
-see them until reload. The deployed Worker speaks WebSocket and is unaffected.
+The app opens from a localStorage cache for an instant first paint, then adopts
+the server's tree once the live connection is established.
+
+Locally the app skips the sign-in gate — the Worker runs its dev auth stub
+(`ANSA_DEV_AUTH=1` in `.dev.vars`) and `build.sh` leaves the Clerk publishable
+key unset. If `CLERK_SECRET_KEY` happens to be set in your shell, the key gets
+set too and you'll be asked to sign in.
 
 `npm test` runs the suite. `npm run build` type-checks and builds the app into
 `dist/`.
@@ -131,8 +133,9 @@ Point an MCP client at it with a stdio command:
 }
 ```
 
-The server must be running (`npm run server`) — the MCP talks to it over HTTP,
-set with `ANSA_API` (default `http://127.0.0.1:4000`). Tools: `view_tree`,
+An API must be running — the MCP talks to it over HTTP, set with `ANSA_API`
+(default `http://127.0.0.1:4000`). That default matches `./build.sh fastify`;
+under the default `./build.sh` set `ANSA_API=http://127.0.0.1:8787`. Tools: `view_tree`,
 `add_subtree`, `rename_task`, `set_done`, `move_task`, `toggle_collapsed`,
 `remove_task`, `progress`.
 
