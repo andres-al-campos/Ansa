@@ -6,7 +6,7 @@ import { seedTree } from '@shared/seed'
 // and the SSE stream so the component mounts without reaching for either.
 vi.mock('./api', async () => {
   const actual = await vi.importActual<typeof import('./api')>('./api')
-  return { ...actual, sendOp: vi.fn(async () => true), putTree: vi.fn(async () => true) }
+  return { ...actual, sendOp: vi.fn(async () => ({ status: 'ok' }) as const), putTree: vi.fn(async () => true) }
 })
 
 class SilentEventSource {

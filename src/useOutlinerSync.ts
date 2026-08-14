@@ -52,6 +52,11 @@ const RECONNECT_MAX_MS = 30_000
 // one channel that matters when sync is genuinely broken.
 const FAILURES_BEFORE_WARNING = 3
 
+// How often a queue stalled by an unreachable server retries on its own. Slow
+// enough to be nothing on an idle tab, fast enough that a blip costs seconds
+// rather than lasting until the user happens to type again.
+const WRITE_RETRY_MS = 5_000
+
 export interface OutlinerSync {
   /** Queue ops to send, in order. Applied locally by the caller already. */
   send: (...ops: Op[]) => void
@@ -63,6 +68,17 @@ export interface OutlinerSync {
    * tab other people's edits, not its own.
    */
   live: boolean
+  /**
+   * How many edits the server refused this session.
+   *
+   * Separate from `live` because it is a different failure with a different
+   * consequence: `live` means this tab stopped *receiving* and nothing of the
+   * user's is at risk, while this means an edit they made was not stored and is
+   * about to disappear from the screen when the server's tree is adopted.
+   */
+  rejected: number
+  /** Forget the rejection count, so the warning can be dismissed. */
+  clearRejected: () => void
 }
 
 export function useOutlinerSync({
@@ -85,27 +101,49 @@ export function useOutlinerSync({
   const pending = useRef<Tree | null>(null)
   // Consecutive failed reconnects. Reset by a successful open.
   const failures = useRef(0)
-  // State rather than a ref: this one drives rendering.
+  // State rather than a ref: these drive rendering.
   const [live, setLive] = useState(true)
+  // How many edits the server has refused this session. A count rather than a
+  // flag so the toast can say whether this happened once or is happening
+  // repeatedly — the second means something is actually wrong.
+  const [rejected, setRejected] = useState(0)
 
   const busyRef = useRef(busy)
   busyRef.current = busy
   const onAdoptRef = useRef(onAdopt)
   onAdoptRef.current = onAdopt
 
-  // Drain the queue one op at a time. A failed send puts the op back at the
-  // front and stops: the server is unreachable, and dropping the op would lose
-  // an edit the user can see on screen. The next op to be queued retries it,
-  // and until then the local tree and localStorage still hold the change.
+  // Drain the queue one op at a time.
+  //
+  // The two failures are handled oppositely, and conflating them is what used to
+  // wedge this queue permanently:
+  //
+  //  - **Unreachable.** Nothing is known about the op, so it stays at the head
+  //    and the whole queue waits. Dropping it would lose an edit the user can
+  //    see on screen. A timer retries it — waiting for the next keystroke means
+  //    a tab that stops being typed in never sends what it already has.
+  //
+  //  - **Rejected.** The server has judged this op and will judge it the same
+  //    way every time, so it is discarded rather than retried. Keeping it would
+  //    block every later edit forever while the tab looked healthy. The usual
+  //    cause is a lost race — the op's parent was deleted on another device —
+  //    and the server's next broadcast is what puts this tab back in step.
   const drain = useCallback(async () => {
     if (sending.current || !synced.current) return
     sending.current = true
     try {
       while (queue.current.length > 0) {
         const op = queue.current[0]
-        const ok = await sendOp(op)
-        if (!ok) break
+        const result = await sendOp(op)
+        if (result.status === 'unreachable') break
         queue.current.shift()
+        if (result.status === 'rejected') {
+          // Loud in the console because a malformed op is a client bug and
+          // should be debuggable; plain in the UI because the common cause is
+          // an ordinary race the user can do nothing about.
+          console.error('Ansa: the server refused an edit —', result.reason, op)
+          setRejected((n) => n + 1)
+        }
       }
     } finally {
       sending.current = false
@@ -225,6 +263,24 @@ export function useOutlinerSync({
     }
   }, [adopt, drain])
 
+  // Retry a queue held up by an unreachable server.
+  //
+  // Without this the only thing that retries is the next call to send(), so a
+  // tab that stops being edited keeps whatever it hadn't managed to save —
+  // indefinitely, and silently. That is the same shape of bug as the deaf
+  // socket: the tab looks fine because the local tree and localStorage still
+  // hold the change.
+  //
+  // A plain interval rather than a backoff: drain() exits immediately when the
+  // queue is empty or a send is already in flight, so an idle tab does nothing
+  // but check a length.
+  useEffect(() => {
+    const id = setInterval(() => {
+      if (queue.current.length > 0) void drain()
+    }, WRITE_RETRY_MS)
+    return () => clearInterval(id)
+  }, [drain])
+
   // The user stopped editing or dragging — apply whatever arrived meanwhile.
   useEffect(() => {
     if (!busy && pending.current) {
@@ -234,5 +290,7 @@ export function useOutlinerSync({
     }
   }, [busy, adopt])
 
-  return { send, live }
+  const clearRejected = useCallback(() => setRejected(0), [])
+
+  return { send, live, rejected, clearRejected }
 }

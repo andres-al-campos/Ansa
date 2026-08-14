@@ -5,7 +5,7 @@ import Outliner from './Outliner'
 
 vi.mock('./api', async () => {
   const actual = await vi.importActual<typeof import('./api')>('./api')
-  return { ...actual, sendOp: vi.fn(async () => true), putTree: vi.fn(async () => true) }
+  return { ...actual, sendOp: vi.fn(async () => ({ status: 'ok' }) as const), putTree: vi.fn(async () => true) }
 })
 
 class SilentEventSource {

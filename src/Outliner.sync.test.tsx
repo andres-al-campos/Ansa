@@ -3,10 +3,11 @@ import { act, cleanup, render } from '@testing-library/react'
 import { seedTree } from '@shared/seed'
 import type { Op } from '@shared/ops'
 import type { Tree } from '@shared/tree'
+import type { WriteResult } from './api'
 
 // Spy on the write path. Everything else in the api module (eventsUrl, ORIGIN)
 // stays real so the component wires up exactly as in the app.
-const sendOp = vi.fn(async (_op: Op) => true)
+const sendOp = vi.fn(async (_op: Op): Promise<WriteResult> => ({ status: 'ok' }))
 const putTree = vi.fn(async (_tree: Tree) => true)
 
 /** The op names sent so far, in order. */
@@ -323,6 +324,10 @@ test('a rejected op does not block every edit made after it', async () => {
   // looked at that op and refused it, so retrying is futile — but the queue
   // retries anyway, and every later edit sits behind it forever. The tab keeps
   // working, localStorage keeps the tree, and nothing reaches the server again.
+  // A rejection is logged deliberately (a malformed op is a client bug worth
+  // seeing), so the expected noise is silenced rather than left to look like a
+  // test failure.
+  const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
   const { default: Outliner } = await import('./Outliner')
   const seed = seedTree()
   const { container } = render(<Outliner initial={seed} />)
@@ -337,9 +342,13 @@ test('a rejected op does not block every edit made after it', async () => {
   // failure, waiting changes nothing.
   const from = sendOp.mock.calls.length
   let poison: Op | null = null
-  sendOp.mockImplementation(async (op: Op) => {
+  sendOp.mockImplementation(async (op: Op): Promise<WriteResult> => {
     poison ??= op
-    return op !== poison
+    // The shape a lost race produces: the parent was deleted on another device,
+    // so this op can never be stored no matter how often it is offered.
+    return op === poison
+      ? { status: 'rejected', reason: 'No node with id x in this tree.' }
+      : { status: 'ok' }
   })
 
   // The edit the server refuses, then two good edits behind it.
@@ -359,6 +368,42 @@ test('a rejected op does not block every edit made after it', async () => {
   const attempted = sendOp.mock.calls.slice(from).map(([op]) => op)
   const reachedServer = attempted.filter((op) => op !== poison)
   expect(reachedServer.length).toBeGreaterThan(0)
+
+  // The refused op is offered exactly once. Retrying it would be the stall.
+  expect(attempted.filter((op) => op === poison)).toHaveLength(1)
+  expect(logged).toHaveBeenCalled()
+  logged.mockRestore()
+})
+
+test('a queue stalled by an unreachable server retries without another edit', async () => {
+  // Otherwise the only thing that retries is the next send(), so a tab whose
+  // last edit failed keeps it forever if the user stops typing — saved locally,
+  // absent from the server, and looking perfectly healthy. Same shape as the
+  // deaf socket: silence that reads as success.
+  vi.useFakeTimers({ shouldAdvanceTime: true })
+  const { default: Outliner } = await import('./Outliner')
+  const seed = seedTree()
+  const { container } = render(<Outliner initial={seed} />)
+  const stream = await streamOpen()
+  scopeIntoProject(container)
+  await act(async () => {
+    stream.emit(seed)
+  })
+
+  sendOp.mockResolvedValue({ status: 'unreachable' })
+  await act(async () => {
+    toggleFirstTask(container)
+  })
+  const whileDown = sendOp.mock.calls.length
+
+  // The server comes back. Nothing else happens — no keystroke, no click.
+  sendOp.mockResolvedValue({ status: 'ok' })
+  await act(async () => {
+    vi.advanceTimersByTime(6_000)
+  })
+  await act(async () => {})
+
+  expect(sendOp.mock.calls.length).toBeGreaterThan(whileDown)
 })
 
 test('the whole tree is never pushed for an ordinary edit', async () => {
@@ -379,4 +424,41 @@ test('the whole tree is never pushed for an ordinary edit', async () => {
   // once clobber each other. Edits must travel as ops.
   expect(putTree).not.toHaveBeenCalled()
   expect(sendOp).toHaveBeenCalled()
+})
+
+test('a refused edit is shown to the user, and can be dismissed', async () => {
+  // The console.error is for whoever is debugging; this is the half the user
+  // sees. Without it the failure is silent in exactly the way that matters: the
+  // edit is on screen, it feels saved, and it vanishes at the next adopt with no
+  // explanation. The toast has to outrank the "not syncing" one, because that
+  // one says changes are still being saved — true of deafness, a lie here.
+  const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
+  const { default: Outliner } = await import('./Outliner')
+  const seed = seedTree()
+  const { container } = render(<Outliner initial={seed} />)
+  const stream = await streamOpen()
+  scopeIntoProject(container)
+  await act(async () => {
+    stream.emit(seed)
+  })
+
+  expect(container.querySelector('.sync-toast-warn')).toBeNull()
+
+  sendOp.mockResolvedValue({ status: 'rejected', reason: 'No node with id x in this tree.' })
+  await act(async () => {
+    toggleFirstTask(container)
+  })
+
+  const toast = container.querySelector('.sync-toast-warn')
+  expect(toast).not.toBeNull()
+  expect(toast!.textContent).toMatch(/couldn't be saved/i)
+
+  // Dismissable: the edit is already gone and nothing about it is actionable, so
+  // a warning that cannot be cleared is just permanent furniture.
+  const close = toast!.querySelector('.sync-toast-close') as HTMLElement
+  await act(async () => {
+    close.click()
+  })
+  expect(container.querySelector('.sync-toast-warn')).toBeNull()
+  logged.mockRestore()
 })
