@@ -4,6 +4,12 @@
 # No arguments — this is the everyday "run the thing I'm working on" path.
 # Both run with hot reload; Ctrl-C stops both.
 #
+#   ./build.sh           run locally (server + app), the default
+#   ./build.sh deploy    build and publish the app to Cloudflare Pages
+#
+# Deploy lives here rather than in its own script so there is one entry point
+# and no question about which file is current.
+#
 set -euo pipefail
 
 # Run from the repo root regardless of where this is called from.
@@ -12,6 +18,12 @@ cd "$(dirname "$0")"
 APP_PORT=5173
 API_PORT=4000
 APP_URL="http://localhost:${APP_PORT}"
+
+# The deployed pieces. The app is a Pages project; the API is a separate Worker
+# that this build has to be pointed at, because Vite inlines the URL at build
+# time and a bundle built without it has no idea where its API is.
+PAGES_PROJECT=ansaflow
+WORKER_API=https://ansa.id3arium.workers.dev
 
 # Set ANSA_NO_OPEN=1 to skip auto-opening the browser (e.g. on a headless box).
 NO_OPEN=${ANSA_NO_OPEN:-}
@@ -70,6 +82,13 @@ kill_tree() {
 
 cleanup() {
   trap - INT TERM EXIT
+  # Nothing was started, so there is nothing to stop. Reached when the script
+  # exits early — a usage error, or a deploy — and announcing "Stopping…" there
+  # buries the actual message. The ${#pids[@]:-0} guard is also what keeps
+  # `set -u` from turning an early exit into an unbound-variable error.
+  if [ "${#pids[@]:-0}" -eq 0 ]; then
+    return
+  fi
   echo ""
   echo "Stopping…"
   for pid in "${pids[@]}"; do
@@ -106,13 +125,82 @@ export ANSA_DEV_AUTH=${ANSA_DEV_AUTH:-1}
 # The Clerk *publishable* key is public by design — it ships in the JS bundle
 # and identifies the instance, it doesn't authorise anything. It lives here
 # rather than in .env because .env is gitignored and a fresh clone has to work.
+CLERK_PUBLISHABLE_DEFAULT=pk_test_cmFwaWQtYmVlLTIwLmNsZXJrLmFjY291bnRzLmRldiQ
+
+# Local and deploy want opposite defaults here, which is why this isn't one line.
 #
-# The client gates on sign-in only when this is set. Leave it unset (or run with
-# no Keychain secret) to get the old no-login local behaviour; set both to run
-# local exactly the way production will run.
-if [ -n "${CLERK_SECRET_KEY:-}" ]; then
-  export VITE_CLERK_PUBLISHABLE_KEY=${VITE_CLERK_PUBLISHABLE_KEY:-pk_test_cmFwaWQtYmVlLTIwLmNsZXJrLmFjY291bnRzLmRldiQ}
+# Locally the key is set only alongside a Keychain secret: the client gates on
+# sign-in when it sees a key, so setting it unconditionally would take away the
+# no-login local mode that a fresh clone with no Keychain entry depends on.
+#
+# A deploy has no such mode. Production is always signed-in, so the key is
+# always needed, and tying it to whether *this laptop* has a secret in its
+# Keychain would make the deploy depend on unrelated local state.
+if [ "${1:-}" = "deploy" ] || [ -n "${CLERK_SECRET_KEY:-}" ]; then
+  export VITE_CLERK_PUBLISHABLE_KEY=${VITE_CLERK_PUBLISHABLE_KEY:-$(keychain_secret ansa-clerk-publishable)}
+  export VITE_CLERK_PUBLISHABLE_KEY=${VITE_CLERK_PUBLISHABLE_KEY:-$CLERK_PUBLISHABLE_DEFAULT}
 fi
+
+# ---------------------------------------------------------------------------
+# Deploy: build the app and publish it to Cloudflare Pages.
+#
+# Every VITE_* the client needs has to be set *here*, at build time. Cloudflare
+# is not building this — the Pages project has no git integration — so the
+# variables configured in the Pages dashboard never run. That is not a detail:
+# a deploy that sets only some of them produces a bundle that builds cleanly,
+# uploads cleanly, and then can't sign anyone in. It has happened once already.
+#
+# So the missing-variable check below runs before the build rather than after,
+# and refuses instead of warning.
+# ---------------------------------------------------------------------------
+deploy() {
+  # The trap is for the local path's background children; a deploy has none, and
+  # leaving it armed prints a spurious "Stopping…" on success.
+  trap - INT TERM EXIT
+
+  if [ -z "${VITE_CLERK_PUBLISHABLE_KEY:-}" ]; then
+    echo "No Clerk publishable key, so the deployed app would have no way to sign in." >&2
+    echo "It normally comes from the fallback above, so this means the Keychain lookup" >&2
+    echo "returned something empty. Set it explicitly and re-run:" >&2
+    echo "  VITE_CLERK_PUBLISHABLE_KEY=pk_test_… ./build.sh deploy" >&2
+    exit 1
+  fi
+
+  echo "Building the app for ${WORKER_API} …"
+  VITE_ANSA_API="$WORKER_API" npm run build
+
+  # Check the artifact rather than the inputs. An env var that was set proves
+  # what this shell knew, not what Vite inlined — and the failure mode is a
+  # bundle that looks fine until someone opens it.
+  local js
+  js=$(find dist/assets -name '*.js' -print -quit)
+  for needle in "$WORKER_API" "$VITE_CLERK_PUBLISHABLE_KEY"; do
+    if ! grep -qF "$needle" "$js"; then
+      echo "The built bundle is missing a value it needs, so it was not deployed." >&2
+      echo "Expected to find '${needle:0:24}…' in ${js}." >&2
+      echo "Re-run, and if it persists check src/api.ts and src/main.tsx for how it's read." >&2
+      exit 1
+    fi
+  done
+  echo "Bundle checks out: API URL and Clerk key are both inlined."
+
+  npx wrangler pages deploy dist --project-name "$PAGES_PROJECT" --branch main
+
+  echo ""
+  echo "Deployed:"
+  printf '  app  →  %s\n' "$(link "https://${PAGES_PROJECT}.pages.dev")"
+  printf '  api  →  %s\n' "$(link "$WORKER_API")"
+}
+
+case "${1:-}" in
+  deploy) deploy; exit 0 ;;
+  '') ;;
+  *)
+    echo "Unknown argument: $1" >&2
+    echo "Usage: ./build.sh [deploy]" >&2
+    exit 1
+    ;;
+esac
 
 echo "Starting server on http://127.0.0.1:${API_PORT} …"
 npm run server &
