@@ -4,8 +4,10 @@
 # No arguments — this is the everyday "run the thing I'm working on" path.
 # Both run with hot reload; Ctrl-C stops both.
 #
-#   ./build.sh           run locally (server + app), the default
-#   ./build.sh deploy    build and publish the app to Cloudflare Pages
+#   ./build.sh              run locally (server + app), the default
+#   ./build.sh deploy       test, then publish the API and the app
+#   ./build.sh deploy api   the Worker only
+#   ./build.sh deploy app   the Pages bundle only
 #
 # Deploy lives here rather than in its own script so there is one entry point
 # and no question about which file is current.
@@ -142,22 +144,32 @@ if [ "${1:-}" = "deploy" ] || [ -n "${CLERK_SECRET_KEY:-}" ]; then
 fi
 
 # ---------------------------------------------------------------------------
-# Deploy: build the app and publish it to Cloudflare Pages.
+# Deploy. Two halves that ship together by default, because they share a wire
+# format: an app expecting an op the API doesn't accept yet is the failure this
+# avoids. `deploy app` / `deploy api` are for when you know only one changed.
 #
-# Every VITE_* the client needs has to be set *here*, at build time. Cloudflare
-# is not building this — the Pages project has no git integration — so the
-# variables configured in the Pages dashboard never run. That is not a detail:
-# a deploy that sets only some of them produces a bundle that builds cleanly,
-# uploads cleanly, and then can't sign anyone in. It has happened once already.
+# Every VITE_* the client needs has to be set at build time. Cloudflare is not
+# building this — the Pages project has no git integration — so the variables
+# configured in the Pages dashboard never run. That is not a detail: a deploy
+# that sets only some of them produces a bundle that builds cleanly, uploads
+# cleanly, and then can't sign anyone in. It has happened once already.
 #
-# So the missing-variable check below runs before the build rather than after,
-# and refuses instead of warning.
+# So the checks below refuse rather than warn, and they check the built bundle
+# rather than the environment that produced it.
 # ---------------------------------------------------------------------------
-deploy() {
-  # The trap is for the local path's background children; a deploy has none, and
-  # leaving it armed prints a spurious "Stopping…" on success.
-  trap - INT TERM EXIT
 
+# The Worker: the API, the Durable Objects, and the auth. Deployed before the
+# app so a failure here leaves the old app talking to the old API, rather than
+# a new app talking to an API that never updated.
+#
+# No env vars to pass — wrangler.jsonc carries the config, and CLERK_SECRET_KEY
+# lives in the Worker's own secret store (`wrangler secret put`), never here.
+deploy_api() {
+  echo "Deploying the API worker …"
+  npx wrangler deploy
+}
+
+deploy_app() {
   if [ -z "${VITE_CLERK_PUBLISHABLE_KEY:-}" ]; then
     echo "No Clerk publishable key, so the deployed app would have no way to sign in." >&2
     echo "It normally comes from the fallback above, so this means the Keychain lookup" >&2
@@ -185,19 +197,46 @@ deploy() {
   echo "Bundle checks out: API URL and Clerk key are both inlined."
 
   npx wrangler pages deploy dist --project-name "$PAGES_PROJECT" --branch main
+}
+
+deploy() {
+  # The trap is for the local path's background children; a deploy has none, and
+  # leaving it armed prints a spurious "Stopping…" on success.
+  trap - INT TERM EXIT
+
+  # Tests before either half goes out. The suite is ~10s and covers the tree
+  # model both sides share, so skipping it to save time is a false economy.
+  echo "Running tests …"
+  npm test
+
+  local target=${1:-both}
+  case "$target" in
+    api) deploy_api ;;
+    app) deploy_app ;;
+    both) deploy_api; deploy_app ;;
+    *)
+      echo "Unknown deploy target: $target" >&2
+      echo "Usage: ./build.sh deploy [app|api]" >&2
+      exit 1
+      ;;
+  esac
 
   echo ""
   echo "Deployed:"
-  printf '  app  →  %s\n' "$(link "https://${PAGES_PROJECT}.pages.dev")"
-  printf '  api  →  %s\n' "$(link "$WORKER_API")"
+  if [ "$target" != "api" ]; then
+    printf '  app  →  %s\n' "$(link "https://${PAGES_PROJECT}.pages.dev")"
+  fi
+  if [ "$target" != "app" ]; then
+    printf '  api  →  %s\n' "$(link "$WORKER_API")"
+  fi
 }
 
 case "${1:-}" in
-  deploy) deploy; exit 0 ;;
+  deploy) deploy "${2:-both}"; exit 0 ;;
   '') ;;
   *)
     echo "Unknown argument: $1" >&2
-    echo "Usage: ./build.sh [deploy]" >&2
+    echo "Usage: ./build.sh [deploy [app|api]]" >&2
     exit 1
     ;;
 esac
