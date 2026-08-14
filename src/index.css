@@ -1229,6 +1229,15 @@ body:has(.row.gap-slot) { cursor: default; }
 }
 .sync-toast-close:hover { color: var(--ink); }
 
+/* The lost-edit toast. Louder than the plain one on purpose: deafness costs this
+   tab other people's changes, but this one means something the user typed is
+   gone, and they are about to watch it disappear. A tinted fill rather than a
+   heavier border, so the difference reads at a glance and not on inspection. */
+.sync-toast-warn {
+  background: var(--danger-soft);
+  border-color: var(--danger);
+}
+
 @keyframes sync-toast-in {
   from { opacity: 0; transform: translateY(-6px); }
   to { opacity: 1; transform: none; }

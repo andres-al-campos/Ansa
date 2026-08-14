@@ -959,7 +959,7 @@ export default function Outliner({ initial }: { initial: Tree }) {
 
   return (
     <div className="app">
-      <SyncToast live={sync.live} />
+      <SyncToast live={sync.live} rejected={sync.rejected} onDismissRejected={sync.clearRejected} />
       <aside className="side">
         <button className="brand" onClick={() => setScope(null)} title="Home — all projects">
           Ansa
