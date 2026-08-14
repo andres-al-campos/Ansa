@@ -170,7 +170,14 @@ reasoning that will produce the next one.
   named explicitly, not guessed — changes nothing and returns Bob's own tree.
 - `legacy` sat at 59 nodes throughout, unmodified.
 
-## Phase 2 — Deploy it, still on SQLite
+## Phase 2 — Deploy it, still on SQLite ✅ DONE — but not on Railway
+
+**Read [What actually happened](#what-actually-happened-1) at the end of this
+section before following anything in it.** The plan below is Railway, and the
+deploy went to Cloudflare instead. The Railway specifics — the Dockerfile, the
+volume, the settings table, the `up.railway.app` migration commands — describe a
+route that was never taken. Kept because the reasoning still reads true and the
+migration steps transferred almost unchanged.
 
 Railway, with a volume mounted for the database file. Free tier: 1 vCPU,
 0.5 GB RAM, 0.5 GB volume, $0/month after the trial converts to the $1/month
@@ -309,6 +316,50 @@ those two facts is the migration, and it deserves more care than the deploy:
 **Done when:** I can open Ansa on my phone, over cellular, and edit a task that
 shows up on my desktop — and my whole tree is there, counted against the local
 copy at migration time, not assumed.
+
+### What actually happened
+
+Cloudflare, not Railway. The deploy is a Worker (`ansa.id3arium.workers.dev`)
+plus Cloudflare Pages (`ansaflow.pages.dev`), and the database is one Durable
+Object per account rather than one SQLite file on a volume.
+
+Which invalidates the biggest decision in the plan above. "The frontend is
+served by Fastify itself, one service, one domain, so CORS stops being a thing
+to configure" — the opposite happened. The app and the API are on different
+origins, so CORS is explicit: `worker/src/cors.ts` builds the headers and
+`ANSA_ALLOWED_ORIGIN` in `wrangler.jsonc` names the one origin allowed through.
+It has been fine. The prediction that CORS would keep costing debugging sessions
+was based on it being incidental; made explicit and tested, it stopped biting.
+
+What transferred unchanged: `scripts/migrate.ts`, which did the real migration
+(59 nodes, 6 projects) with only the `--url` differing from the commands above.
+
+What didn't survive:
+
+- **`Dockerfile` and `railway.json`** are dead. Workers don't take a container,
+  and the native `better-sqlite3` build — the reason the Dockerfile existed —
+  isn't in the deployed path: a Durable Object's SQLite is built into the
+  runtime. It survives as a test dependency, standing in for the DO SQL surface
+  in `worker/src/treeStore.test.ts`.
+- **`server/src/deployment.ts`'s production mode** is dead for the same reason.
+  The Fastify server is now a local-development tool only.
+- **The `ANSA_DB` / volume-mount row** has no analogue. A Durable Object's
+  storage is part of the object, so there is nothing to mount and nothing that
+  dies with a redeploy.
+
+Two things the plan didn't anticipate, both of which cost real time:
+
+- **A uBlock rule against `workers.dev` blocked the live socket silently.** The
+  app looked healthy — writes go over HTTP and kept working — while receiving
+  nothing. That is what the "Not syncing" toast now exists to surface.
+- **The Clerk instance addresses the data.** The Durable Object is keyed by
+  Clerk's verified `sub`, so a different Clerk instance is a different object
+  holding a different tree. Switching from test to production keys is a data
+  migration, not a config change, and that is why it hasn't been done.
+
+Local dev has a known gap left by all this: the client speaks WebSocket and the
+local Fastify server still serves SSE, so live sync doesn't work locally. See
+the README.
 
 ## Phase 3 — Postgres on Neon
 

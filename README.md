@@ -47,7 +47,7 @@ for each to answer before moving on, and opens the browser. Ctrl-C stops both.
 Set `ANSA_NO_OPEN=1` to skip opening the browser.
 
 To run the two processes yourself instead — separate terminals, server first, so
-the app's first SSE connect finds it up:
+the app finds it up:
 
 ```bash
 npm install
@@ -56,7 +56,14 @@ npm run dev      # http://localhost:5173
 ```
 
 The first run seeds the database. The app opens from a localStorage cache for an
-instant first paint, then adopts the server's tree the moment SSE connects.
+instant first paint, then adopts the server's tree once the live connection is
+established.
+
+**Known gap:** live sync doesn't currently work against the local server. The
+client opens a WebSocket; the Fastify server still serves the older SSE stream
+and has no WebSocket support, so the connection fails and the app shows "Not
+syncing". Edits still save — writes go over HTTP — but a second local tab won't
+see them until reload. The deployed Worker speaks WebSocket and is unaffected.
 
 `npm test` runs the suite. `npm run build` type-checks and builds the app into
 `dist/`.
