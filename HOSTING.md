@@ -336,7 +336,8 @@ What transferred unchanged: `scripts/migrate.ts`, which did the real migration
 
 What didn't survive:
 
-- **`Dockerfile` and `railway.json`** are dead. Workers don't take a container,
+- **`Dockerfile` and `railway.json`** are gone (deleted once the Cloudflare
+  deploy was confirmed working). Workers don't take a container,
   and the native `better-sqlite3` build — the reason the Dockerfile existed —
   isn't in the deployed path: a Durable Object's SQLite is built into the
   runtime. It survives as a test dependency, standing in for the DO SQL surface
