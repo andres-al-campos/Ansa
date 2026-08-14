@@ -1,16 +1,27 @@
 #!/usr/bin/env bash
 #
-# Start the whole Ansa stack: the SQLite server and the Vite app together.
+# Start the whole Ansa stack: an API and the Vite app together.
 # No arguments — this is the everyday "run the thing I'm working on" path.
 # Both run with hot reload; Ctrl-C stops both.
 #
-#   ./build.sh              run locally (server + app), the default
+#   ./build.sh              run locally against the Worker, the default
+#   ./build.sh fastify      run against the old Fastify + ansa.db server
 #   ./build.sh deploy       test, then publish the API and the app
 #   ./build.sh deploy api   the Worker only
 #   ./build.sh deploy app   the Pages bundle only
 #
 # Deploy lives here rather than in its own script so there is one entry point
 # and no question about which file is current.
+#
+# The default runs `wrangler dev`, which is the *same code that is deployed* —
+# the Worker, with real Durable Objects, against local throwaway storage. The
+# Fastify server is a second implementation of the same API and is on its way
+# out; until it goes, the default is the real one so the vestigial path isn't
+# the one getting exercised daily.
+#
+# It is also the only local path where live sync works. The client speaks
+# WebSocket; Fastify still serves SSE, so under `./build.sh fastify` edits save
+# but a second tab won't see them until reload.
 #
 set -euo pipefail
 
@@ -19,6 +30,9 @@ cd "$(dirname "$0")"
 
 APP_PORT=5173
 API_PORT=4000
+# wrangler's own default. Distinct from Fastify's 4000 so both can run at once —
+# useful while comparing the two backends, which is the point of keeping Fastify.
+WORKER_PORT=8787
 APP_URL="http://localhost:${APP_PORT}"
 
 # The deployed pieces. The app is a Pages project; the API is a separate Worker
@@ -65,7 +79,8 @@ check_port_free() {
     exit 1
   fi
 }
-check_port_free "$API_PORT" "server"
+# The API port isn't known yet — it depends on which backend was asked for — so
+# that check happens once the argument has been parsed.
 check_port_free "$APP_PORT" "app"
 
 # Track child PIDs so Ctrl-C (or any exit) takes both processes down with us,
@@ -304,20 +319,40 @@ deploy() {
 
 case "${1:-}" in
   deploy) deploy "${2:-both}"; exit 0 ;;
-  '') ;;
+  fastify) BACKEND=fastify ;;
+  '') BACKEND=worker ;;
   *)
     echo "Unknown argument: $1" >&2
-    echo "Usage: ./build.sh [deploy [app|api]]" >&2
+    echo "Usage: ./build.sh [fastify | deploy [app|api]]" >&2
     exit 1
     ;;
 esac
 
-echo "Starting server on http://127.0.0.1:${API_PORT} …"
-npm run server &
+# Which API the app talks to. Both serve the same routes; the Worker is the one
+# that is actually deployed, so it's the default.
+if [ "$BACKEND" = worker ]; then
+  API_PORT=$WORKER_PORT
+  API_CMD=(npx wrangler dev --port "$WORKER_PORT")
+  API_NAME="worker (wrangler dev)"
+  # Vite otherwise defaults BASE to port 4000 — see src/api.ts.
+  export VITE_ANSA_API="http://localhost:${WORKER_PORT}"
+else
+  API_CMD=(npm run server)
+  API_NAME="fastify + ansa.db"
+  echo "Note: live sync doesn't work under fastify — it serves SSE and the" >&2
+  echo "client speaks WebSocket. Edits save; a second tab won't see them." >&2
+fi
+
+check_port_free "$API_PORT" "server"
+
+echo "Starting ${API_NAME} on http://127.0.0.1:${API_PORT} …"
+"${API_CMD[@]}" &
 pids+=($!)
 
-# Wait for the API to answer before starting the app, so the app's first SSE
-# connect finds the server already up.
+# Wait for the API to answer before starting the app, so the app's first
+# connect finds the server already up. wrangler takes ~20s on a cold start,
+# considerably slower than Fastify — hence no timeout here beyond the child
+# check, which is what actually catches a failure.
 while ! curl -sf "http://127.0.0.1:${API_PORT}/api/health" >/dev/null 2>&1; do
   # Check the child first: a dead child plus a healthy curl means something
   # else is on the port, which is a lie we don't want to wait on.
