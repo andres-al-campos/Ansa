@@ -191,20 +191,54 @@ export async function seedIfEmpty(): Promise<boolean> {
 }
 
 /**
+ * What became of a write.
+ *
+ * The distinction is the whole point: 'unreachable' is about the network and
+ * says nothing about the op, so retrying is right. 'rejected' is the server's
+ * verdict on *this* op — it will answer the same way every time, so retrying it
+ * is not persistence, it's a permanent stall that blocks every edit behind it.
+ */
+export type WriteResult =
+  | { status: 'ok' }
+  | { status: 'unreachable' }
+  | { status: 'rejected'; reason: string }
+
+/**
  * Send one operation. The server replays it against its current tree, so an op
  * made against a slightly stale local tree still merges instead of clobbering.
- * Returns false if it didn't reach the server, matching putTree's contract —
- * the caller decides whether that's worth retrying.
+ *
+ * A rejection is not necessarily a bug. The common cause is a race no ordering
+ * can fix: this tab adds a child to a project another device deleted a moment
+ * ago, so by the time the op lands its parent is gone. The op is stale rather
+ * than late, and there is nowhere to put it.
  */
-export async function sendOp(op: Op): Promise<boolean> {
+export async function sendOp(op: Op): Promise<WriteResult> {
+  let res: Response
   try {
-    const res = await fetch(`${BASE}/api/ops`, {
+    res = await fetch(`${BASE}/api/ops`, {
       method: 'POST',
       headers: await headers(),
       body: JSON.stringify({ op }),
     })
-    return res.ok
   } catch {
-    return false
+    // Never reached the server: offline, DNS, a blocked request. The op is
+    // still good.
+    return { status: 'unreachable' }
   }
+  if (res.ok) return { status: 'ok' }
+  // 401/403 are about the session, not the op: a Clerk token expires roughly
+  // every minute, and the op is still perfectly good once a fresh one is
+  // fetched. Discarding edits because a token aged out would lose real work.
+  if (res.status === 401 || res.status === 403) return { status: 'unreachable' }
+  // 4xx is a verdict on the op. 5xx is the server failing at its own job, which
+  // says nothing about whether the op is valid — so that retries like a network
+  // failure rather than being thrown away.
+  if (res.status >= 400 && res.status < 500) {
+    const reason = await res
+      .json()
+      .then((b: { error?: string }) => b?.error ?? `HTTP ${res.status}`)
+      .catch(() => `HTTP ${res.status}`)
+    return { status: 'rejected', reason }
+  }
+  return { status: 'unreachable' }
 }
