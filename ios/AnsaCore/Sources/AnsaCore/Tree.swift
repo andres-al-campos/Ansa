@@ -219,7 +219,7 @@ public enum TreeOps {
     }
 
     /// A nested outline to graft in one call.
-    public struct SubtreeSpec: Sendable {
+    public struct SubtreeSpec: Sendable, Equatable, Codable {
         public let text: String
         public let children: [SubtreeSpec]
         public init(text: String, children: [SubtreeSpec] = []) {
