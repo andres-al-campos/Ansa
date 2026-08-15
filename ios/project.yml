@@ -1,0 +1,61 @@
+# Regenerate the Xcode project with `xcodegen generate` from this directory.
+#
+# The .xcodeproj is not committed: it is generated from this file, so the
+# project settings live in reviewable YAML rather than in a merge-hostile pbxproj.
+# Sources sit flat in Sources/ rather than nested a directory deeper.
+#
+# AnsaCore is a local SwiftPM package, not a copied folder — the app target
+# depends on it the same way the tests do, so `swift test` and the app build
+# exercise the same code.
+name: Ansa
+options:
+  bundleIdPrefix: com.ansa
+  deploymentTarget:
+    iOS: "17.0"
+  createIntermediateGroups: true
+
+packages:
+  AnsaCore:
+    path: AnsaCore
+
+settings:
+  base:
+    # Signing is left to Xcode's automatic mode with a personal team. The team
+    # id is machine-specific, so it is read from Config.xcconfig (gitignored,
+    # see Config.example.xcconfig) rather than committed here.
+    CODE_SIGN_STYLE: Automatic
+    DEVELOPMENT_TEAM: ${DEVELOPMENT_TEAM}
+    SWIFT_VERSION: "6.0"
+    ENABLE_USER_SCRIPT_SANDBOXING: true
+
+configFiles:
+  Debug: Config.xcconfig
+  Release: Config.xcconfig
+
+targets:
+  Ansa:
+    type: application
+    platform: iOS
+    sources:
+      - path: Sources
+    dependencies:
+      - package: AnsaCore
+    info:
+      path: Info.plist
+      properties:
+        CFBundleDisplayName: Ansa
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        # The app talks to a local wrangler dev over plain http during
+        # development. Scoped to localhost rather than a blanket
+        # NSAllowsArbitraryLoads so the production https host is still enforced.
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.ansa.app
+        TARGETED_DEVICE_FAMILY: "1,2"
+        GENERATE_INFOPLIST_FILE: false

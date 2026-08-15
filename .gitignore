@@ -33,3 +33,8 @@ ansa.db-wal
 DerivedData/
 *.xcuserstate
 xcuserdata/
+
+# iOS: generated project and local signing config
+ios/Ansa.xcodeproj/
+ios/Config.xcconfig
+ios/build/

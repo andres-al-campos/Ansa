@@ -1,0 +1,17 @@
+// Copy to Config.xcconfig (gitignored) and fill in your own values.
+//
+//   cp Config.example.xcconfig Config.xcconfig
+//
+// DEVELOPMENT_TEAM is the 10-character Team ID from Xcode → Settings →
+// Accounts → your Apple ID → Manage Certificates, or from
+// developer.apple.com → Membership. It is machine-specific, which is why it
+// lives here rather than in project.yml.
+//
+// A personal (free) Apple ID works. Builds signed that way expire after 7 days
+// and have to be reinstalled.
+DEVELOPMENT_TEAM = XXXXXXXXXX
+
+// The API URL deliberately does not live here. xcconfig treats `//` as a
+// comment even mid-value, so `http://localhost:8787` silently becomes `http:`
+// — a footgun that surfaces as a confusing connection error rather than a build
+// failure. It is set in Sources/Config.swift instead.
