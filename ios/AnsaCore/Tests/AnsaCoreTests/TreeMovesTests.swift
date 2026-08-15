@@ -1,0 +1,505 @@
+/// Ported from the movement half of `shared/tree.test.ts`, case for case.
+///
+/// These matter more than the lookup tests: every function here rewrites
+/// `parentId` and `order`, so a disagreement with the server isn't a wrong-
+/// looking screen, it's an op the server applies somewhere else.
+///
+/// The `invalidTree` shape cases from the TypeScript (a string `order`, a NaN
+/// `createdAt`) are not ported as calls to `invalidTree` — in Swift the decoder
+/// rejects them before a Tree exists, so they are tested as decode failures,
+/// which is where the equivalent guard actually lives. The referential rules
+/// (duplicates, dangling parents, cycles) port directly.
+
+import Foundation
+import Testing
+@testable import AnsaCore
+
+/// The visible row order, the way the app flattens the tree to render it.
+func visibleOrder(_ tree: Tree, _ parentId: NodeId? = nil) -> [NodeId] {
+    var out: [NodeId] = []
+    for child in TreeOps.childrenOf(tree, parentId) {
+        out.append(child.id)
+        if !child.collapsed { out += visibleOrder(tree, child.id) }
+    }
+    return out
+}
+
+@Suite("addSubtree")
+struct AddSubtreeTests {
+    let spec = [
+        TreeOps.SubtreeSpec(
+            text: "Gather",
+            children: [
+                TreeOps.SubtreeSpec(text: "Find the P45"),
+                TreeOps.SubtreeSpec(text: "Download CSV"),
+            ]),
+        TreeOps.SubtreeSpec(text: "Submit"),
+    ]
+
+    @Test("grafts a nested subtree under a parent in one call")
+    func grafts() {
+        let r = TreeOps.addSubtree(fixture(), "taxes", spec)
+        // Two new top-level children plus two grandchildren = 4 ids.
+        #expect(r.ids.count == 4)
+        let (gather, find, download, submit) = (r.ids[0], r.ids[1], r.ids[2], r.ids[3])
+        #expect(TreeOps.byId(r.tree, gather)?.text == "Gather")
+        #expect(TreeOps.byId(r.tree, submit)?.text == "Submit")
+        #expect(TreeOps.childrenOf(r.tree, gather).map(\.id) == [find, download])
+        // Grafted after the existing children of taxes.
+        #expect(
+            TreeOps.childrenOf(r.tree, "taxes").map(\.text)
+                == ["Gather documents", "Fill the forms", "Gather", "Submit"])
+    }
+
+    @Test("creates a brand-new project when parentId is nil")
+    func newProject() {
+        let before = TreeOps.roots(fixture()).count
+        let r = TreeOps.addSubtree(
+            fixture(), nil,
+            [TreeOps.SubtreeSpec(
+                text: "Plan the trip", children: [TreeOps.SubtreeSpec(text: "Book flights")])])
+        #expect(TreeOps.roots(r.tree).count == before + 1)
+        // The first id is the new root — the project id a caller would open.
+        #expect(TreeOps.byId(r.tree, r.ids[0])?.parentId == nil)
+        #expect(TreeOps.byId(r.tree, r.ids[1])?.parentId == r.ids[0])
+    }
+
+    @Test("gives every grafted node a distinct id")
+    func distinctIds() {
+        let ids = TreeOps.addSubtree(fixture(), "taxes", spec).ids
+        #expect(Set(ids).count == ids.count)
+    }
+
+    @Test("siblings within the graft keep a dense 0..n order")
+    func denseOrder() {
+        let r = TreeOps.addSubtree(fixture(), nil, spec)
+        #expect(TreeOps.childrenOf(r.tree, r.ids[0]).map(\.order) == [0, 1])
+    }
+
+    @Test("leaves the original tree untouched")
+    func noMutation() {
+        let t = fixture()
+        _ = TreeOps.addSubtree(t, "taxes", spec)
+        #expect(t == fixture())
+    }
+
+    @Test("a deep spec round-trips through subtreeOf")
+    func deepSpec() {
+        let r = TreeOps.addSubtree(
+            fixture(), nil,
+            [TreeOps.SubtreeSpec(
+                text: "A",
+                children: [TreeOps.SubtreeSpec(
+                    text: "B", children: [TreeOps.SubtreeSpec(text: "C")])])])
+        #expect(TreeOps.subtreeOf(r.tree, r.ids[0]).map(\.text) == ["B", "C"])
+    }
+}
+
+@Suite("indent / outdent")
+struct IndentTests {
+    @Test("indent tucks a node under its preceding sibling, last")
+    func indents() {
+        let t = TreeOps.indent(fixture(), "g2")
+        #expect(TreeOps.childrenOf(t, "gather").map(\.id) == ["g1", "g3"])
+        #expect(TreeOps.childrenOf(t, "g1").map(\.id) == ["g2"])
+    }
+
+    @Test("indent is a no-op for a first child")
+    func indentNoop() {
+        let t = fixture()
+        #expect(TreeOps.indent(t, "g1") == t)
+        #expect(TreeOps.indent(t, "p1") == t)
+    }
+
+    @Test("outdent pops a node up beside its old parent, right after it")
+    func outdents() {
+        let t = TreeOps.outdent(fixture(), "p1a")
+        #expect(TreeOps.byId(t, "p1a")?.parentId == "forms")
+        #expect(TreeOps.childrenOf(t, "forms").map(\.id) == ["p1", "p1a", "p2"])
+        #expect(TreeOps.childrenOf(t, "p1").map(\.id) == ["p1b"])
+    }
+
+    @Test("outdent is a no-op at the root")
+    func outdentNoop() {
+        let t = fixture()
+        #expect(TreeOps.outdent(t, "taxes") == t)
+    }
+
+    @Test("indent then outdent round-trips the parent")
+    func roundTrip() {
+        var t = fixture()
+        t = TreeOps.indent(t, "g2")
+        t = TreeOps.outdent(t, "g2")
+        #expect(TreeOps.byId(t, "g2")?.parentId == "gather")
+        #expect(TreeOps.childrenOf(t, "gather").map(\.id) == ["g1", "g2", "g3"])
+    }
+}
+
+@Suite("adoptFollowing")
+struct AdoptFollowingTests {
+    @Test("nests every following sibling under the node, in order")
+    func nests() {
+        let t = TreeOps.adoptFollowing(fixture(), "g1")
+        #expect(TreeOps.childrenOf(t, "gather").map(\.id) == ["g1"])
+        #expect(TreeOps.childrenOf(t, "g1").map(\.id) == ["g2", "g3"])
+    }
+
+    @Test("appends after any existing children")
+    func appends() {
+        let t = TreeOps.adoptFollowing(fixture(), "p1")
+        #expect(TreeOps.childrenOf(t, "forms").map(\.id) == ["p1"])
+        #expect(TreeOps.childrenOf(t, "p1").map(\.id) == ["p1a", "p1b", "p2"])
+    }
+
+    @Test("moves whole subtrees, keeping their descendants")
+    func keepsDescendants() {
+        let t = TreeOps.adoptFollowing(fixture(), "p1")
+        #expect(TreeOps.childrenOf(t, "p2").map(\.id) == ["p2a", "p2b"])
+    }
+
+    @Test("is a no-op for the last sibling")
+    func lastSibling() {
+        let t = fixture()
+        #expect(TreeOps.adoptFollowing(t, "g3") == t)
+    }
+
+    @Test("is a no-op for an unknown id")
+    func unknownId() {
+        let t = fixture()
+        #expect(TreeOps.adoptFollowing(t, "nope") == t)
+    }
+}
+
+@Suite("moveNode")
+struct MoveNodeTests {
+    @Test("reorders within a parent, and orders stay dense 0..n-1")
+    func reorders() {
+        let t = TreeOps.moveNode(fixture(), "g1", "gather", 3)
+        #expect(TreeOps.childrenOf(t, "gather").map(\.id) == ["g2", "g3", "g1"])
+        #expect(TreeOps.childrenOf(t, "gather").map(\.order) == [0, 1, 2])
+    }
+
+    @Test("moves across parents, closing the source gap and renumbering both")
+    func acrossParents() {
+        let t = TreeOps.moveNode(fixture(), "f1", "gather", 0)
+        #expect(TreeOps.childrenOf(t, "gather").map(\.id) == ["f1", "g1", "g2", "g3"])
+        #expect(TreeOps.childrenOf(t, "gather").map(\.order) == [0, 1, 2, 3])
+        #expect(TreeOps.childrenOf(t, "flat").map(\.id) == ["f2"])
+        #expect(TreeOps.childrenOf(t, "flat").map(\.order) == [0])
+    }
+
+    @Test("nests a node under a leaf, making it a parent")
+    func nestsUnderLeaf() {
+        let t = TreeOps.moveNode(fixture(), "g2", "p1a", 0)
+        #expect(TreeOps.byId(t, "g2")?.parentId == "p1a")
+        #expect(TreeOps.childrenOf(t, "p1a").map(\.id) == ["g2"])
+        #expect(!TreeOps.isLeaf(t, "p1a"))
+    }
+
+    @Test("can promote a node to a new root")
+    func promotes() {
+        let t = TreeOps.moveNode(fixture(), "p2b", nil, 1)
+        #expect(TreeOps.byId(t, "p2b")?.parentId == nil)
+        #expect(TreeOps.roots(t).map(\.id) == ["taxes", "p2b", "flat"])
+    }
+
+    @Test("refuses to drop a node into its own descendant (would cycle)")
+    func refusesCycle() {
+        let t = fixture()
+        #expect(TreeOps.moveNode(t, "forms", "p2b1", 0) == t)
+        #expect(TreeOps.moveNode(t, "forms", "forms", 0) == t)
+    }
+
+    @Test("clamps an out-of-range index")
+    func clamps() {
+        let t = TreeOps.moveNode(fixture(), "f1", "gather", 99)
+        #expect(TreeOps.childrenOf(t, "gather").map(\.id) == ["g1", "g2", "g3", "f1"])
+    }
+
+    @Test("same-parent move to the same slot is a no-op in effect")
+    func sameSlot() {
+        let t = TreeOps.moveNode(fixture(), "g2", "gather", 1)
+        #expect(TreeOps.childrenOf(t, "gather").map(\.id) == ["g1", "g2", "g3"])
+    }
+}
+
+// The drop indicator's X → indent level. Guides sit at GUIDE_X0 + d*INDENT;
+// the same numbers the UI uses, so the maths is exercised end to end.
+private let guideX0 = 32.0
+private let indentPx = 24.0
+private func guideX(_ d: Double) -> Double { guideX0 + d * indentPx }
+
+@Suite("depthAtGap")
+struct DepthAtGapTests {
+    func at(_ x: Double, _ above: Int?, _ below: Int?) -> Int {
+        TreeOps.depthAtGap(
+            clientX: x, aboveDepth: above, belowDepth: below,
+            guideX0: guideX0, indent: indentPx)
+    }
+
+    @Test("rounds the pointer X to the nearest indent stop")
+    func rounds() {
+        #expect(at(guideX(0), 2, 0) == 0)
+        #expect(at(guideX(1), 2, 0) == 1)
+        #expect(at(guideX(2), 2, 0) == 2)
+    }
+
+    @Test("lets you nest one level under the row above, no deeper")
+    func nestOne() {
+        #expect(at(guideX(9), 1, 0) == 2)
+    }
+
+    @Test("will not go shallower than the top level")
+    func floorAtZero() {
+        #expect(at(guideX0 - 200, 2, 1) == 0)
+    }
+
+    @Test("lets a row outdent in place, past the row below it")
+    func outdentInPlace() {
+        // Clamping to the row below made depth 0 unreachable in every gap inside
+        // a parent, so promoting a child meant dragging it past that parent's
+        // whole subtree.
+        #expect(at(guideX(0), 1, 1) == 0)
+        // The row above still bounds how deep you can go.
+        #expect(at(guideX(9), 1, 1) == 2)
+    }
+
+    @Test("at the top of the list (no row above) cannot nest")
+    func topOfList() {
+        #expect(at(guideX(5), nil, 0) == 0)
+    }
+
+    @Test("at the end of the list (no row below) can drop to depth 0")
+    func endOfList() {
+        #expect(at(guideX0 - 200, 2, nil) == 0)
+        #expect(at(guideX(3), 2, nil) == 3)
+    }
+}
+
+@Suite("insertAtDepth")
+struct InsertAtDepthTests {
+    // Scope is `taxes`; anchor `p2b1` gives the deepest chain:
+    // [forms(0), p2(1), p2b(2), p2b1(3)].
+    @Test("deepest depth nests under the anchor itself")
+    func deepest() {
+        let t = TreeOps.insertAtDepth(fixture(), "f1", "p2b1", 4, .after, "taxes")
+        #expect(TreeOps.childrenOf(t, "p2b1").map(\.id) == ["f1"])
+    }
+
+    @Test("one level up sits beside the anchor among its siblings")
+    func besideAnchor() {
+        let t = TreeOps.insertAtDepth(fixture(), "f1", "p2b1", 3, .after, "taxes")
+        #expect(TreeOps.childrenOf(t, "p2b").map(\.id) == ["p2b1", "f1", "p2b2"])
+    }
+
+    @Test("an intermediate depth lands after the branch on the path")
+    func intermediate() {
+        let t = TreeOps.insertAtDepth(fixture(), "f1", "p2b1", 1, .after, "taxes")
+        #expect(TreeOps.childrenOf(t, "forms").map(\.id) == ["p1", "p2", "f1"])
+    }
+
+    @Test("depth 0 lands among the scope's own children")
+    func depthZero() {
+        let t = TreeOps.insertAtDepth(fixture(), "f1", "p2b1", 0, .after, "taxes")
+        #expect(TreeOps.childrenOf(t, "taxes").map(\.id) == ["gather", "forms", "f1"])
+    }
+
+    @Test("'before' inserts on the near side of the row on the path")
+    func before() {
+        let t = TreeOps.insertAtDepth(fixture(), "f1", "g2", 1, .before, "taxes")
+        #expect(TreeOps.childrenOf(t, "gather").map(\.id) == ["g1", "f1", "g2", "g3"])
+    }
+
+    @Test("nesting under an anchor that already has children lands first, not last")
+    func landsFirst() {
+        // The gap sits directly under `gather`, so the drop is visually just
+        // above g1. Appending after g3 would put the row where the pointer
+        // never was.
+        let t = TreeOps.insertAtDepth(fixture(), "f1", "gather", 1, .after, "taxes")
+        #expect(TreeOps.childrenOf(t, "gather").map(\.id) == ["f1", "g1", "g2", "g3"])
+    }
+
+    @Test("nesting under a collapsed anchor still lands first")
+    func collapsedAnchor() {
+        let t = TreeOps.insertAtDepth(fixture(), "f2", "p2b", 3, .after, "taxes")
+        #expect(TreeOps.childrenOf(t, "p2b").map(\.id) == ["f2", "p2b1", "p2b2"])
+    }
+
+    @Test("handles a nil scope (root-level list)")
+    func nilScope() {
+        let t = TreeOps.insertAtDepth(fixture(), "f1", "g2", 0, .after, nil)
+        #expect(TreeOps.roots(t).map(\.id) == ["taxes", "f1", "flat"])
+    }
+}
+
+@Suite("moveRow")
+struct MoveRowTests {
+    @Test("moves a row down past a plain sibling")
+    func down() {
+        let t = TreeOps.moveRow(fixture(), "g1", .down, visibleOrder(fixture()))
+        #expect(TreeOps.childrenOf(t, "gather").map(\.id) == ["g2", "g1", "g3"])
+    }
+
+    @Test("moves a row up past a plain sibling")
+    func up() {
+        let t = TreeOps.moveRow(fixture(), "g3", .up, visibleOrder(fixture()))
+        #expect(TreeOps.childrenOf(t, "gather").map(\.id) == ["g1", "g3", "g2"])
+    }
+
+    @Test("crosses out of its parent when it runs off the top")
+    func offTop() {
+        let t = TreeOps.moveRow(fixture(), "g1", .up, visibleOrder(fixture()))
+        #expect(TreeOps.childrenOf(t, "taxes").map(\.id) == ["g1", "gather", "forms"])
+    }
+
+    @Test("crosses out of its parent when it runs off the bottom")
+    func offBottom() {
+        // forms is an open parent, so g3 steps inside it.
+        let t = TreeOps.moveRow(fixture(), "g3", .down, visibleOrder(fixture()))
+        #expect(TreeOps.childrenOf(t, "forms").map(\.id) == ["g3", "p1", "p2"])
+    }
+
+    @Test("steps over a folded parent rather than into it")
+    func foldedParent() {
+        let base = fixture().map { node -> Node in
+            guard node.id == "forms" else { return node }
+            var n = node
+            n.collapsed = true
+            return n
+        }
+        let t = TreeOps.moveRow(base, "g3", .down, visibleOrder(base))
+        #expect(TreeOps.childrenOf(t, "taxes").map(\.id) == ["gather", "forms", "g3"])
+        #expect(TreeOps.childrenOf(t, "forms").map(\.id) == ["p1", "p2"])
+    }
+
+    @Test("carries its own subtree, stepping over it rather than into it")
+    func carriesSubtree() {
+        let t = TreeOps.moveRow(fixture(), "gather", .down, visibleOrder(fixture()))
+        #expect(TreeOps.childrenOf(t, "forms").map(\.id) == ["gather", "p1", "p2"])
+        #expect(TreeOps.childrenOf(t, "gather").map(\.id) == ["g1", "g2", "g3"])
+    }
+
+    @Test("does nothing at the very top or the very bottom")
+    func ends() {
+        let base = fixture()
+        #expect(TreeOps.moveRow(base, "taxes", .up, visibleOrder(base)) == base)
+        #expect(TreeOps.moveRow(base, "f2", .down, visibleOrder(base)) == base)
+    }
+}
+
+@Suite("invalidTree — the referential rules")
+struct InvalidTreeTests {
+    func node(_ id: NodeId, _ parentId: NodeId?) -> Node {
+        Node(id: id, parentId: parentId, text: id, order: 0, createdAt: 0)
+    }
+
+    @Test("accepts a well-formed tree")
+    func accepts() {
+        #expect(TreeOps.invalidTree([node("a", nil), node("b", "a")]) == nil)
+    }
+
+    @Test("accepts an empty tree")
+    func acceptsEmpty() {
+        // A database with no projects is a legitimate state, not a broken one.
+        #expect(TreeOps.invalidTree([]) == nil)
+    }
+
+    @Test("rejects duplicate ids")
+    func duplicates() {
+        // byId would find one node while removeNode drops both.
+        #expect(TreeOps.invalidTree([node("a", nil), node("a", nil)]) == "duplicate node id: a")
+    }
+
+    @Test("rejects a parentId that points at nothing")
+    func dangling() {
+        let bad = TreeOps.invalidTree([node("a", nil), node("b", "ghost")])
+        #expect(bad?.contains("parentId that doesn't exist") == true)
+    }
+
+    @Test("rejects a node that is its own parent")
+    func selfParent() {
+        #expect(TreeOps.invalidTree([node("a", "a")]) == "node a is its own ancestor")
+    }
+
+    @Test("rejects a longer parent cycle")
+    func longCycle() {
+        let bad = TreeOps.invalidTree([node("a", "c"), node("b", "a"), node("c", "b")])
+        #expect(bad?.contains("own ancestor") == true)
+    }
+
+    @Test("accepts a deep chain without mistaking it for a cycle")
+    func deepChain() {
+        // Depth alone must not trip the cycle check — the memoisation is what
+        // keeps this linear, and a bug there shows up as a false rejection.
+        let chain = (0..<500).map { i in node("n\(i)", i == 0 ? nil : "n\(i - 1)") }
+        #expect(TreeOps.invalidTree(chain) == nil)
+    }
+
+    @Test("the decoder rejects the shape errors invalidTree checks in TypeScript")
+    func decoderGuardsShape() throws {
+        // In TypeScript invalidTree does this work because JSON.parse produces
+        // anything. Here the decoder is the guard, so that is what gets tested.
+        let cases = [
+            #"[{"id":"a","parentId":null,"text":"a","done":false,"order":"3","collapsed":false,"createdAt":0}]"#,
+            #"[{"id":"a","parentId":null,"text":"a","done":false,"order":0,"collapsed":false,"createdAt":"0"}]"#,
+            #"[{"id":"a","parentId":null,"text":"a","done":false,"order":0,"collapsed":false,"createdAt":0,"pinned":"yes"}]"#,
+            #"[{"id":"b"}]"#,
+        ]
+        for json in cases {
+            #expect(throws: (any Error).self) {
+                try JSONDecoder().decode(Tree.self, from: Data(json.utf8))
+            }
+        }
+    }
+
+    @Test("tolerates unknown extra keys")
+    func extraKeys() throws {
+        // A field from a newer client shouldn't make the tree unreadable.
+        let json = #"[{"id":"a","parentId":null,"text":"a","done":false,"order":0,"collapsed":false,"createdAt":0,"somethingNew":1}]"#
+        let tree = try JSONDecoder().decode(Tree.self, from: Data(json.utf8))
+        #expect(TreeOps.invalidTree(tree) == nil)
+    }
+
+    @Test("accepts the optional root-only fields when present")
+    func optionalFields() {
+        var n = node("a", nil)
+        n.pinned = true
+        n.lastOpenedAt = 123
+        #expect(TreeOps.invalidTree([n]) == nil)
+    }
+}
+
+@Suite("projects")
+struct ProjectTests {
+    func pinning(_ ids: [NodeId]) -> Tree {
+        fixture().map { node in
+            guard ids.contains(node.id) else { return node }
+            var n = node
+            n.pinned = true
+            return n
+        }
+    }
+
+    @Test("splits roots into pinned and unpinned, both in manual order")
+    func splits() {
+        let s = TreeOps.projectSections(pinning(["flat"]))
+        #expect(s.pinned.map(\.id) == ["flat"])
+        #expect(s.unpinned.map(\.id) == ["taxes"])
+    }
+
+    @Test("the flat list puts pinned first")
+    func flatList() {
+        #expect(TreeOps.projectList(pinning(["flat"])).map(\.id) == ["flat", "taxes"])
+        // Unpinned keeps the tree's own order.
+        #expect(TreeOps.projectList(fixture()).map(\.id) == ["taxes", "flat"])
+    }
+
+    @Test("depthOf counts edges from the root")
+    func depth() {
+        let t = fixture()
+        #expect(TreeOps.depthOf(t, "taxes") == 0)
+        #expect(TreeOps.depthOf(t, "gather") == 1)
+        // taxes → forms → p2 → p2b → p2b1
+        #expect(TreeOps.depthOf(t, "p2b1") == 4)
+    }
+}
