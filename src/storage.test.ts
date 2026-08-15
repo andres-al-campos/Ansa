@@ -1,5 +1,6 @@
-import { describe, expect, it } from 'vitest'
-import { exportTree, parseTree } from './storage'
+import { beforeEach, describe, expect, it } from 'vitest'
+import { exportTree, loadQueue, parseTree, saveQueue } from './storage'
+import type { Op } from '@shared/ops'
 import { seedTree } from '@shared/seed'
 
 describe('parseTree', () => {
@@ -51,5 +52,58 @@ describe('parseTree', () => {
 
   it('accepts an empty tree', () => {
     expect(parseTree('[]')).toEqual([])
+  })
+})
+
+describe('the persisted op queue', () => {
+  beforeEach(() => {
+    localStorage.clear()
+  })
+
+  it('round-trips ops in order', () => {
+    const ops: Op[] = [
+      { op: 'setText', id: 'a', text: 'hello' },
+      { op: 'indent', id: 'b' },
+      { op: 'setDone', id: 'c', done: true },
+    ]
+    saveQueue(ops)
+    expect(loadQueue()).toEqual(ops)
+  })
+
+  it('is empty when nothing was ever saved', () => {
+    expect(loadQueue()).toEqual([])
+  })
+
+  it('clears the key when the queue drains, rather than storing []', () => {
+    saveQueue([{ op: 'indent', id: 'a' }])
+    saveQueue([])
+    expect(localStorage.getItem('ansa.queue.v1')).toBeNull()
+    expect(loadQueue()).toEqual([])
+  })
+
+  it('survives a corrupt blob instead of crashing the boot', () => {
+    localStorage.setItem('ansa.queue.v1', '{not json')
+    expect(loadQueue()).toEqual([])
+    localStorage.setItem('ansa.queue.v1', '{"op":"setText"}')
+    expect(loadQueue()).toEqual([])
+  })
+
+  it('drops entries that are not ops, keeping the rest', () => {
+    // Shallow on purpose — the server is what validates an op's fields. This
+    // only has to stop junk from reaching the send loop.
+    localStorage.setItem(
+      'ansa.queue.v1',
+      JSON.stringify([
+        { op: 'indent', id: 'a' },
+        null,
+        'a string',
+        { op: 'notARealOp', id: 'b' },
+        { op: 'setDone', id: 'c', done: false },
+      ]),
+    )
+    expect(loadQueue()).toEqual([
+      { op: 'indent', id: 'a' },
+      { op: 'setDone', id: 'c', done: false },
+    ])
   })
 })

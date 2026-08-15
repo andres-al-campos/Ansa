@@ -462,3 +462,39 @@ test('a refused edit is shown to the user, and can be dismissed', async () => {
   expect(container.querySelector('.sync-toast-warn')).toBeNull()
   logged.mockRestore()
 })
+
+test('a queue left behind by a killed run is sent on the next one', async () => {
+  // The scenario this exists for: edits made offline, then the tab closed (or
+  // the phone app killed by the OS) before they could go out. The tree is in
+  // localStorage but the ops are what tell the server about it, so losing them
+  // means the server's next broadcast silently overwrites that work.
+  localStorage.setItem(
+    'ansa.queue.v1',
+    JSON.stringify([{ op: 'setText', id: 'ghost', text: 'written before the crash' }]),
+  )
+
+  const { default: Outliner } = await import('./Outliner')
+  const seed = seedTree()
+  const { container } = render(<Outliner initial={seed} />)
+  const stream = await streamOpen()
+  scopeIntoProject(container)
+
+  // Still held: a restored op is in exactly the same position as one made while
+  // disconnected, so it waits for the real baseline like any other.
+  expect(sendOp).not.toHaveBeenCalled()
+
+  await act(async () => {
+    stream.emit(seed)
+  })
+
+  // First out, ahead of the markOpened that scoping into the project queued
+  // behind it — the restored ops are older, and order is the whole contract.
+  expect(sendOp.mock.calls[0][0]).toEqual({
+    op: 'setText',
+    id: 'ghost',
+    text: 'written before the crash',
+  })
+  expect(sentOps()).toEqual(['setText', 'markOpened'])
+  // Delivered, so it must not be replayed again on the run after this one.
+  expect(localStorage.getItem('ansa.queue.v1')).toBeNull()
+})

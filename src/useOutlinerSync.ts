@@ -18,6 +18,13 @@
  *    real tree afterwards is right, but sending them while we're still guessing
  *    at the baseline is not.
  *
+ *  - **Death.** The queue is persisted, so it can outlive the process — a tab
+ *    closed while offline, or a phone app the OS killed, still delivers its
+ *    edits on the next run. This falls out of the rule above rather than needing
+ *    its own: a restored op is held until the first adopt and then replayed onto
+ *    the server's tree, which is the same treatment an op made while
+ *    disconnected already got.
+ *
  *  - **Interruption.** An incoming tree must not be swapped in while the user is
  *    mid-edit or mid-drag, so it's stashed and adopted the moment they're idle.
  *
@@ -37,6 +44,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Op } from '@shared/ops'
 import type { Tree } from '@shared/tree'
 import { eventsUrl, ORIGIN, sendOp } from './api'
+import { loadQueue, saveQueue } from './storage'
 
 // Reconnect delay, doubling from the first to the second on repeated failure.
 // The floor is short because the common case is a healthy tab whose socket was
@@ -93,8 +101,10 @@ export function useOutlinerSync({
   // Whether the server's authoritative tree has been adopted at least once.
   // Until it has, queued ops stay put — see the stale-cache note above.
   const synced = useRef(false)
-  // Ops waiting to go out, oldest first.
-  const queue = useRef<Op[]>([])
+  // Ops waiting to go out, oldest first. Restored from localStorage so that ops
+  // written by a previous run — one the OS killed, or a quit while offline —
+  // still reach the server. Every mutation goes through persistQueue.
+  const queue = useRef<Op[]>(loadQueue())
   // True while a send is in flight, so the queue drains strictly in order.
   const sending = useRef(false)
   // A tree that arrived while the user was busy, waiting for them to stop.
@@ -128,6 +138,13 @@ export function useOutlinerSync({
   //    block every later edit forever while the tab looked healthy. The usual
   //    cause is a lost race — the op's parent was deleted on another device —
   //    and the server's next broadcast is what puts this tab back in step.
+  // Mirror the queue to localStorage after every change. Called on each shift
+  // rather than once at the end of the drain, because the tab can die mid-drain
+  // and the stored copy has to match what has actually gone out.
+  const persistQueue = useCallback(() => {
+    saveQueue(queue.current)
+  }, [])
+
   const drain = useCallback(async () => {
     if (sending.current || !synced.current) return
     sending.current = true
@@ -137,6 +154,7 @@ export function useOutlinerSync({
         const result = await sendOp(op)
         if (result.status === 'unreachable') break
         queue.current.shift()
+        persistQueue()
         if (result.status === 'rejected') {
           // Loud in the console because a malformed op is a client bug and
           // should be debuggable; plain in the UI because the common cause is
@@ -148,15 +166,16 @@ export function useOutlinerSync({
     } finally {
       sending.current = false
     }
-  }, [])
+  }, [persistQueue])
 
   const send = useCallback(
     (...ops: Op[]) => {
       if (ops.length === 0) return
       queue.current.push(...ops)
+      persistQueue()
       void drain()
     },
-    [drain],
+    [drain, persistQueue],
   )
 
   // Adopting is not a local change, so it must not enqueue anything: the tree we
