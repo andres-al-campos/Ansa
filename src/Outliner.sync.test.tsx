@@ -498,3 +498,67 @@ test('a queue left behind by a killed run is sent on the next one', async () => 
   // Delivered, so it must not be replayed again on the run after this one.
   expect(localStorage.getItem('ansa.queue.v1')).toBeNull()
 })
+
+test('opens where the last session left off, not on the project list', async () => {
+  const { default: Outliner } = await import('./Outliner')
+  // A cache that already knows the flat was the last thing worked on.
+  const seed = seedTree()
+  const flat = seed.find((n) => n.parentId === null && /flat/i.test(n.text))!
+  const cached = seed.map((n) => (n.id === flat.id ? { ...n, lastOpenedAt: 5_000 } : n))
+
+  const { container } = render(<Outliner initial={cached} />)
+  await streamOpen()
+
+  // Scoped in: task rows (checkboxes) are showing without anyone clicking a
+  // project. On the home list there are none.
+  expect(container.querySelector('[role="checkbox"]')).not.toBeNull()
+})
+
+test('the home list is still where an untouched tree lands', async () => {
+  const { default: Outliner } = await import('./Outliner')
+  const { container } = render(<Outliner initial={seedTree()} />)
+  await streamOpen()
+  expect(container.querySelector('[role="checkbox"]')).toBeNull()
+  expect(container.querySelectorAll('button.proj').length).toBeGreaterThan(0)
+})
+
+test('the server tree corrects a resume guessed from an empty cache', async () => {
+  const { default: Outliner } = await import('./Outliner')
+  // A fresh device: nothing cached, so the mount-time guess is "home".
+  const { container } = render(<Outliner initial={[]} />)
+  const stream = await streamOpen()
+  expect(container.querySelector('[role="checkbox"]')).toBeNull()
+
+  // The account's real tree arrives, carrying where this user actually was.
+  const seed = seedTree()
+  const flat = seed.find((n) => n.parentId === null && /flat/i.test(n.text))!
+  await act(async () => {
+    stream.emit(seed.map((n) => (n.id === flat.id ? { ...n, lastOpenedAt: 5_000 } : n)))
+  })
+
+  expect(container.querySelector('[role="checkbox"]')).not.toBeNull()
+})
+
+test('adopting never yanks you out of a project you opened yourself', async () => {
+  const { default: Outliner } = await import('./Outliner')
+  const seed = seedTree()
+  const { container } = render(<Outliner initial={seed} />)
+  const stream = await streamOpen()
+
+  // The user goes home deliberately — the one place a stale resume would be
+  // most annoying to be dragged back out of.
+  scopeIntoProject(container)
+  const home = container.querySelector('button.brand') as HTMLElement
+  await act(async () => {
+    home.click()
+  })
+  expect(container.querySelector('[role="checkbox"]')).toBeNull()
+
+  // A broadcast lands that would otherwise resume into a project.
+  const flat = seed.find((n) => n.parentId === null && /flat/i.test(n.text))!
+  await act(async () => {
+    stream.emit(seed.map((n) => (n.id === flat.id ? { ...n, lastOpenedAt: 9_000 } : n)))
+  })
+
+  expect(container.querySelector('[role="checkbox"]')).toBeNull()
+})

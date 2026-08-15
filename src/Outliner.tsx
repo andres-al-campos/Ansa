@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { exportTree, parseTree, saveTree } from './storage'
 import { putTree } from './api'
 import { dropTargetAt, measureRows, type DropTarget } from './dropTarget'
@@ -31,6 +31,7 @@ import {
   projectList,
   projectSections,
   removeNode,
+  resumeScope,
   roots,
   setDone,
   setPinned,
@@ -216,7 +217,27 @@ export default function Outliner({ initial }: { initial: Tree }) {
     })
   }
 
-  const [scope, setScope] = useState<NodeId | null>(null)
+  // Land where the last session left off rather than on the full project list.
+  // The rule itself lives in shared/tree.ts, so every client resumes alike and
+  // changing where you land is one pure function away.
+  const [scope, setScopeRaw] = useState<NodeId | null>(() => resumeScope(initial))
+  // True until the user navigates themselves. `initial` is the localStorage
+  // cache, which on a new device is empty and on an old one can be behind, so
+  // the first resume is a guess made from a tree we don't trust yet. When the
+  // server's real tree lands we take its answer instead — but only while this
+  // is still untouched, or adopting would yank you out of a project you had
+  // already opened by hand.
+  const autoScope = useRef(true)
+
+  // Navigate. Every user-initiated scope change goes through here rather than
+  // touching the setter, so that "the user has chosen where they are" is
+  // recorded in one place instead of at a dozen call sites that a new one could
+  // forget to join. The resume path deliberately doesn't use this.
+  const setScope = useCallback((id: NodeId | null) => {
+    autoScope.current = false
+    setScopeRaw(id)
+  }, [])
+
   const [leafOnly, setLeafOnly] = useState(false)
 
   // Enter a project: scope into it and stamp it as just-opened so it rises in
@@ -308,7 +329,14 @@ export default function Outliner({ initial }: { initial: Tree }) {
   // handlers all over this component) needs to reach it.
   const sync = useOutlinerSync({
     busy: editing !== null || dragId !== null,
-    onAdopt: (next) => setHistory((h) => ({ ...h, present: next })),
+    onAdopt: (next) => {
+      setHistory((h) => ({ ...h, present: next }))
+      // Re-resume against the authoritative tree. The mount-time guess came
+      // from the localStorage cache, which is empty on a new device and can be
+      // behind on an old one — this is the first tree worth trusting. Skipped
+      // once the user has navigated, so it never moves the view under them.
+      if (autoScope.current) setScopeRaw(resumeScope(next))
+    },
   })
   const syncRef = useRef(sync)
   syncRef.current = sync

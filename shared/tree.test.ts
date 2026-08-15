@@ -18,6 +18,7 @@ import {
   outdent,
   progressOf,
   removeNode,
+  resumeScope,
   roots,
   setDone,
   subtreeOf,
@@ -670,5 +671,42 @@ describe('newId', () => {
     // would have passed on timestamp alone and the test would prove nothing.
     expect(Date.now() - now).toBeLessThan(50)
     expect(new Set(ids).size).toBe(ids.length)
+  })
+})
+
+describe('resumeScope — where to land on open', () => {
+  const withOpened = (stamps: Record<string, number>): Tree =>
+    fixture().map((n) => (stamps[n.id] !== undefined ? { ...n, lastOpenedAt: stamps[n.id] } : n))
+
+  it('returns the most recently opened project', () => {
+    expect(resumeScope(withOpened({ taxes: 100, flat: 200 }))).toBe('flat')
+    expect(resumeScope(withOpened({ taxes: 300, flat: 200 }))).toBe('taxes')
+  })
+
+  it('lands on the home list when nothing has been opened', () => {
+    expect(resumeScope(fixture())).toBeNull()
+  })
+
+  it('lands on the home list for an empty tree', () => {
+    expect(resumeScope([])).toBeNull()
+  })
+
+  it('ignores a stamp on a non-root, so a stale deep scope cannot strand you', () => {
+    // markOpened only ever stamps roots, but a hand-edited or migrated tree
+    // could carry one lower down. Resuming into a subtask would drop you
+    // somewhere with no visible context.
+    expect(resumeScope(withOpened({ gather: 900 }))).toBeNull()
+  })
+
+  it('ignores projects that have never been opened', () => {
+    // `flat` is unstamped, so it loses to taxes regardless of tree order.
+    expect(resumeScope(withOpened({ taxes: 1 }))).toBe('taxes')
+  })
+
+  it('is unaffected by pinning, which orders the list rather than the landing', () => {
+    const t = withOpened({ taxes: 100, flat: 200 }).map((n) =>
+      n.id === 'taxes' ? { ...n, pinned: true } : n,
+    )
+    expect(resumeScope(t)).toBe('flat')
   })
 })

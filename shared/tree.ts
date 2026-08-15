@@ -405,6 +405,33 @@ export function projectList(tree: Tree): Node[] {
   return [...pinned, ...unpinned]
 }
 
+/**
+ * Where to land on open: the project last worked in, or null for the home list.
+ *
+ * The point is not to greet you with a wall of every project you have ever
+ * started. Landing where you left off means the first thing on screen is the
+ * thing you were already doing, which is most of what a "what should I do now"
+ * view has to get right.
+ *
+ * Derived from `lastOpenedAt` in the tree rather than from local storage, so it
+ * follows the account rather than the device: pick the phone up after working at
+ * the desk and it opens the same project. It also needs no new state to keep in
+ * step — `markOpened` already stamps this on every visit.
+ *
+ * Root-level on purpose. It restores the project, not a deep sub-scope, because
+ * the project is the unit you navigate by and a stale deep scope is more
+ * disorienting than helpful. Deliberately the whole rule for now: change this
+ * one function to change where every client lands, and nothing else moves.
+ */
+export function resumeScope(tree: Tree): NodeId | null {
+  let best: Node | null = null
+  for (const r of roots(tree)) {
+    if (r.lastOpenedAt === undefined) continue
+    if (best === null || r.lastOpenedAt > best.lastOpenedAt!) best = r
+  }
+  return best?.id ?? null
+}
+
 /** True when `maybeAncestor` is at or above `id` — used to block cyclic moves. */
 export function isAncestor(tree: Tree, maybeAncestor: NodeId, id: NodeId): boolean {
   return lineageOf(tree, id).some((n) => n.id === maybeAncestor)
