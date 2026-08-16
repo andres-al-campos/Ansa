@@ -132,6 +132,22 @@ public final class SyncClient {
         Task { await drain() }
     }
 
+    /// Adopt a tree fetched over HTTP at startup.
+    ///
+    /// The socket alone is not enough to get going: its first broadcast only
+    /// arrives when something *changes*, so an app opened to an unchanged tree
+    /// would sit on its cached copy indefinitely — and, because the first adopt
+    /// is what releases held ops, would never send the edits it restored from
+    /// the last run either.
+    ///
+    /// Ignored once the socket has already delivered a baseline, which is
+    /// fresher than anything a fetch started at the same moment can be.
+    public func adoptInitial(_ tree: Tree) {
+        guard !synced else { return }
+        adopt(tree)
+        Task { await drain() }
+    }
+
     /// Tell the client the user started or stopped editing.
     public func setBusy(_ value: Bool) {
         busy = value

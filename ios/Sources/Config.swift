@@ -17,6 +17,16 @@ enum Config {
     /// uses, so both clients address the same Durable Object per account.
     static let prodAPI = URL(string: "https://ansa.id3arium.workers.dev")!
 
+    /// Who a debug build claims to be when the local Worker is running its dev
+    /// stub (no Clerk key configured).
+    ///
+    /// The stub keys each account's Durable Object off this header, so a
+    /// distinct name here is a completely separate tree. That is the point: the
+    /// simulator can be developed against without any risk to the real `legacy`
+    /// tree the browser is using on the same server. A Clerk-backed server
+    /// ignores this entirely and uses the bearer token.
+    static let devUser = "ios-dev"
+
     /// Debug builds talk to the local Worker so the phone exercises the same
     /// backend `./build.sh` runs.
     static var apiBase: URL {

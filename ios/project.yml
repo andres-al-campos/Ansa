@@ -40,6 +40,9 @@ targets:
       - path: Sources
     dependencies:
       - package: AnsaCore
+        product: AnsaCore
+      - package: AnsaCore
+        product: AnsaSync
     info:
       path: Info.plist
       properties:
