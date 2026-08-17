@@ -101,78 +101,32 @@ Re-run without the output filter to see the full log:
   printf '%s' "$app"
 }
 
-# The devicectl identifier of a phone with a live tunnel, or empty.
+# The identifier of a paired iPhone, or instructions for pairing one.
+#
+# Any paired phone counts, including one the listing calls "disconnected".
+# That state is stale rather than true — `list devices` reports the last
+# session until something opens a tunnel, and `devicectl install` opens one
+# itself. Requiring a live tunnel here rejects phones that would install fine.
 #
 # Only devicectl needs an id: the build targets generic/platform=iOS, so
-# xcodebuild never has to be told which phone this is. That also avoids its
-# separate naming scheme — it identifies a device by hardware ECID and rejects
-# devicectl's UUID with "unable to find a device matching the destination
-# specifier", which reads like the phone is absent rather than misidentified.
-connected_udid() {
-  xcrun devicectl list devices -j - 2>/dev/null \
-    | python3 -c 'import json,sys
-try: devs=json.load(sys.stdin)["result"]["devices"]
-except Exception: devs=[]
-ready=[d for d in devs
-       if d.get("connectionProperties",{}).get("tunnelState") not in (None,"unavailable","disconnected")]
-print(ready[0]["identifier"] if ready else "")' 2>/dev/null || true
-}
-
-# The connected iPhone's identifier, or instructions for getting one.
-#
-# Requires a live connection rather than accepting any paired device: a phone
-# paired once is listed forever, and installing to an absent one fails with a
-# far less obvious message than this function's.
+# xcodebuild is never told which phone this is. That also sidesteps its separate
+# naming scheme — it wants a hardware ECID and rejects devicectl's UUID with
+# "unable to find a device matching the destination specifier".
 device_udid() {
-  local udid known
+  local udid
+  udid=$(xcrun devicectl list devices 2>/dev/null \
+    | grep -i available \
+    | grep -oiE '[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}' \
+    | head -1) || udid=""
 
-  udid=$(connected_udid)
   [ -n "$udid" ] && { printf '%s' "$udid"; return; }
 
-  # `list devices` is lazy: for a Wi-Fi-paired phone it reports the state from
-  # the last session and will sit at "disconnected" indefinitely, even with the
-  # phone awake on the same network. Asking for details opens the tunnel, after
-  # which the listing reports it correctly. Without this a wireless phone looks
-  # permanently absent.
-  known=$(xcrun devicectl list devices -j - 2>/dev/null \
-    | python3 -c 'import json,sys
-try: print(json.load(sys.stdin)["result"]["devices"][0]["identifier"])
-except Exception: print("")' 2>/dev/null) || known=""
+  die "No iPhone paired with this Mac.
 
-  if [ -n "$known" ]; then
-    echo "Waking $known over Wi-Fi…" >&2
-    xcrun devicectl device info details --device "$known" >/dev/null 2>&1 || true
-    udid=$(connected_udid)
-    [ -n "$udid" ] && { printf '%s' "$udid"; return; }
-  fi
+Pair it over Wi-Fi in Xcode → Window → Devices and Simulators, or connect it
+by USB and tap Trust on the phone.
 
-  # Report what is actually wrong with the phone we know about, rather than a
-  # generic "connect a device": a paired phone fails for a different reason than
-  # no phone at all, and the fix differs.
-  local paired transport
-  paired=$(xcrun devicectl list devices 2>/dev/null | awk 'NR>2 && NF' | head -1)
-  transport=$(xcrun devicectl list devices -j - 2>/dev/null \
-    | python3 -c 'import json,sys
-try: d=json.load(sys.stdin)["result"]["devices"][0]["connectionProperties"]
-except Exception: print(""); raise SystemExit
-print(d.get("transportType",""))' 2>/dev/null) || transport=""
-
-  [ -n "$paired" ] || die "No iPhone is paired with this Mac.
-
-Connect it by USB, unlock it, and tap Trust when the phone asks."
-
-  die "Your iPhone is paired but would not connect, even after waking it.
-
-$paired
-
-$([ "$transport" = localNetwork ] && cat <<'WIFI'
-It is paired over Wi-Fi. Unlock the phone and make sure it is on the same
-network as this Mac — a locked, idle phone stops answering, which is the usual
-cause. Cellular instead of Wi-Fi will do it too.
-WIFI
-)
-Check it with:  xcrun devicectl list devices
-The State column has to read 'connected' before a build can install."
+Check it with:  xcrun devicectl list devices"
 }
 
 case "${1:-run}" in
@@ -234,8 +188,10 @@ has your Apple ID, and that the bundle id is one your team can claim.")
     done
     [ "$installed" = 1 ] || die "Install failed after 3 attempts.
 
-Keep the phone unlocked and on the same network, then run this again.
-The signed app is at ${app} if you want to install it from Xcode instead."
+Wake the phone and check it is on the same network as this Mac — a sleeping
+phone on Wi-Fi is the usual cause. Then run this again.
+
+The signed app is at ${app} if you would rather install it from Xcode."
 
     # Launching is allowed to fail where installing is not. iOS refuses to open
     # an app on a locked phone, and that says nothing about the build — the new
