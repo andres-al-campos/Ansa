@@ -2,13 +2,20 @@
 #
 # Build and run the Ansa iOS app.
 #
-#   ./build.sh              boot a simulator, build, install, launch
-#   ./build.sh test         run the AnsaCore suite (no simulator needed)
+#   ./build.sh              build for the connected iPhone, install, launch
+#   ./build.sh sim          the same, on a simulator, against a local wrangler
+#   ./build.sh test         run the AnsaCore suite (no device needed)
 #   ./build.sh wire         check the Swift op encoding against the server
 #   ./build.sh clean        drop the generated project and build output
 #
-# No-arg leaves the app actually running on a booted simulator, rather than
-# stopping at a .app in a build directory — same rule as the repo-root build.sh.
+# No-arg leaves the app installed and running on the phone, rather than stopping
+# at a .app in a build directory — same rule as the repo-root build.sh.
+#
+# The phone gets a Release build, which points at the deployed Worker. That is
+# not only about optimisation: a Debug build hardcodes http://localhost:8787,
+# and on the phone localhost is the phone, so a debug build installed on a
+# device talks to nothing. The simulator shares the Mac's network and so is the
+# one place a local wrangler is reachable — which is what `sim` is for.
 #
 set -euo pipefail
 
@@ -68,6 +75,61 @@ generate() {
   xcodegen generate --quiet
 }
 
+# Everything both targets need before xcodebuild runs.
+prepare() {
+  require_config
+  generate
+  echo "Building…"
+  # Exported rather than passed as an argument: a build setting on the command
+  # line is visible to every other process via ps, and lands in shell history.
+  # xcodebuild picks up ANSA_CLERK_PUBLISHABLE_KEY from the environment and
+  # substitutes it into Info.plist.
+  export ANSA_CLERK_PUBLISHABLE_KEY
+  ANSA_CLERK_PUBLISHABLE_KEY=$(clerk_key)
+}
+
+# The .app xcodebuild just produced, or a failure that says how to see why.
+built_app() {
+  local dir=$1 app="build/Build/Products/$1/${SCHEME}.app"
+  [ -d "$app" ] || die "Build produced no app at ${app}. Re-run without the filter to see why:
+  xcodebuild -project Ansa.xcodeproj -scheme ${SCHEME} -derivedDataPath build build"
+  printf '%s' "$app"
+}
+
+# The connected iPhone's identifier, or instructions for getting one.
+#
+# Requires a live connection rather than accepting any paired device. A phone
+# that has been paired once is listed forever, but xcodebuild will not accept it
+# as a destination while it is away — and that failure surfaces as a wall of
+# simulator names and "unable to find a device matching the destination
+# specifier", which says nothing about the phone being unplugged.
+device_udid() {
+  local udid names
+  udid=$(xcrun devicectl list devices -j - 2>/dev/null \
+    | python3 -c 'import json,sys
+try: devs=json.load(sys.stdin)["result"]["devices"]
+except Exception: devs=[]
+ready=[d for d in devs
+       if d.get("connectionProperties",{}).get("tunnelState") not in (None,"unavailable","disconnected")]
+print(ready[0]["identifier"] if ready else "")' 2>/dev/null) || udid=""
+
+  [ -n "$udid" ] && { printf '%s' "$udid"; return; }
+
+  # Name the paired-but-absent phone when there is one: "connect your iPhone"
+  # is unhelpful if it is already plugged in and merely locked.
+  names=$(xcrun devicectl list devices 2>/dev/null | awk 'NR>2 && NF {print "  " $1 " " $2}' | head -5)
+  die "No connected iPhone.
+${names:+
+Paired, but not currently reachable:
+$names
+}
+Connect it by USB and unlock it — a locked phone does not count as connected.
+First time only: tap Trust on the phone, then turn on
+Settings → Privacy & Security → Developer Mode (the phone restarts).
+
+Check it with:  xcrun devicectl list devices"
+}
+
 case "${1:-run}" in
   test)
     swift test --package-path AnsaCore
@@ -83,8 +145,35 @@ case "${1:-run}" in
     ;;
 
   run)
-    require_config
-    generate
+    # Before prepare, so an absent phone fails immediately rather than after
+    # "Building…" and a Keychain prompt for a build that cannot be installed.
+    udid=$(device_udid)
+    prepare
+
+    # Release, not Debug. See the note at the top: a Debug build points at
+    # localhost, which on the phone is the phone.
+    xcodebuild \
+      -project Ansa.xcodeproj \
+      -scheme "$SCHEME" \
+      -configuration Release \
+      -destination "id=$udid" \
+      -derivedDataPath build \
+      -allowProvisioningUpdates \
+      build | grep -E "error:|warning:|BUILD" || true
+
+    app=$(built_app Release-iphoneos)
+
+    echo "Installing to the phone…"
+    xcrun devicectl device install app --device "$udid" "$app" >/dev/null
+    xcrun devicectl device process launch --device "$udid" "$BUNDLE_ID" >/dev/null
+
+    echo ""
+    echo "Ansa is running on your iPhone, talking to ansa.id3arium.workers.dev."
+    echo "Signed with a personal team, so it stops opening after 7 days — re-run this to renew it."
+    ;;
+
+  sim)
+    prepare
 
     # Reuse whatever is already booted; the simulator takes far longer to start
     # than the build does, and a rebuild-and-relaunch loop should not pay it.
@@ -106,13 +195,6 @@ print(hit[0]["udid"] if hit else "")')
     fi
     open -a Simulator
 
-    echo "Building…"
-    # Exported rather than passed as an argument: a build setting on the command
-    # line is visible to every other process via ps, and lands in shell history.
-    # xcodebuild picks up ANSA_CLERK_PUBLISHABLE_KEY from the environment and
-    # substitutes it into Info.plist.
-    export ANSA_CLERK_PUBLISHABLE_KEY
-    ANSA_CLERK_PUBLISHABLE_KEY=$(clerk_key)
     xcodebuild \
       -project Ansa.xcodeproj \
       -scheme "$SCHEME" \
@@ -121,9 +203,7 @@ print(hit[0]["udid"] if hit else "")')
       -derivedDataPath build \
       build | grep -E "error:|warning:|BUILD" || true
 
-    app="build/Build/Products/Debug-iphonesimulator/${SCHEME}.app"
-    [ -d "$app" ] || die "Build produced no app at ${app}. Re-run without the filter to see why:
-  xcodebuild -project Ansa.xcodeproj -scheme ${SCHEME} -destination id=${udid} -derivedDataPath build build"
+    app=$(built_app Debug-iphonesimulator)
 
     xcrun simctl install "$udid" "$app"
     xcrun simctl launch "$udid" "$BUNDLE_ID" >/dev/null
@@ -135,6 +215,6 @@ print(hit[0]["udid"] if hit else "")')
 
   *)
     die "Unknown command: $1
-Usage: ./build.sh [run|test|wire|clean]"
+Usage: ./build.sh [sim|test|wire|clean]   (no argument builds to the phone)"
     ;;
 esac
