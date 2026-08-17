@@ -13,6 +13,7 @@ struct OutlineView: View {
     @State private var draft = ""
     @FocusState private var capturing: Bool
     @State private var dragging = false
+    @Environment(\.scenePhase) private var scenePhase
 
     private var tree: Tree { store.tree }
 
@@ -56,6 +57,23 @@ struct OutlineView: View {
                 .listStyle(.plain)
             }
             .task { store.start() }
+            // A phone backgrounds this app every time the screen locks, so this
+            // is the ordinary path rather than an edge case. `.task` fires once
+            // when the view appears and never again, which leaves a returning
+            // app holding a socket iOS killed while it was suspended — reading a
+            // stale tree with no indication anything is wrong.
+            //
+            // `.inactive` is deliberately not handled: it covers the app
+            // switcher and a passing notification banner, where tearing the
+            // socket down and refetching on the way back would be churn for a
+            // state the user is usually in for under a second.
+            .onChange(of: scenePhase) { _, phase in
+                switch phase {
+                case .active: store.resume()
+                case .background: store.suspend()
+                default: break
+                }
+            }
             // Two mid-edit states, and the store takes one flag, so they are
             // combined here rather than each calling setBusy on its own — the
             // one that ends first would otherwise clear the other's hold.

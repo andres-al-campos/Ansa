@@ -64,6 +64,26 @@ final class OutlineStore {
         sync?.setBusy(busy)
     }
 
+    /// The app went into the background. Ops already queued are on disk, so
+    /// there is nothing to flush here — only a socket to let go of.
+    func suspend() {
+        sync?.suspend()
+    }
+
+    /// The app came back. Reconnects and refetches, because everything that
+    /// happened on other devices while this one was suspended arrived as socket
+    /// broadcasts nobody was listening for.
+    ///
+    /// Falls through to `start()` on the path where the app was launched
+    /// straight into the background and so never built a client.
+    func resume() {
+        guard let sync else {
+            start()
+            return
+        }
+        sync.resume()
+    }
+
     /// The initial fetch. Routed through the client rather than assigned
     /// directly so it counts as the first adopt, which is what releases any ops
     /// restored from a previous run.
