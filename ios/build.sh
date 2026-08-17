@@ -101,12 +101,13 @@ Re-run without the output filter to see the full log:
   printf '%s' "$app"
 }
 
-# A connected phone as "<devicectl identifier> <hardware udid>", or empty.
+# The devicectl identifier of a phone with a live tunnel, or empty.
 #
-# Both, because the two tools name the same phone differently: devicectl uses
-# its own UUID, while xcodebuild wants the hardware ECID and rejects the other
-# with "unable to find a device matching the destination specifier" — which
-# reads like the phone is absent rather than misidentified.
+# Only devicectl needs an id: the build targets generic/platform=iOS, so
+# xcodebuild never has to be told which phone this is. That also avoids its
+# separate naming scheme — it identifies a device by hardware ECID and rejects
+# devicectl's UUID with "unable to find a device matching the destination
+# specifier", which reads like the phone is absent rather than misidentified.
 connected_udid() {
   xcrun devicectl list devices -j - 2>/dev/null \
     | python3 -c 'import json,sys
@@ -114,20 +115,14 @@ try: devs=json.load(sys.stdin)["result"]["devices"]
 except Exception: devs=[]
 ready=[d for d in devs
        if d.get("connectionProperties",{}).get("tunnelState") not in (None,"unavailable","disconnected")]
-if ready:
-    d=ready[0]
-    hw=d.get("hardwareProperties",{}).get("udid","")
-    if hw: print(d["identifier"], hw)' 2>/dev/null || true
+print(ready[0]["identifier"] if ready else "")' 2>/dev/null || true
 }
 
 # The connected iPhone's identifier, or instructions for getting one.
 #
-# Requires a live connection rather than accepting any paired device. A phone
-# that has been paired once is listed forever, but xcodebuild will not accept it
-# as a destination while it is away — and that failure surfaces as a wall of
-# simulator names and "unable to find a device matching the destination
-# specifier", which says nothing about the phone being unplugged.
-# Echoes "<devicectl identifier> <hardware udid>" for a usable phone.
+# Requires a live connection rather than accepting any paired device: a phone
+# paired once is listed forever, and installing to an absent one fails with a
+# far less obvious message than this function's.
 device_udid() {
   local udid known
 
@@ -197,16 +192,21 @@ case "${1:-run}" in
   run)
     # Before prepare, so an absent phone fails immediately rather than after
     # "Building…" and a Keychain prompt for a build that cannot be installed.
-    read -r device_id hw_udid <<<"$(device_udid)"
+    device_id=$(device_udid)
     prepare
 
     # Release, not Debug. See the note at the top: a Debug build points at
     # localhost, which on the phone is the phone.
+    #
+    # `generic/platform=iOS` rather than this specific phone: the build does not
+    # depend on which device it lands on, and naming one means xcodebuild has to
+    # resolve it — which fails while the phone is merely asleep, long after the
+    # tunnel is up. Signing still happens; only the destination is generic.
     xcodebuild \
       -project Ansa.xcodeproj \
       -scheme "$SCHEME" \
       -configuration Release \
-      -destination "id=$hw_udid" \
+      -destination 'generic/platform=iOS' \
       -derivedDataPath build \
       -allowProvisioningUpdates \
       build | grep -E "error:|warning:|BUILD" || true
@@ -216,15 +216,38 @@ case "${1:-run}" in
     # asleep, then xcodebuild times out preparing the debug session. The error
     # it prints for that is buried in a destination listing, so it is called out
     # here instead.
-    app=$(built_app Release-iphoneos "Is the phone unlocked? A connected but locked phone gets as far as
-signing and then times out preparing for the install.")
+    app=$(built_app Release-iphoneos "If this is a signing error, check that Xcode → Settings → Accounts still
+has your Apple ID, and that the bundle id is one your team can claim.")
 
     echo "Installing to the phone…"
-    xcrun devicectl device install app --device "$device_id" "$app" >/dev/null
-    xcrun devicectl device process launch --device "$device_id" "$BUNDLE_ID" >/dev/null
+    # Retried: devicectl drops the device link mid-install often enough to be
+    # routine, reporting a transient "Connection interrupted" (CoreDeviceError
+    # 3002). The identical command usually succeeds on the next attempt, so
+    # failing on the first drop would send you back to the terminal for nothing.
+    installed=0
+    for attempt in 1 2 3; do
+      if xcrun devicectl device install app --device "$device_id" "$app" >/dev/null 2>&1; then
+        installed=1
+        break
+      fi
+      [ "$attempt" -lt 3 ] && echo "  link dropped, retrying ($attempt/3)…" && sleep 2
+    done
+    [ "$installed" = 1 ] || die "Install failed after 3 attempts.
 
+Keep the phone unlocked and on the same network, then run this again.
+The signed app is at ${app} if you want to install it from Xcode instead."
+
+    # Launching is allowed to fail where installing is not. iOS refuses to open
+    # an app on a locked phone, and that says nothing about the build — the new
+    # version is already on the device either way, so treating it as an error
+    # would fail a run that actually did its job.
     echo ""
-    echo "Ansa is running on your iPhone, talking to ansa.id3arium.workers.dev."
+    if xcrun devicectl device process launch --device "$device_id" "$BUNDLE_ID" >/dev/null 2>&1; then
+      echo "Ansa is running on your iPhone, talking to ansa.id3arium.workers.dev."
+    else
+      echo "Ansa is installed on your iPhone — unlock the phone and open it from the"
+      echo "home screen. (iOS will not launch an app onto a locked screen.)"
+    fi
     echo "Signed with a personal team, so it stops opening after 7 days — re-run this to renew it."
     ;;
 
