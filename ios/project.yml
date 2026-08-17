@@ -48,6 +48,10 @@ targets:
       properties:
         CFBundleDisplayName: Ansa
         UILaunchScreen: {}
+        # Injected at build time from the macOS Keychain by build.sh — see
+        # ClerkConfig.swift for why this is baked in rather than read at
+        # runtime. Publishable, not secret: it ships in every client build.
+        ANSAClerkPublishableKey: $(ANSA_CLERK_PUBLISHABLE_KEY)
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
           - UIInterfaceOrientationLandscapeLeft

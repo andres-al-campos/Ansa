@@ -37,6 +37,31 @@ EOF
   exit 1
 }
 
+# The Clerk publishable key, read from the login Keychain and baked into the
+# app at build time.
+#
+# Not committed because it names a specific Clerk instance, which is account
+# state rather than something a fresh clone should inherit. Not read from the
+# Keychain at runtime either — an iOS app cannot see the Mac's Keychain, and the
+# key is public by design, so there would be nothing to protect.
+clerk_key() {
+  local key
+  if ! key=$(security find-generic-password -s ansa-clerk-publishable -w 2>/dev/null); then
+    cat >&2 <<EOF
+No Clerk publishable key in the Keychain.
+
+Add it (the pk_test_… value from the Clerk dashboard under API Keys — the
+publishable one, not the secret):
+
+  security add-generic-password -s ansa-clerk-publishable -a "\$USER" -w pk_test_YOUR_KEY
+
+Then run this again.
+EOF
+    exit 1
+  fi
+  printf '%s' "$key"
+}
+
 generate() {
   command -v xcodegen >/dev/null 2>&1 || die \
     "xcodegen is not installed. Install it with:  brew install xcodegen"
@@ -82,6 +107,12 @@ print(hit[0]["udid"] if hit else "")')
     open -a Simulator
 
     echo "Building…"
+    # Exported rather than passed as an argument: a build setting on the command
+    # line is visible to every other process via ps, and lands in shell history.
+    # xcodebuild picks up ANSA_CLERK_PUBLISHABLE_KEY from the environment and
+    # substitutes it into Info.plist.
+    export ANSA_CLERK_PUBLISHABLE_KEY
+    ANSA_CLERK_PUBLISHABLE_KEY=$(clerk_key)
     xcodebuild \
       -project Ansa.xcodeproj \
       -scheme "$SCHEME" \
