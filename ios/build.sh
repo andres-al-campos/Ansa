@@ -115,19 +115,35 @@ print(ready[0]["identifier"] if ready else "")' 2>/dev/null) || udid=""
 
   [ -n "$udid" ] && { printf '%s' "$udid"; return; }
 
-  # Name the paired-but-absent phone when there is one: "connect your iPhone"
-  # is unhelpful if it is already plugged in and merely locked.
-  names=$(xcrun devicectl list devices 2>/dev/null | awk 'NR>2 && NF {print "  " $1 " " $2}' | head -5)
-  die "No connected iPhone.
-${names:+
-Paired, but not currently reachable:
-$names
-}
-Connect it by USB and unlock it — a locked phone does not count as connected.
-First time only: tap Trust on the phone, then turn on
-Settings → Privacy & Security → Developer Mode (the phone restarts).
+  # Report what is actually wrong with the phone we know about, rather than a
+  # generic "connect a device": a paired phone fails for a different reason than
+  # no phone at all, and the fix differs.
+  local paired transport
+  paired=$(xcrun devicectl list devices 2>/dev/null | awk 'NR>2 && NF' | head -1)
+  transport=$(xcrun devicectl list devices -j - 2>/dev/null \
+    | python3 -c 'import json,sys
+try: d=json.load(sys.stdin)["result"]["devices"][0]["connectionProperties"]
+except Exception: print(""); raise SystemExit
+print(d.get("transportType",""))' 2>/dev/null) || transport=""
 
-Check it with:  xcrun devicectl list devices"
+  [ -n "$paired" ] || die "No iPhone is paired with this Mac.
+
+Connect it by USB, unlock it, and tap Trust when the phone asks."
+
+  die "Your iPhone is paired but not reachable right now.
+
+$paired
+
+$([ "$transport" = localNetwork ] && cat <<'WIFI'
+It is paired over Wi-Fi, not USB, so it has to be awake and on the same network
+as this Mac. This Mac is on Ethernet, which is often a different subnet from the
+Wi-Fi the phone uses — that alone will hide it.
+
+The reliable fix is to connect it by USB and unlock it.
+WIFI
+)
+Then check it with:  xcrun devicectl list devices
+It has to show a state other than 'disconnected' before a build can install."
 }
 
 case "${1:-run}" in
