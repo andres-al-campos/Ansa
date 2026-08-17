@@ -17,6 +17,12 @@ options:
 packages:
   AnsaCore:
     path: AnsaCore
+  # ClerkKitUI as well as ClerkKit: its prebuilt AuthView already handles email
+  # codes, resends, rate limits and OAuth error states, which is a lot of
+  # failure-path code to own for a screen seen once per device.
+  Clerk:
+    url: https://github.com/clerk/clerk-ios
+    from: 1.2.0
 
 settings:
   base:
@@ -43,6 +49,10 @@ targets:
         product: AnsaCore
       - package: AnsaCore
         product: AnsaSync
+      - package: Clerk
+        product: ClerkKit
+      - package: Clerk
+        product: ClerkKitUI
     info:
       path: Info.plist
       properties:

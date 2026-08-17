@@ -23,7 +23,7 @@ final class OutlineStore {
     @ObservationIgnored private var sync: SyncClient?
     @ObservationIgnored private let api: AnsaAPI
 
-    init(token: @escaping TokenSource = { nil }) {
+    init(token: @escaping TokenSource = ClerkToken.current) {
         api = AnsaAPI(base: Config.apiBase, token: token, user: Config.devUser)
     }
 
