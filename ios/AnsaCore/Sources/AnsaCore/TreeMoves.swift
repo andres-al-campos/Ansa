@@ -146,6 +146,51 @@ extension TreeOps {
         return moveNode(tree, id, newParent.id, childrenOf(tree, newParent.id).count)
     }
 
+    /// The `moveNode` op that performs an indent, or nil when it is not legal.
+    ///
+    /// The wire has `moveNode`, not `indent`, so the destination has to be
+    /// resolved somewhere. Doing it here rather than in the UI keeps it beside
+    /// `indent` itself — the two derive the same parent and index from the same
+    /// rules, and a copy in a view is exactly how they would drift apart. It
+    /// also means the server receives an explicit parent and index rather than
+    /// re-deriving "one level in" against a tree that may have moved on.
+    public static func indentOp(_ tree: Tree, _ id: NodeId) -> Op? {
+        guard let node = byId(tree, id) else { return nil }
+        let siblings = childrenOf(tree, node.parentId)
+        guard let i = siblings.firstIndex(where: { $0.id == id }), i > 0 else { return nil }
+        let newParent = siblings[i - 1]
+        return .moveNode(
+            id: id, parentId: newParent.id, index: childrenOf(tree, newParent.id).count)
+    }
+
+    /// The `moveNode` op that performs an outdent, or nil at the root.
+    public static func outdentOp(_ tree: Tree, _ id: NodeId) -> Op? {
+        guard let node = byId(tree, id), let parentId = node.parentId,
+              let parent = byId(tree, parentId) else { return nil }
+        let uncles = childrenOf(tree, parent.parentId)
+        let parentIndex = uncles.firstIndex { $0.id == parent.id } ?? -1
+        return .moveNode(id: id, parentId: parent.parentId, index: parentIndex + 1)
+    }
+
+    /// Whether `indent` would actually move this node.
+    ///
+    /// Defined next to `indent` and in terms of the same condition, so a UI can
+    /// offer the gesture exactly when it will work. Asking the move itself
+    /// (apply it and compare) would be correct but costs a whole tree copy per
+    /// row per frame, which a drag gesture does often enough to notice.
+    public static func canIndent(_ tree: Tree, _ id: NodeId) -> Bool {
+        guard let node = byId(tree, id) else { return false }
+        let siblings = childrenOf(tree, node.parentId)
+        guard let i = siblings.firstIndex(where: { $0.id == id }) else { return false }
+        return i > 0
+    }
+
+    /// Whether `outdent` would actually move this node: false at the root,
+    /// where there is no level to pop up to.
+    public static func canOutdent(_ tree: Tree, _ id: NodeId) -> Bool {
+        byId(tree, id)?.parentId != nil
+    }
+
     /// Shift-Tab: pop a node up a level, landing right after its old parent
     /// among the grandparent's children. A no-op at the root.
     public static func outdent(_ tree: Tree, _ id: NodeId) -> Tree {

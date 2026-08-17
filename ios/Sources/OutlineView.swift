@@ -43,6 +43,11 @@ struct OutlineView: View {
                             onToggleDone: { apply(.setDone(id: row.node.id, done: !row.node.done)) },
                             onZoom: { scope = row.node.id },
                             onCollapse: { apply(.toggleCollapsed(id: row.node.id)) })
+                            .swipeToNest(
+                                canIndent: TreeOps.canIndent(tree, row.node.id),
+                                canOutdent: TreeOps.canOutdent(tree, row.node.id),
+                                onIndent: { indent(row.node.id) },
+                                onOutdent: { outdent(row.node.id) })
                     }
                     .onDelete(perform: delete)
                 }
@@ -114,6 +119,14 @@ struct OutlineView: View {
             id: TreeOps.newId(), parentId: scope, text: text,
             at: Date().timeIntervalSince1970 * 1000))
         draft = ""
+    }
+
+    private func indent(_ id: NodeId) {
+        if let op = TreeOps.indentOp(tree, id) { apply(op) }
+    }
+
+    private func outdent(_ id: NodeId) {
+        if let op = TreeOps.outdentOp(tree, id) { apply(op) }
     }
 
     private func delete(at offsets: IndexSet) {

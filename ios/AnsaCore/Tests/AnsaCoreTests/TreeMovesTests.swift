@@ -503,3 +503,98 @@ struct ProjectTests {
         #expect(TreeOps.depthOf(t, "p2b1") == 4)
     }
 }
+
+/// The predicates a UI uses to decide whether to offer a gesture.
+///
+/// Tested against the moves themselves rather than against hand-listed cases:
+/// the whole risk here is drift, where `canIndent` and `indent` disagree and the
+/// row either refuses a legal move or animates one that never happens. Applying
+/// the move and comparing is the ground truth, so these assert exactly that, for
+/// every node in the fixture.
+@Suite("canIndent / canOutdent agree with the moves")
+struct NestPredicateTests {
+    @Test("canIndent is true exactly when indent changes the tree")
+    func indentAgrees() {
+        let t = fixture()
+        for node in t {
+            let moved = TreeOps.indent(t, node.id) != t
+            #expect(
+                TreeOps.canIndent(t, node.id) == moved,
+                "canIndent disagrees with indent on \(node.id)")
+        }
+    }
+
+    @Test("canOutdent is true exactly when outdent changes the tree")
+    func outdentAgrees() {
+        let t = fixture()
+        for node in t {
+            let moved = TreeOps.outdent(t, node.id) != t
+            #expect(
+                TreeOps.canOutdent(t, node.id) == moved,
+                "canOutdent disagrees with outdent on \(node.id)")
+        }
+    }
+
+    @Test("an unknown id can do neither")
+    func unknownId() {
+        let t = fixture()
+        #expect(!TreeOps.canIndent(t, "ghost"))
+        #expect(!TreeOps.canOutdent(t, "ghost"))
+    }
+
+    @Test("a first child cannot indent but can outdent")
+    func firstChild() {
+        let t = fixture()
+        let first = TreeOps.childrenOf(t, "gather")[0]
+        #expect(!TreeOps.canIndent(t, first.id))
+        #expect(TreeOps.canOutdent(t, first.id))
+    }
+
+    @Test("a first root can do neither")
+    func firstRoot() {
+        let t = fixture()
+        let first = TreeOps.childrenOf(t, nil)[0]
+        #expect(!TreeOps.canIndent(t, first.id))
+        #expect(!TreeOps.canOutdent(t, first.id))
+    }
+}
+
+/// The ops a client sends for indent/outdent.
+///
+/// The wire has `moveNode`, not `indent`, so the destination is resolved before
+/// sending. These assert the op lands the tree in exactly the state the direct
+/// move would — if they ever diverge, the screen and the server disagree about
+/// what a swipe did, which is the worst failure this codebase has.
+@Suite("indentOp / outdentOp match the direct moves")
+struct NestOpTests {
+    @Test("indentOp applied equals indent, for every node")
+    func indentMatches() {
+        let t = fixture()
+        for node in t {
+            let direct = TreeOps.indent(t, node.id)
+            let viaOp = TreeOps.indentOp(t, node.id).map { TreeOps.applyOp(t, $0).tree } ?? t
+            #expect(viaOp == direct, "indentOp disagrees with indent on \(node.id)")
+        }
+    }
+
+    @Test("outdentOp applied equals outdent, for every node")
+    func outdentMatches() {
+        let t = fixture()
+        for node in t {
+            let direct = TreeOps.outdent(t, node.id)
+            let viaOp = TreeOps.outdentOp(t, node.id).map { TreeOps.applyOp(t, $0).tree } ?? t
+            #expect(viaOp == direct, "outdentOp disagrees with outdent on \(node.id)")
+        }
+    }
+
+    /// The op is nil in exactly the cases the predicate refuses, so a UI that
+    /// offers the gesture on canIndent never produces a nil op.
+    @Test("an op exists exactly when the predicate allows it")
+    func opsMatchPredicates() {
+        let t = fixture()
+        for node in t {
+            #expect((TreeOps.indentOp(t, node.id) != nil) == TreeOps.canIndent(t, node.id))
+            #expect((TreeOps.outdentOp(t, node.id) != nil) == TreeOps.canOutdent(t, node.id))
+        }
+    }
+}
