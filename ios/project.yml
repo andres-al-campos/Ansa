@@ -9,7 +9,7 @@
 # exercise the same code.
 name: Ansa
 options:
-  bundleIdPrefix: com.ansa
+  bundleIdPrefix: com.id3arium
   deploymentTarget:
     iOS: "17.0"
   createIntermediateGroups: true
@@ -73,6 +73,10 @@ targets:
           NSAllowsLocalNetworking: true
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.ansa.app
+        # Bundle ids are unique across every Apple developer account, not just
+        # ours — com.ansa.app is taken by someone else, and signing fails with
+        # "cannot be registered to your development team". Hence the personal
+        # prefix rather than the tidier product-shaped one.
+        PRODUCT_BUNDLE_IDENTIFIER: com.id3arium.ansa
         TARGETED_DEVICE_FAMILY: "1,2"
         GENERATE_INFOPLIST_FILE: false
