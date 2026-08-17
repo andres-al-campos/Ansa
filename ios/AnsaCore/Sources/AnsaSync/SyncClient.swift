@@ -75,6 +75,10 @@ public final class SyncClient {
     /// True while the user is editing — do not yank the tree away.
     private var busy = false
 
+    /// Whether the app was backgrounded and has not yet come back. Distinct
+    /// from the socket being nil, which is also true before the first `start`.
+    private var suspended = false
+
     private var socket: Task<Void, Never>?
     private var retryLoop: Task<Void, Never>?
     private var failures = 0
@@ -124,6 +128,51 @@ public final class SyncClient {
         retryLoop?.cancel()
         socket = nil
         retryLoop = nil
+    }
+
+    /// Tear down the socket because the app is going into the background.
+    ///
+    /// iOS suspends the process within seconds, and a suspended WebSocket is a
+    /// dead one whether or not it is cancelled here — but the reconnect ladder
+    /// keeps running until it is, so leaving it up means waking to a task that
+    /// has already climbed to its longest backoff and will sit there. Dropping
+    /// it deliberately means `resume` starts fresh at the bottom of the ladder.
+    ///
+    /// The queue is untouched: unsent ops are on disk and are the whole reason
+    /// backgrounding is safe.
+    public func suspend() {
+        suspended = true
+        stop()
+    }
+
+    /// Reopen the socket and re-sync after the app comes back to the foreground.
+    ///
+    /// The refetch is not optional. The socket only broadcasts *changes*, so a
+    /// reconnect alone leaves this device on whatever tree it had when it was
+    /// suspended — every edit made elsewhere in between is invisible until
+    /// someone happens to touch the tree again. This is the phone's version of
+    /// the cold-start fetch, and unlike `adoptInitial` it has to run even though
+    /// `synced` is already true.
+    public func resume() {
+        // Keyed on having actually been suspended, not on the socket being
+        // nil. They come apart on cold launch, where `.active` arrives after
+        // `start()` has already opened a socket — testing liveness there would
+        // read as "nothing to resume" and skip the refetch. That is survivable
+        // only because the cold path fetches on its own, which makes it a bug
+        // waiting for the day that stops being true.
+        guard suspended else { return }
+        suspended = false
+        start()
+
+        Task { [weak self] in
+            guard let self else { return }
+            guard let served = await self.api.loadTree() else { return }
+            // Through the same busy gate as any other server tree: coming back
+            // to the app with the keyboard already up is ordinary, and adopting
+            // under a half-typed row is the bug `busy` exists to prevent.
+            self.adoptFromServer(served)
+            await self.drain()
+        }
     }
 
     /// Queue ops to send, in order. The caller has already applied them locally.
@@ -268,14 +317,22 @@ public final class SyncClient {
             }
             return
         }
+        adoptFromServer(frame.tree)
+        // Ops held back before this point now have a real tree to replay onto.
+        Task { await drain() }
+    }
+
+    /// Take a server tree, or stash it if the user is mid-edit.
+    ///
+    /// Shared by the socket and by the foreground refetch so there is one busy
+    /// gate rather than two that can disagree.
+    private func adoptFromServer(_ tree: Tree) {
         // Until the first sync, adopt even mid-edit: this is the authoritative
         // baseline, and it has to land before any op is replayed on top of it.
         if busy, synced {
-            stashed = frame.tree
+            stashed = tree
             return
         }
-        adopt(frame.tree)
-        // Ops held back before this point now have a real tree to replay onto.
-        Task { await drain() }
+        adopt(tree)
     }
 }
