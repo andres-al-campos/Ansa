@@ -27,6 +27,12 @@ struct SwipeToNest: ViewModifier {
     let canOutdent: Bool
     let onIndent: () -> Void
     let onOutdent: () -> Void
+    /// Called when a drag starts and again when it ends.
+    ///
+    /// A drag is a mid-edit state exactly as typing is: adopting a server tree
+    /// while a finger is on a row renumbers the rows under it, so the drag
+    /// finishes against a row that has moved or is no longer there.
+    let onDragging: (Bool) -> Void
 
     @State private var offset: CGFloat = 0
 
@@ -34,6 +40,10 @@ struct SwipeToNest: ViewModifier {
         content
             .offset(x: offset)
             .animation(.interactiveSpring, value: offset)
+            // Derived from the offset rather than set inside the gesture
+            // handlers, so an interrupted or cancelled drag cannot leave the
+            // client stuck busy and silently not receiving.
+            .onChange(of: offset != 0) { _, dragging in onDragging(dragging) }
             .gesture(
                 DragGesture(minimumDistance: 12)
                     .onChanged { value in
@@ -75,11 +85,13 @@ extension View {
         canIndent: Bool,
         canOutdent: Bool,
         onIndent: @escaping () -> Void,
-        onOutdent: @escaping () -> Void
+        onOutdent: @escaping () -> Void,
+        onDragging: @escaping (Bool) -> Void
     ) -> some View {
         modifier(
             SwipeToNest(
                 canIndent: canIndent, canOutdent: canOutdent,
-                onIndent: onIndent, onOutdent: onOutdent))
+                onIndent: onIndent, onOutdent: onOutdent,
+                onDragging: onDragging))
     }
 }

@@ -12,6 +12,7 @@ struct OutlineView: View {
     @State private var scope: NodeId?
     @State private var draft = ""
     @FocusState private var capturing: Bool
+    @State private var dragging = false
 
     private var tree: Tree { store.tree }
 
@@ -47,17 +48,23 @@ struct OutlineView: View {
                                 canIndent: TreeOps.canIndent(tree, row.node.id),
                                 canOutdent: TreeOps.canOutdent(tree, row.node.id),
                                 onIndent: { indent(row.node.id) },
-                                onOutdent: { outdent(row.node.id) })
+                                onOutdent: { outdent(row.node.id) },
+                                onDragging: { dragging = $0 })
                     }
                     .onDelete(perform: delete)
                 }
                 .listStyle(.plain)
             }
             .task { store.start() }
-            // Typing is the mid-edit case that matters here: the capture field
-            // holds a draft the user can see, and adopting a server tree under
-            // it is what makes text vanish as it is being written.
-            .onChange(of: capturing) { _, focused in store.setBusy(focused) }
+            // Two mid-edit states, and the store takes one flag, so they are
+            // combined here rather than each calling setBusy on its own — the
+            // one that ends first would otherwise clear the other's hold.
+            //
+            // Typing: the capture field holds a draft the user can see, and
+            // adopting a server tree under it is what makes text vanish as it
+            // is being written. Dragging: the row would move out from under the
+            // finger mid-gesture.
+            .onChange(of: capturing || dragging) { _, busy in store.setBusy(busy) }
             .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
