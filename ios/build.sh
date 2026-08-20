@@ -28,6 +28,27 @@ DEFAULT_SIM="iPhone 16"
 
 die() { echo "$*" >&2; exit 1; }
 
+# --device <udid> is how ReSign tells us which phone it picked. Stripped here,
+# before the dispatch below reads $1 — leaving it in place would make $1
+# "--device" and the default "run" would never fire.
+#
+# Unset when run from a terminal, where device_udid() picks a phone itself, so
+# the no-arg behaviour is unchanged.
+DEVICE_ID=""
+args=()
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --device)
+      shift
+      [ $# -gt 0 ] || die "--device needs a device identifier."
+      DEVICE_ID="$1"
+      ;;
+    *) args+=("$1") ;;
+  esac
+  shift
+done
+set -- "${args[@]+"${args[@]}"}"
+
 require_config() {
   [ -f Config.xcconfig ] && return
   cat >&2 <<EOF
@@ -146,7 +167,8 @@ case "${1:-run}" in
   run)
     # Before prepare, so an absent phone fails immediately rather than after
     # "Building…" and a Keychain prompt for a build that cannot be installed.
-    device_id=$(device_udid)
+    # An explicitly-passed device wins; otherwise pick one ourselves.
+    device_id="${DEVICE_ID:-$(device_udid)}"
     prepare
 
     # Release, not Debug. See the note at the top: a Debug build points at
@@ -172,6 +194,16 @@ case "${1:-run}" in
     # here instead.
     app=$(built_app Release-iphoneos "If this is a signing error, check that Xcode → Settings → Accounts still
 has your Apple ID, and that the bundle id is one your team can claim.")
+
+    # ReSign looks for a signed app at build/<Scheme>.app, a flat path rather
+    # than the derivedData layout xcodebuild produces. Copied rather than
+    # symlinked so the embedded provisioning profile comes with it — ReSign
+    # checks for that file inside the bundle to confirm the app is signed.
+    #
+    # Staged before the install below, so the copy exists even when the phone
+    # is asleep and devicectl fails.
+    rm -rf "build/${SCHEME}.app"
+    cp -R "$app" "build/${SCHEME}.app"
 
     echo "Installing to the phone…"
     # Retried: devicectl drops the device link mid-install often enough to be
