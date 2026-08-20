@@ -24,7 +24,10 @@ struct OutlineView: View {
                 // you are and how far in, which is read on arrival rather than
                 // watched continuously. Pinning both ends squeezed an already
                 // short screen.
-                if let progress = TreeOps.scopeProgress(tree, scope) {
+                // Only inside a project. On the grid each card carries its own
+                // bar, and a single figure across every project at once answers
+                // a question nobody asked.
+                if scope != nil, let progress = TreeOps.scopeProgress(tree, scope) {
                     ScopeProgress(progress: progress)
                 }
 
@@ -36,32 +39,11 @@ struct OutlineView: View {
                         text: "Not receiving changes from other devices. Your edits are still saved.")
                 }
 
-                List {
-                    ForEach(rows, id: \.node.id) { row in
-                        OutlineRow(
-                            node: row.node,
-                            depth: row.depth,
-                            hasChildren: !TreeOps.isLeaf(tree, row.node.id),
-                            onToggleDone: { apply(.setDone(id: row.node.id, done: !row.node.done)) },
-                            onCollapse: { apply(.toggleCollapsed(id: row.node.id)) })
-                            // Zoom lives on a swipe rather than on the bullet.
-                            // It is one Back tap to undo but replaces the whole
-                            // screen, and a revealed action cannot fire from a
-                            // brush the way a button in the row can — it needs
-                            // a second tap, or a deliberate push past the
-                            // full-swipe threshold.
-                            .swipeActions(edge: .trailing) {
-                                Button {
-                                    scope = row.node.id
-                                } label: {
-                                    Label("Zoom in", systemImage: "chevron.right")
-                                }
-                                .tint(.accentColor)
-                            }
-                    }
-                    .onDelete(perform: delete)
+                if scope == nil {
+                    ProjectGrid(tree: tree, onOpen: openProject)
+                } else {
+                    outline
                 }
-                .listStyle(.plain)
 
                 // Capture sits at the bottom. It was at the top so an idea
                 // could be caught without scrolling anywhere first, which is
@@ -110,9 +92,41 @@ struct OutlineView: View {
         }
     }
 
+    /// The rows themselves. Only drawn inside a project — the root shows the
+    /// project grid instead.
+    private var outline: some View {
+                List {
+            ForEach(rows, id: \.node.id) { row in
+                OutlineRow(
+                    node: row.node,
+                    depth: row.depth,
+                    hasChildren: !TreeOps.isLeaf(tree, row.node.id),
+                    onToggleDone: { apply(.setDone(id: row.node.id, done: !row.node.done)) },
+                    onCollapse: { apply(.toggleCollapsed(id: row.node.id)) })
+                    // Zoom lives on a swipe rather than on the bullet.
+                    // It is one Back tap to undo but replaces the whole
+                    // screen, and a revealed action cannot fire from a
+                    // brush the way a button in the row can — it needs
+                    // a second tap, or a deliberate push past the
+                    // full-swipe threshold.
+                    .swipeActions(edge: .trailing) {
+                        Button {
+                            scope = row.node.id
+                        } label: {
+                            Label("Zoom in", systemImage: "chevron.right")
+                        }
+                        .tint(.accentColor)
+                    }
+            }
+            .onDelete(perform: delete)
+        }
+        .listStyle(.plain)
+
+    }
+
     private var captureField: some View {
         HStack {
-            TextField("Add a task", text: $draft)
+            TextField(scope == nil ? "New project" : "Add a task", text: $draft)
                 .textFieldStyle(.plain)
                 .submitLabel(.done)
                 .focused($capturing)
@@ -165,6 +179,17 @@ struct OutlineView: View {
 
     private func delete(at offsets: IndexSet) {
         for index in offsets { apply(.removeNode(id: rows[index].node.id)) }
+    }
+
+    /// Open a project: zoom in, and record that it was opened.
+    ///
+    /// The timestamp is minted here and carried by the op, so the server stores
+    /// the instant this device opened it rather than whenever the write landed.
+    /// Matches `openProject` in `src/Outliner.tsx`.
+    private func openProject(_ id: NodeId) {
+        scope = id
+        let root = TreeOps.lineageOf(tree, id).first?.id ?? id
+        apply(.markOpened(id: root, at: Date().timeIntervalSince1970 * 1000))
     }
 
     private func zoomOut() {
@@ -362,5 +387,101 @@ private struct Bullet: View {
                 .frame(width: 6, height: 6)
         }
         .frame(width: 18, height: 18)
+    }
+}
+
+
+/// The projects overview: every project as a card, two to a row.
+///
+/// The web's landing (`src/Outliner.tsx`) sizes cards with
+/// `minmax(220px, 1fr)`, which lands on two columns at phone width — so this is
+/// the same layout arriving at the same answer, not a divergence.
+///
+/// Reorder and delete are deliberately absent for now. Both are drag- and
+/// hover-driven on the web, and neither translates without the gesture work the
+/// rows are waiting on.
+private struct ProjectGrid: View {
+    let tree: Tree
+    let onOpen: (NodeId) -> Void
+
+    private var projects: [Node] { TreeOps.projectList(tree) }
+
+    var body: some View {
+        if projects.isEmpty {
+            ContentUnavailableView(
+                "No projects yet",
+                systemImage: "tray",
+                description: Text("Start one below."))
+        } else {
+            ScrollView {
+                LazyVGrid(
+                    columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)],
+                    spacing: 12
+                ) {
+                    ForEach(projects) { project in
+                        ProjectCard(
+                            project: project,
+                            progress: TreeOps.progressOf(tree, project.id),
+                            onOpen: { onOpen(project.id) })
+                    }
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+            }
+        }
+    }
+}
+
+/// One project: its name, how far along it is, and a bar.
+private struct ProjectCard: View {
+    let project: Node
+    let progress: TreeOps.Progress
+    let onOpen: () -> Void
+
+    private var complete: Bool { progress.pct == 100 }
+
+    var body: some View {
+        Button(action: onOpen) {
+            VStack(alignment: .leading, spacing: 9) {
+                HStack(spacing: 5) {
+                    if project.pinned == true {
+                        Image(systemName: "pin.fill")
+                            .font(.caption2)
+                            .foregroundStyle(.tint)
+                    }
+                    // Untitled is the web's word for a project with no name, and
+                    // an empty card would otherwise be unopenable-looking.
+                    Text(project.text.isEmpty ? "Untitled" : project.text)
+                        .font(.callout.weight(.medium))
+                        .foregroundStyle(.primary)
+                        .lineLimit(2, reservesSpace: true)
+                        .multilineTextAlignment(.leading)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+
+                Capsule()
+                    .fill(.quaternary)
+                    .frame(height: 4)
+                    .overlay(alignment: .leading) {
+                        GeometryReader { geo in
+                            Capsule()
+                                .fill(complete ? Color.green : Color.accentColor)
+                                .frame(width: geo.size.width * CGFloat(progress.pct) / 100)
+                        }
+                    }
+
+                Text(complete ? "All done" : "\(progress.done) of \(progress.total) done")
+                    .font(.caption)
+                    .foregroundStyle(complete ? AnyShapeStyle(Color.green) : AnyShapeStyle(.secondary))
+            }
+            .padding(14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(.background.secondary, in: RoundedRectangle(cornerRadius: 12))
+            .overlay {
+                RoundedRectangle(cornerRadius: 12)
+                    .strokeBorder(.quaternary, lineWidth: 1)
+            }
+        }
+        .buttonStyle(.plain)
     }
 }

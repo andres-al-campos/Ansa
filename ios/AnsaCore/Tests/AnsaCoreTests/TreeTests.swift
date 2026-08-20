@@ -97,6 +97,27 @@ struct LeavesUnderTests {
     }
 }
 
+@Suite("the project list")
+struct ProjectListTests {
+    @Test("pinned projects come first, without disturbing manual order")
+    func pinnedFirst() {
+        var t = fixture()
+        let rs = TreeOps.roots(t)
+        guard let last = rs.last else { return #expect(Bool(false)) }
+        t = TreeOps.setPinned(t, last.id, true)
+        let list = TreeOps.projectList(t)
+        #expect(list.first?.id == last.id)
+        // The unpinned tail keeps the order it had — pinning moves one project,
+        // it does not re-sort the rest.
+        #expect(list.dropFirst().map(\.id) == rs.dropLast().map(\.id))
+    }
+
+    @Test("with nothing pinned it is just the roots in order")
+    func unpinned() {
+        #expect(TreeOps.projectList(fixture()).map(\.id) == TreeOps.roots(fixture()).map(\.id))
+    }
+}
+
 @Suite("progress is leaf-weighted")
 struct ProgressTests {
     @Test("a grandchild completing moves the grandparent")
