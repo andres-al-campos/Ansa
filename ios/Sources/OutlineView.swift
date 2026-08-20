@@ -238,6 +238,10 @@ private struct OutlineRow: View {
     let onToggleDone: () -> Void
     let onCollapse: () -> Void
 
+    /// One indent step. Small on purpose — depth is read from the guides, and a
+    /// wider step costs text width on a screen that has none to spare.
+    private static let indent: CGFloat = 18
+
     var body: some View {
         HStack(spacing: 10) {
             // Square, where the bullet is round. Both marks used to be circles
@@ -272,12 +276,37 @@ private struct OutlineRow: View {
                 .strikethrough(node.done)
                 .foregroundStyle(node.done ? .secondary : .primary)
                 .frame(maxWidth: .infinity, alignment: .leading)
+                // Without this the last word runs under the screen edge. The
+                // list's own inset is spent on the leading marks, and a row
+                // that wraps takes every point it is given.
+                .padding(.trailing, 4)
         }
-        .padding(.leading, CGFloat(depth) * 18)
+        .padding(.leading, CGFloat(depth) * Self.indent)
+        .background(alignment: .leading) { guides }
         // No `.contentShape(Rectangle())` here. It makes the whole row a single
         // hit-test target, which swallows taps before they reach the checkbox
         // and the bullet — separate targets are the point of the row. Add it
         // only alongside a row-level tap action, never on its own.
+    }
+
+    /// One vertical hairline per ancestor level, the way the web app draws them.
+    ///
+    /// Load-bearing rather than decorative: an 18pt step is too small to read as
+    /// depth on its own, and rows here wrap to two and three lines, so the left
+    /// edge of the text moves more from wrapping than from nesting. The lines
+    /// are what actually says how deep a row sits.
+    private var guides: some View {
+        HStack(spacing: 0) {
+            ForEach(0..<depth, id: \.self) { _ in
+                // The line sits under the centre of the bullet column one level
+                // up, so it points at the parent's mark rather than floating
+                // between columns.
+                Rectangle()
+                    .fill(.quaternary)
+                    .frame(width: 1)
+                    .frame(width: Self.indent, alignment: .center)
+            }
+        }
     }
 }
 
