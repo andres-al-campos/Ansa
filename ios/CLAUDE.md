@@ -13,7 +13,14 @@ by driving the Xcode GUI.
 ./build.sh test         run the AnsaCore suite (no device needed)
 ./build.sh wire         check the Swift op encoding against the server
 ./build.sh clean        drop the generated project and build output
+
+./build.sh sim --no-auth   simulator build with no Clerk key
 ```
+
+`--no-auth` exists so sync and lifecycle behaviour can be tested on the
+simulator without signing in — a keyless build takes the unauthenticated path
+straight to the outline. Refused for a device build, where it would look like it
+worked while reading the dev stub's tree rather than the user's.
 
 ## Why the phone gets a Release build
 

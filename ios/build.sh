@@ -8,6 +8,9 @@
 #   ./build.sh wire         check the Swift op encoding against the server
 #   ./build.sh clean        drop the generated project and build output
 #
+#   --no-auth               (sim only) build without a Clerk key, so the app
+#                           skips the sign-in wall
+#
 # No-arg leaves the app installed and running on the phone, rather than stopping
 # at a .app in a build directory — same rule as the repo-root build.sh.
 #
@@ -35,6 +38,13 @@ die() { echo "$*" >&2; exit 1; }
 # Unset when run from a terminal, where device_udid() picks a phone itself, so
 # the no-arg behaviour is unchanged.
 DEVICE_ID=""
+# --no-auth builds without a Clerk key, which makes the app take its
+# unauthenticated path straight to the outline instead of stopping at the
+# sign-in wall. For testing sync and lifecycle behaviour on the simulator
+# against a local wrangler, where signing in would need real credentials and
+# proves nothing about the code under test. Never for a build on the phone:
+# without a key there is no user, so it talks to the dev stub's tree.
+NO_AUTH=""
 args=()
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -43,6 +53,7 @@ while [ $# -gt 0 ]; do
       [ $# -gt 0 ] || die "--device needs a device identifier."
       DEVICE_ID="$1"
       ;;
+    --no-auth) NO_AUTH=1 ;;
     *) args+=("$1") ;;
   esac
   shift
@@ -106,7 +117,12 @@ prepare() {
   # xcodebuild picks up ANSA_CLERK_PUBLISHABLE_KEY from the environment and
   # substitutes it into Info.plist.
   export ANSA_CLERK_PUBLISHABLE_KEY
-  ANSA_CLERK_PUBLISHABLE_KEY=$(clerk_key)
+  if [ -n "$NO_AUTH" ]; then
+    ANSA_CLERK_PUBLISHABLE_KEY=""
+    echo "Building without a Clerk key — the app will skip sign-in."
+  else
+    ANSA_CLERK_PUBLISHABLE_KEY=$(clerk_key)
+  fi
 }
 
 # The .app xcodebuild just produced, or a failure that says how to see why.
@@ -165,6 +181,11 @@ case "${1:-run}" in
     ;;
 
   run)
+    # A keyless build on the phone would look like it worked and quietly read
+    # the dev stub's tree instead of the user's, so it is refused rather than
+    # warned about.
+    [ -n "$NO_AUTH" ] && die "--no-auth is for the simulator only. Use:  ./build.sh sim --no-auth"
+
     # Before prepare, so an absent phone fails immediately rather than after
     # "Building…" and a Keychain prompt for a build that cannot be installed.
     # An explicitly-passed device wins; otherwise pick one ourselves.
@@ -282,6 +303,6 @@ print(hit[0]["udid"] if hit else "")')
 
   *)
     die "Unknown command: $1
-Usage: ./build.sh [sim|test|wire|clean]   (no argument builds to the phone)"
+Usage: ./build.sh [sim|test|wire|clean] [--no-auth]   (no argument builds to the phone)"
     ;;
 esac
