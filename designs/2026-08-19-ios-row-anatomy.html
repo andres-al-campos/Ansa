@@ -1,0 +1,414 @@
+<title>Ansa Row Anatomy</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+  :root {
+    --page: #eef0f4;
+    --card: #ffffff;
+    --edge: #d3d8e2;
+    --text: #1c2029;
+    --text-dim: #5d6575;
+    --accent: #9c6f28;
+    --good: #2f7d4f;
+    --bad: #a33a3a;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --page: #0c0e13;
+      --card: #161a22;
+      --edge: #262c38;
+      --text: #e7eaf0;
+      --text-dim: #98a1b0;
+      --accent: #d3a45c;
+      --good: #6cc48d;
+      --bad: #e08585;
+    }
+  }
+  :root[data-theme="dark"] {
+    --page: #0c0e13;
+    --card: #161a22;
+    --edge: #262c38;
+    --text: #e7eaf0;
+    --text-dim: #98a1b0;
+    --accent: #d3a45c;
+    --good: #6cc48d;
+    --bad: #e08585;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--page); color: var(--text);
+    font-family: "IBM Plex Sans", system-ui, sans-serif;
+    line-height: 1.55; padding: 40px 24px 80px;
+  }
+  .wrap { max-width: 1120px; margin: 0 auto; display: flex; flex-direction: column; gap: 46px; }
+
+  header h1 { font-size: 30px; font-weight: 600; margin: 0 0 6px; letter-spacing: -0.01em; text-wrap: balance; }
+  header p { margin: 0; color: var(--text-dim); max-width: 64ch; }
+  .eyebrow {
+    font-family: "IBM Plex Mono", monospace; font-size: 11px;
+    text-transform: uppercase; letter-spacing: 0.09em; color: var(--text-dim); margin: 0 0 10px;
+  }
+
+  section { display: flex; flex-direction: column; gap: 16px; }
+  section > h2 { font-size: 17px; font-weight: 600; margin: 0; padding-bottom: 8px; border-bottom: 1px solid var(--edge); }
+  .note { margin: 0; color: var(--text-dim); font-size: 14px; max-width: 70ch; }
+
+  .cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(290px, 1fr)); gap: 20px; align-items: start; }
+  .panel { background: var(--card); border: 1px solid var(--edge); border-radius: 8px; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+  .panel > h3 {
+    font-family: "IBM Plex Mono", monospace; font-size: 12px; font-weight: 500; margin: 0;
+    text-transform: uppercase; letter-spacing: 0.07em; color: var(--text-dim);
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  }
+  .tag { font-size: 10px; padding: 2px 7px; border-radius: 99px; letter-spacing: 0.04em; }
+  .tag.now  { background: color-mix(in srgb, var(--bad) 16%, transparent); color: var(--bad); }
+  .tag.next { background: color-mix(in srgb, var(--good) 16%, transparent); color: var(--good); }
+
+  /* ---------- phone surface, real app tokens ---------- */
+  .screen {
+    background: #10131a; border-radius: 12px; overflow: hidden;
+    font-size: 15px; color: #e7eaf0; display: flex; flex-direction: column;
+  }
+  /* Not pinned: it scrolls away with the list. Only the capture bar is fixed. */
+  .chrome-top {
+    background: #10131a; border-bottom: 1px solid #1c2029;
+    padding: 11px 14px 12px; display: flex; flex-direction: column; gap: 9px;
+  }
+  .crumbs { font-size: 13px; color: #98a1b0; display: flex; align-items: center; gap: 6px; }
+  .crumbs .here { color: #e7eaf0; font-weight: 500; }
+  .pbar-row { display: flex; align-items: center; gap: 9px; }
+  .pbar { flex: 1; height: 4px; border-radius: 99px; background: #262c38; overflow: hidden; }
+  .pbar i { display: block; height: 100%; background: #6f9fd8; border-radius: 99px; }
+  .pbar.complete i { background: #64b795; }
+  .pct.complete { color: #64b795; font-weight: 650; }
+  .pct { font-family: "IBM Plex Mono", monospace; font-size: 11px; color: #98a1b0; font-variant-numeric: tabular-nums; }
+
+  .list { display: flex; flex-direction: column; }
+  .row { display: flex; align-items: flex-start; gap: 11px; padding: 10px 13px; min-height: 44px; position: relative; }
+  .row + .row { border-top: 1px solid #1c2029; }
+  .label { flex: 1; padding-top: 1px; }
+  .label.done { color: #6b7686; text-decoration: line-through; }
+  .indent-1 { padding-left: 31px; }
+  .indent-2 { padding-left: 49px; }
+
+  .hit { width: 30px; height: 38px; flex: none; margin-top: -2px; display: flex; align-items: center; justify-content: center; position: relative; }
+  .hit.show::after {
+    content: ''; position: absolute; inset: 0;
+    border: 1px dashed color-mix(in srgb, #d3a45c 45%, transparent); border-radius: 4px;
+  }
+
+  .cb { width: 19px; height: 19px; flex: none; position: relative; border: 2px solid #6e7889; border-radius: 5px; }
+  .cb.on { background: #6e7889; border-color: #6e7889; }
+  .cb.on::after {
+    content: ''; position: absolute; left: 5px; top: 1px; width: 4px; height: 9px;
+    border: solid #10131a; border-width: 0 2px 2px 0; transform: rotate(42deg);
+  }
+  .cb.circle { border-radius: 50%; border-color: #4a9eff; }
+  .cb.circle.on { background: #6e7889; border-color: #6e7889; }
+
+  .bullet { width: 18px; height: 18px; flex: none; position: relative; }
+  .bullet::after { content: ''; position: absolute; inset: 6px; border-radius: 50%; background: #b6bfcc; }
+  .bullet.parent::before { content: ''; position: absolute; inset: 2px; border-radius: 50%; border: 2px solid #6e7889; }
+  .bullet.parent.collapsed::before { inset: 0; border-width: 0; background: #6e7889; }
+  .bullet.lifted { transform: scale(1.15); }
+  .bullet.lifted::before { border-color: #d3a45c; }
+  .bullet.lifted::after { background: #d3a45c; }
+
+  .count { font-family: "IBM Plex Mono", monospace; font-size: 12px; color: #6e7889; padding-top: 3px; font-variant-numeric: tabular-nums; }
+  .chev { width: 13px; height: 13px; flex: none; color: #6e7889; }
+  .chev svg { display: block; }
+
+  .capture {
+    margin-top: auto; background: #161a22; border-top: 1px solid #1c2029;
+    padding: 11px 14px; color: #6b7686; font-size: 15px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .capture .plus { color: #d3a45c; font-size: 17px; line-height: 1; }
+
+  /* swipe states */
+  .swipe-wrap { position: relative; overflow: hidden; }
+  .reveal {
+    position: absolute; top: 0; right: 0; bottom: 0;
+    background: #4a7bb5; color: #f2f5f9;
+    display: flex; align-items: center; justify-content: center; gap: 7px;
+    font-size: 13px; font-weight: 600;
+  }
+  .reveal svg { display: block; }
+  .reveal.partial { width: 58px; }
+  .reveal.full { width: 100%; justify-content: flex-end; padding-right: 18px; }
+  .row.slid-part { transform: translateX(-58px); }
+  .row.slid-full { transform: translateX(-100%); }
+
+  /* Nesting guides: with no right-hand marker, these carry depth. */
+  .list { position: relative; }
+  .guide { position: absolute; top: 0; bottom: 0; width: 1px; background: #4c5464; opacity: 0.55; }
+  .drop-line { height: 2px; background: #d3a45c; margin: 0 13px 0 44px; border-radius: 2px; position: relative; }
+  .drop-line::before {
+    content: ''; position: absolute; left: -5px; top: -3px; width: 8px; height: 8px;
+    border-radius: 50%; background: #d3a45c;
+  }
+
+  .callouts { display: flex; flex-direction: column; gap: 7px; margin: 0; padding: 0; list-style: none; }
+  .callouts li { font-size: 13px; color: var(--text-dim); padding-left: 20px; position: relative; }
+  .callouts li::before { content: '→'; position: absolute; left: 0; color: var(--accent); font-family: "IBM Plex Mono", monospace; }
+
+  table { border-collapse: collapse; width: 100%; font-size: 14px; }
+  th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--edge); vertical-align: top; }
+  th { font-family: "IBM Plex Mono", monospace; font-size: 11px; text-transform: uppercase; letter-spacing: 0.07em; color: var(--text-dim); font-weight: 500; }
+  td code { font-family: "IBM Plex Mono", monospace; font-size: 12px; color: var(--accent); }
+  .scroll { overflow-x: auto; }
+</style>
+
+<div class="wrap">
+  <header>
+    <p class="eyebrow">Ansa · iOS · row anatomy</p>
+    <h1>The row, settled</h1>
+    <p>Three elements on the row, everything else moved to a gesture or to the chrome. Each control has one job, and the two that sit under a scrolling thumb are both undone by repeating the tap.</p>
+  </header>
+
+  <section>
+    <h2>1 · The row, before and after</h2>
+    <p class="note">The per-row count goes away — the web app never had it. Progress there is one figure for the whole scope, in the header, and the phone should match rather than repeat a number on every parent line.</p>
+    <div class="cols">
+      <div class="panel">
+        <h3>Now <span class="tag now">four columns</span></h3>
+        <div class="screen">
+          <div class="list">
+            <div class="row">
+              <div class="hit"><div class="cb circle"></div></div>
+              <div class="hit"><div class="bullet parent"></div></div>
+              <div class="label">Plan the trip</div>
+              <div class="count">0/5</div>
+              <div class="hit"><div class="chev"><svg viewBox="0 0 13 13" width="13" height="13"><path d="M2.6 4.5 6.5 10l3.9-5.5z" fill="currentColor"/></svg></div></div>
+            </div>
+            <div class="row">
+              <div class="hit"><div class="cb circle on"></div></div>
+              <div class="hit"><div class="bullet parent collapsed"></div></div>
+              <div class="label done">Book the dentist</div>
+              <div class="count">2/2</div>
+              <div class="hit"><div class="chev"><svg viewBox="0 0 13 13" width="13" height="13"><path d="M4.5 2.6 10 6.5l-5.5 3.9z" fill="currentColor"/></svg></div></div>
+            </div>
+          </div>
+        </div>
+        <ul class="callouts">
+          <li>Ticked box and collapsed bullet are both filled grey circles</li>
+          <li>Chevron duplicates what the bullet's shape already says</li>
+          <li>Count on every parent row; the web shows one per scope</li>
+        </ul>
+      </div>
+      <div class="panel">
+        <h3>Settled <span class="tag next">three elements</span></h3>
+        <div class="screen">
+          <div class="list">
+            <div class="row">
+              <div class="hit"><div class="cb"></div></div>
+              <div class="hit"><div class="bullet parent"></div></div>
+              <div class="label">Plan the trip</div>
+            </div>
+            <div class="row">
+              <div class="hit"><div class="cb on"></div></div>
+              <div class="hit"><div class="bullet parent collapsed"></div></div>
+              <div class="label done">Book the dentist</div>
+            </div>
+          </div>
+        </div>
+        <ul class="callouts">
+          <li>Square is always "tick me", circle is always "a node" — shape says what, fill says state</li>
+          <li>Bullet's disc already means collapsed, so the chevron is gone</li>
+          <li>Both left-column controls are undone by tapping again</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>2 · Five actions, no duplicates</h2>
+    <div class="scroll">
+      <table>
+        <tr><th>Target</th><th>Gesture</th><th>Action</th><th>Undo</th></tr>
+        <tr><td>Checkbox</td><td>tap</td><td>Done / not done</td><td>Tap again — <code>setDone</code> is symmetric through the subtree</td></tr>
+        <tr><td>Bullet</td><td>tap</td><td>Collapse / expand</td><td>Tap again; no data changes</td></tr>
+        <tr><td>Bullet</td><td>long-press ≈0.3s</td><td>Drag to move and re-indent</td><td>Drag back, or undo toast</td></tr>
+        <tr><td>Label</td><td>tap</td><td>Rename in place</td><td>Escape backs out</td></tr>
+        <tr><td>Row</td><td>swipe ←</td><td>Reveal zoom; full-swipe commits</td><td>One Back tap</td></tr>
+        <tr><td>Screen edge</td><td>swipe → from edge</td><td>Back out of the scope</td><td>Zoom in again</td></tr>
+      </table>
+    </div>
+    <p class="note">The two swipes never collide: they run in opposite directions and start in different places — the back gesture from the screen's left edge, the zoom reveal from anywhere on the row.</p>
+  </section>
+
+  <section>
+    <h2>3 · Swipe to zoom, in both its states</h2>
+    <p class="note">One gesture, two ways through. A shallow swipe parks the button and waits for a tap. Pushing past roughly half the row's width stretches it full-width and fires a medium impact haptic — the tick says releasing now will commit, so you can back off before letting go.</p>
+    <div class="cols">
+      <div class="panel">
+        <h3>Shallow — reveals</h3>
+        <div class="screen">
+          <div class="list">
+            <div class="swipe-wrap">
+              <div class="reveal partial"><svg viewBox="0 0 16 16" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3.5 10.5 8 6 12.5"/></svg></div>
+              <div class="row slid-part">
+                <div class="hit"><div class="cb"></div></div>
+                <div class="hit"><div class="bullet parent"></div></div>
+                <div class="label">Plan the trip</div>
+              </div>
+            </div>
+            <div class="row">
+              <div class="hit"><div class="cb"></div></div>
+              <div class="hit"><div class="bullet"></div></div>
+              <div class="label">Renew the passport</div>
+            </div>
+          </div>
+        </div>
+        <ul class="callouts">
+          <li>58pt wide — an icon, not a word. The rest position is close, so the shallow path stays quick</li>
+          <li>Tap it to zoom, or release to spring the row back</li>
+        </ul>
+      </div>
+      <div class="panel">
+        <h3>Past threshold — commits on release</h3>
+        <div class="screen">
+          <div class="list">
+            <div class="swipe-wrap">
+              <div class="reveal full"><svg viewBox="0 0 16 16" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3.5 10.5 8 6 12.5"/></svg></div>
+              <div class="row slid-full">
+                <div class="hit"><div class="cb"></div></div>
+                <div class="hit"><div class="bullet parent"></div></div>
+                <div class="label">Plan the trip</div>
+              </div>
+            </div>
+            <div class="row">
+              <div class="hit"><div class="cb"></div></div>
+              <div class="hit"><div class="bullet"></div></div>
+              <div class="label">Renew the passport</div>
+            </div>
+          </div>
+        </div>
+        <ul class="callouts">
+          <li>Stretching full-width is the visual half of the same message the haptic sends</li>
+          <li>Haptic fires once per crossing, and again if you drag back under and re-cross</li>
+          <li>Threshold is ~50% of row width, about 195pt on a 393pt phone</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>4 · How far is far enough</h2>
+    <p class="note">Distance is the smaller half of the answer. What actually stops an accidental swipe is the <em>angle</em>: iOS decides early whether a pan is horizontal or vertical, and a thumb scrolling a list moves mostly vertically. Requiring the gesture to be more horizontal than vertical before the row wins over the scroll is the real guard — with that in place the distances below are comfortable rather than load-bearing.</p>
+    <div class="scroll">
+      <table>
+        <tr><th>Distance</th><th>What happens</th><th>Why there</th></tr>
+        <tr><td class="cost">0–10pt</td><td>Nothing; the pan has not picked a direction</td><td>Below the system's own recognition slop</td></tr>
+        <tr><td class="cost">~40pt</td><td>Button starts to appear behind the row</td><td>Past the slop, still a deliberate movement rather than a brush</td></tr>
+        <tr><td class="cost">58pt</td><td>Rest position — release and it parks here</td><td>The button's own width; an icon, not a word</td></tr>
+        <tr><td class="cost">~195pt</td><td>Full-swipe threshold — haptic, button fills the row</td><td>50% of a 393pt phone, matching Mail</td></tr>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <h2>5 · Long-press the bullet to move it</h2>
+    <p class="note">Tap and long-press on one target works here because the two outcomes are neighbours — both are about structure, both are cheap to reverse. The dot is the brightest part of the bullet in all three states precisely because the dot is the handle.</p>
+    <div class="cols">
+      <div class="panel">
+        <h3>Lifted, choosing a depth</h3>
+        <div class="screen">
+          <div class="list">
+            <div class="guide" style="left: 44px; top: 44px;"></div>
+            <div class="row">
+              <div class="hit"><div class="cb"></div></div>
+              <div class="hit"><div class="bullet parent"></div></div>
+              <div class="label">Plan the trip</div>
+            </div>
+            <div class="row indent-1">
+              <div class="hit"><div class="cb"></div></div>
+              <div class="hit"><div class="bullet"></div></div>
+              <div class="label">Book flights</div>
+            </div>
+            <div class="drop-line"></div>
+            <div class="row indent-1">
+              <div class="hit"><div class="cb"></div></div>
+              <div class="hit"><div class="bullet lifted"></div></div>
+              <div class="label">Renew the passport</div>
+            </div>
+          </div>
+        </div>
+        <ul class="callouts">
+          <li>The insertion line's indent shows which level it will land at</li>
+          <li>Horizontal position of the finger picks the depth — <code>depthAtGap</code> clamps it to the legal range</li>
+        </ul>
+      </div>
+      <div class="panel">
+        <h3>What has to change for touch</h3>
+        <ul class="callouts">
+          <li><strong>Arming.</strong> Vertical pan means scroll, so the drag needs a long press plus a haptic tick before it takes over</li>
+          <li><strong>Occlusion.</strong> The finger covers the row it targets, so the insertion line runs full-width and the lifted row rides above the touch point</li>
+          <li><strong>Depth precision.</strong> An 18px indent step is finer than a fingertip; either widen the step on mobile or snap with a haptic at each level</li>
+          <li><strong>Portable already.</strong> <code>dropTarget.ts</code> is pure — tree, rows and pointer in, a target out — so it ports to <code>AnsaCore</code> as arithmetic, not as interaction</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>6 · The chrome around the list</h2>
+    <p class="note">The breadcrumb and bar stay at the top but scroll away with the list — they describe where you are, which you read on arrival rather than continuously. Only capture is fixed, and it moves to the bottom: it satisfies the original "reachable without scrolling" reason just as well as the top did, while sitting in the thumb's arc and rising with the keyboard instead of jumping across the screen.</p>
+    <div class="cols">
+      <div class="panel">
+        <h3>Full screen</h3>
+        <div class="screen" style="height: 420px;">
+          <div class="chrome-top">
+            <div class="crumbs"><span>Everything</span><span>›</span><span class="here">Plan the trip</span></div>
+            <div class="pbar-row">
+              <div class="pbar"><i style="width: 40%"></i></div>
+              <span class="pct">40%</span>
+            </div>
+          </div>
+          <div class="list">
+            <div class="guide" style="left: 44px; top: 132px; height: 88px; bottom: auto;"></div>
+            <div class="row">
+              <div class="hit"><div class="cb on"></div></div>
+              <div class="hit"><div class="bullet"></div></div>
+              <div class="label done">Book flights</div>
+            </div>
+            <div class="row">
+              <div class="hit"><div class="cb on"></div></div>
+              <div class="hit"><div class="bullet"></div></div>
+              <div class="label done">Renew the passport</div>
+            </div>
+            <div class="row">
+              <div class="hit"><div class="cb"></div></div>
+              <div class="hit"><div class="bullet parent"></div></div>
+              <div class="label">Pack</div>
+            </div>
+            <div class="row indent-1">
+              <div class="hit"><div class="cb"></div></div>
+              <div class="hit"><div class="bullet"></div></div>
+              <div class="label">Chargers and adapters</div>
+            </div>
+            <div class="row indent-1">
+              <div class="hit"><div class="cb"></div></div>
+              <div class="hit"><div class="bullet"></div></div>
+              <div class="label">Something warm for the evenings</div>
+            </div>
+            <div class="row">
+              <div class="hit"><div class="cb"></div></div>
+              <div class="hit"><div class="bullet parent collapsed"></div></div>
+              <div class="label">Arrange the house</div>
+            </div>
+          </div>
+          <div class="capture"><span class="plus">+</span><span>Add a task</span></div>
+        </div>
+      </div>
+      <div class="panel">
+        <h3>Open questions</h3>
+        <ul class="callouts">
+          <li><strong>Only one fixed element now.</strong> With the header scrolling away, the list keeps its height and the keyboard only has the capture bar to push. That removes the squeeze without needing a hide-while-typing rule.</li>
+          <li><strong>The disc carries more now.</strong> With the chevron gone and the count gone, a solid disc is the only thing saying children are hidden. True on the web too, but the phone has no hover and narrower rows. If it reads too quietly, make the collapsed state more emphatic rather than bringing the number back.</li>
+          <li><strong>Depth without a right-hand marker.</strong> Indent is carried by the row's left padding and the nesting guides, which become load-bearing rather than decorative.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+</div>
