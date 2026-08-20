@@ -238,9 +238,9 @@ private struct OutlineRow: View {
     let onToggleDone: () -> Void
     let onCollapse: () -> Void
 
-    /// One indent step. Small on purpose — depth is read from the guides, and a
-    /// wider step costs text width on a screen that has none to spare.
-    private static let indent: CGFloat = 18
+    /// One indent step. Smaller than the web's, because the tint carries most
+    /// of the depth signal and every point spent here comes off the text.
+    private static let indent: CGFloat = 12
 
     var body: some View {
         HStack(spacing: 10) {
@@ -282,30 +282,31 @@ private struct OutlineRow: View {
                 .padding(.trailing, 4)
         }
         .padding(.leading, CGFloat(depth) * Self.indent)
-        .background(alignment: .leading) { guides }
+        .listRowBackground(tint)
         // No `.contentShape(Rectangle())` here. It makes the whole row a single
         // hit-test target, which swallows taps before they reach the checkbox
         // and the bullet — separate targets are the point of the row. Add it
         // only alongside a row-level tap action, never on its own.
     }
 
-    /// One vertical hairline per ancestor level, the way the web app draws them.
+    /// Depth as a surface, not as a line.
     ///
-    /// Load-bearing rather than decorative: an 18pt step is too small to read as
-    /// depth on its own, and rows here wrap to two and three lines, so the left
-    /// edge of the text moves more from wrapping than from nesting. The lines
-    /// are what actually says how deep a row sits.
-    private var guides: some View {
-        HStack(spacing: 0) {
-            ForEach(0..<depth, id: \.self) { _ in
-                // The line sits under the centre of the bullet column one level
-                // up, so it points at the parent's mark rather than floating
-                // between columns.
-                Rectangle()
-                    .fill(.quaternary)
-                    .frame(width: 1)
-                    .frame(width: Self.indent, alignment: .center)
-            }
+    /// Guides came first, matching the web. They failed here for a reason the
+    /// web does not have: rows wrap to two and three lines on a phone, so the
+    /// text's left edge moves more from wrapping than from nesting, and any cue
+    /// living in the gap beside the text is fighting that. `List` insets also
+    /// broke each ancestor line into per-row segments, which read as noise.
+    ///
+    /// A tint marks the row itself, so wrapping cannot break it. It stops being
+    /// separable past three levels — at which point the boundary between two
+    /// adjacent rows still says which is deeper, which is why this degrades
+    /// rather than failing. Deep trees are zoom's problem, not this one's.
+    private var tint: Color {
+        switch depth {
+        case 0: .clear
+        case 1: Color.primary.opacity(0.05)
+        case 2: Color.primary.opacity(0.033)
+        default: Color.primary.opacity(0.018)
         }
     }
 }
