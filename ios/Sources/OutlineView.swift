@@ -13,6 +13,8 @@ struct OutlineView: View {
     @State private var draft = ""
     @FocusState private var capturing: Bool
     @State private var dragging = false
+    /// The project whose delete is awaiting confirmation.
+    @State private var pendingDelete: Node?
     @Environment(\.scenePhase) private var scenePhase
 
     private var tree: Tree { store.tree }
@@ -40,7 +42,7 @@ struct OutlineView: View {
                 }
 
                 if scope == nil {
-                    ProjectGrid(tree: tree, onOpen: openProject)
+                    ProjectGrid(tree: tree, onOpen: openProject, onDelete: confirmDeleteProject)
                 } else {
                     outline
                 }
@@ -80,6 +82,28 @@ struct OutlineView: View {
             // is being written. Dragging: the row would move out from under the
             // finger mid-gesture.
             .onChange(of: capturing || dragging) { _, busy in store.setBusy(busy) }
+            // A project takes its whole subtree with it, and unlike ticking a
+            // parent that is not undoable — the ops are one-way. The web arms
+            // the trash and confirms in place; a dialog is the same idea in the
+            // platform's own idiom, and it can say how much is going.
+            .confirmationDialog(
+                pendingDelete.map { "Delete \($0.text.isEmpty ? "Untitled" : $0.text)?" } ?? "",
+                isPresented: Binding(
+                    get: { pendingDelete != nil },
+                    set: { if !$0 { pendingDelete = nil } }),
+                titleVisibility: .visible,
+                presenting: pendingDelete
+            ) { project in
+                Button("Delete Project", role: .destructive) {
+                    apply(.removeNode(id: project.id))
+                    pendingDelete = nil
+                }
+            } message: { project in
+                let count = TreeOps.subtreeOf(tree, project.id).count
+                Text(count == 0
+                    ? "This cannot be undone."
+                    : "This deletes \(count) task\(count == 1 ? "" : "s") under it. This cannot be undone.")
+            }
             .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -190,6 +214,10 @@ struct OutlineView: View {
         scope = id
         let root = TreeOps.lineageOf(tree, id).first?.id ?? id
         apply(.markOpened(id: root, at: Date().timeIntervalSince1970 * 1000))
+    }
+
+    private func confirmDeleteProject(_ id: NodeId) {
+        pendingDelete = TreeOps.byId(tree, id)
     }
 
     private func zoomOut() {
@@ -391,18 +419,18 @@ private struct Bullet: View {
 }
 
 
-/// The projects overview: every project as a card, two to a row.
+/// The projects overview: one row per project.
 ///
-/// The web's landing (`src/Outliner.tsx`) sizes cards with
-/// `minmax(220px, 1fr)`, which lands on two columns at phone width — so this is
-/// the same layout arriving at the same answer, not a divergence.
-///
-/// Reorder and delete are deliberately absent for now. Both are drag- and
-/// hover-driven on the web, and neither translates without the gesture work the
-/// rows are waiting on.
+/// Cards two-to-a-row came first and read well, but left delete with nowhere to
+/// go — it is hover-driven on the web, and a grid cell has no standard gesture
+/// for it. Full-width rows get `.swipeActions`, which is the platform's answer
+/// and the same gesture the outline rows already use. Density is the trade: five
+/// projects to a screen rather than ten, bought back a little by names no longer
+/// wrapping.
 private struct ProjectGrid: View {
     let tree: Tree
     let onOpen: (NodeId) -> Void
+    let onDelete: (NodeId) -> Void
 
     private var projects: [Node] { TreeOps.projectList(tree) }
 
@@ -413,27 +441,33 @@ private struct ProjectGrid: View {
                 systemImage: "tray",
                 description: Text("Start one below."))
         } else {
-            ScrollView {
-                LazyVGrid(
-                    columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)],
-                    spacing: 12
-                ) {
-                    ForEach(projects) { project in
-                        ProjectCard(
-                            project: project,
-                            progress: TreeOps.progressOf(tree, project.id),
-                            onOpen: { onOpen(project.id) })
-                    }
+            List {
+                ForEach(projects) { project in
+                    ProjectRow(
+                        project: project,
+                        progress: TreeOps.progressOf(tree, project.id),
+                        onOpen: { onOpen(project.id) })
+                        // Deleting a project takes everything under it, so this
+                        // is not the same weight of action as deleting a task.
+                        // `role: .destructive` alone would fire on a full swipe
+                        // — the confirmation is what stops a project vanishing
+                        // from a gesture aimed at the row below.
+                        .swipeActions(edge: .trailing) {
+                            Button(role: .destructive) {
+                                onDelete(project.id)
+                            } label: {
+                                Label("Delete", systemImage: "trash")
+                            }
+                        }
                 }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 10)
             }
+            .listStyle(.plain)
         }
     }
 }
 
 /// One project: its name, how far along it is, and a bar.
-private struct ProjectCard: View {
+private struct ProjectRow: View {
     let project: Node
     let progress: TreeOps.Progress
     let onOpen: () -> Void
@@ -442,21 +476,24 @@ private struct ProjectCard: View {
 
     var body: some View {
         Button(action: onOpen) {
-            VStack(alignment: .leading, spacing: 9) {
-                HStack(spacing: 5) {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 6) {
                     if project.pinned == true {
                         Image(systemName: "pin.fill")
                             .font(.caption2)
                             .foregroundStyle(.tint)
                     }
                     // Untitled is the web's word for a project with no name, and
-                    // an empty card would otherwise be unopenable-looking.
+                    // an empty row would otherwise look unopenable.
                     Text(project.text.isEmpty ? "Untitled" : project.text)
-                        .font(.callout.weight(.medium))
+                        .font(.body.weight(.medium))
                         .foregroundStyle(.primary)
-                        .lineLimit(2, reservesSpace: true)
-                        .multilineTextAlignment(.leading)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .lineLimit(1)
+                    Spacer(minLength: 8)
+                    Text(complete ? "All done" : "\(progress.done)/\(progress.total)")
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(
+                            complete ? AnyShapeStyle(Color.green) : AnyShapeStyle(.secondary))
                 }
 
                 Capsule()
@@ -469,18 +506,9 @@ private struct ProjectCard: View {
                                 .frame(width: geo.size.width * CGFloat(progress.pct) / 100)
                         }
                     }
-
-                Text(complete ? "All done" : "\(progress.done) of \(progress.total) done")
-                    .font(.caption)
-                    .foregroundStyle(complete ? AnyShapeStyle(Color.green) : AnyShapeStyle(.secondary))
             }
-            .padding(14)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(.background.secondary, in: RoundedRectangle(cornerRadius: 12))
-            .overlay {
-                RoundedRectangle(cornerRadius: 12)
-                    .strokeBorder(.quaternary, lineWidth: 1)
-            }
+            .padding(.vertical, 6)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
     }
