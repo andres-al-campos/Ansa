@@ -141,6 +141,26 @@ struct ProgressTests {
         #expect(before.pct == 67)  // g1 + g2 of 3
         #expect(p.pct == 50)  // g1 + g2 of 4 (g3 became a parent of 2)
     }
+
+    @Test("a scope counts every leaf under it")
+    func scoped() {
+        #expect(TreeOps.scopeProgress(fixture(), "taxes") == TreeOps.progressOf(fixture(), "taxes"))
+    }
+
+    @Test("no scope counts the whole tree")
+    func wholeTree() {
+        let p = TreeOps.scopeProgress(fixture(), nil)
+        // Every leaf under every root, not the roots themselves — a tree of one
+        // root would otherwise read as a single unit at 0% or 100%.
+        #expect(p?.total == TreeOps.leavesUnder(fixture(), nil).count)
+    }
+
+    @Test("an empty tree has nothing to report, rather than 0%")
+    func empty() {
+        // Nil and 0% are different claims. A bar at zero says the work is
+        // untouched; there is no work here at all.
+        #expect(TreeOps.scopeProgress([], nil) == nil)
+    }
 }
 
 @Suite("setDone cascades")

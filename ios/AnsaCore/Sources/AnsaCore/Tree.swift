@@ -175,6 +175,23 @@ public enum TreeOps {
         return Progress(done: done, total: leaves.count, pct: pct)
     }
 
+    /// Progress across a whole scope: every leaf under `scope`, or every leaf
+    /// in the tree when it is nil.
+    ///
+    /// Distinct from `progressOf`, which answers for one node. This is the
+    /// figure the view shows in its header — the web app has shown one bar per
+    /// scope rather than a count per row since the beginning, and nil here means
+    /// there is nothing to report rather than 0%.
+    public static func scopeProgress(_ tree: Tree, _ scope: NodeId?) -> Progress? {
+        let leaves =
+            scope.map { leavesUnder(tree, $0) }
+            ?? childrenOf(tree, nil).flatMap { leavesUnder(tree, $0.id) }
+        guard !leaves.isEmpty else { return nil }
+        let done = leaves.filter(\.done).count
+        let pct = Int((Double(done) / Double(leaves.count) * 100).rounded())
+        return Progress(done: done, total: leaves.count, pct: pct)
+    }
+
     // MARK: - Mutation
 
     /// Tick or untick `id`, cascading down the subtree and up the ancestors.

@@ -20,12 +20,13 @@ struct OutlineView: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                // Capture sits at the top rather than at the end of the list.
-                // Workflowy appends at the bottom, which is right for writing an
-                // outline in order and wrong for the case this app exists for:
-                // catching an idea while away from the desk, where the field has
-                // to be reachable without scrolling anywhere first.
-                captureField
+                // Scrolls away with the list rather than pinning: it says where
+                // you are and how far in, which is read on arrival rather than
+                // watched continuously. Pinning both ends squeezed an already
+                // short screen.
+                if let progress = TreeOps.scopeProgress(tree, scope) {
+                    ScopeProgress(progress: progress)
+                }
 
                 if !store.live {
                     // Only about receiving. Saying "not saved" here would be a
@@ -40,21 +41,35 @@ struct OutlineView: View {
                         OutlineRow(
                             node: row.node,
                             depth: row.depth,
-                            progress: TreeOps.progressOf(tree, row.node.id),
                             hasChildren: !TreeOps.isLeaf(tree, row.node.id),
                             onToggleDone: { apply(.setDone(id: row.node.id, done: !row.node.done)) },
-                            onZoom: { scope = row.node.id },
                             onCollapse: { apply(.toggleCollapsed(id: row.node.id)) })
-                            .swipeToNest(
-                                canIndent: TreeOps.canIndent(tree, row.node.id),
-                                canOutdent: TreeOps.canOutdent(tree, row.node.id),
-                                onIndent: { indent(row.node.id) },
-                                onOutdent: { outdent(row.node.id) },
-                                onDragging: { dragging = $0 })
+                            // Zoom lives on a swipe rather than on the bullet.
+                            // It is one Back tap to undo but replaces the whole
+                            // screen, and a revealed action cannot fire from a
+                            // brush the way a button in the row can — it needs
+                            // a second tap, or a deliberate push past the
+                            // full-swipe threshold.
+                            .swipeActions(edge: .trailing) {
+                                Button {
+                                    scope = row.node.id
+                                } label: {
+                                    Label("Zoom in", systemImage: "chevron.right")
+                                }
+                                .tint(.accentColor)
+                            }
                     }
                     .onDelete(perform: delete)
                 }
                 .listStyle(.plain)
+
+                // Capture sits at the bottom. It was at the top so an idea
+                // could be caught without scrolling anywhere first, which is
+                // what this app is for — the bottom serves that just as well,
+                // and adds two things the top could not: it is inside the
+                // thumb's arc, and it rises with the keyboard instead of
+                // sitting at the far end of the screen from it.
+                captureField
             }
             .task { store.start() }
             // A phone backgrounds this app every time the screen locks, so this
@@ -146,13 +161,7 @@ struct OutlineView: View {
         draft = ""
     }
 
-    private func indent(_ id: NodeId) {
-        if let op = TreeOps.indentOp(tree, id) { apply(op) }
-    }
 
-    private func outdent(_ id: NodeId) {
-        if let op = TreeOps.outdentOp(tree, id) { apply(op) }
-    }
 
     private func delete(at offsets: IndexSet) {
         for index in offsets { apply(.removeNode(id: rows[index].node.id)) }
@@ -160,6 +169,41 @@ struct OutlineView: View {
 
     private func zoomOut() {
         scope = scope.flatMap { TreeOps.byId(tree, $0)?.parentId }
+    }
+}
+
+/// One bar for the whole scope, the way the web app does it.
+///
+/// Blue while there is work left, green at 100% — the colour change is the
+/// point, since a full bar and a nearly-full one are hard to tell apart at 4pt
+/// tall.
+private struct ScopeProgress: View {
+    let progress: TreeOps.Progress
+
+    private var complete: Bool { progress.pct == 100 }
+
+    var body: some View {
+        HStack(spacing: 10) {
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(.quaternary)
+                    Capsule()
+                        .fill(complete ? Color.green : Color.accentColor)
+                        .frame(width: geo.size.width * CGFloat(progress.pct) / 100)
+                }
+            }
+            .frame(height: 4)
+
+            Text("\(progress.pct)%")
+                .font(.caption2.monospacedDigit())
+                .foregroundStyle(complete ? AnyShapeStyle(Color.green) : AnyShapeStyle(.secondary))
+                // Fixed width so the bar does not resize as the number goes
+                // from one digit to three.
+                .frame(width: 34, alignment: .trailing)
+        }
+        .padding(.horizontal)
+        .padding(.vertical, 8)
+        .animation(.easeOut(duration: 0.35), value: progress.pct)
     }
 }
 
@@ -185,66 +229,108 @@ private struct SyncBanner: View {
     }
 }
 
-/// One row: bullet, text, and the progress of whatever hangs beneath it.
+/// One row: checkbox, bullet, text. Progress moved to a single bar for the
+/// whole scope, matching the web app, which never showed a count per row.
 private struct OutlineRow: View {
     let node: Node
     let depth: Int
-    let progress: TreeOps.Progress
     let hasChildren: Bool
     let onToggleDone: () -> Void
-    let onZoom: () -> Void
     let onCollapse: () -> Void
 
     var body: some View {
         HStack(spacing: 10) {
+            // Square, where the bullet is round. Both marks used to be circles
+            // differing by fill and colour — the same two channels that carry
+            // *state* — so a ticked box and a collapsed parent's bullet
+            // converged on one mark meaning two things in adjacent columns.
+            // Shape is categorical: it says what the control is, whatever state
+            // it happens to be in, which leaves fill free to mean only "done".
             Button(action: onToggleDone) {
-                Image(systemName: node.done ? "checkmark.circle.fill" : "circle")
-                    .foregroundStyle(node.done ? AnyShapeStyle(.secondary) : AnyShapeStyle(.tint))
+                Checkbox(done: node.done)
                     .frame(width: 32, height: 40)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
 
-            // Tapping the bullet zooms, the way Workflowy does. A parent's
-            // bullet also carries the disclosure, so folding and zooming are
-            // distinct gestures on the same row rather than a mode.
-            Button(action: onZoom) {
-                Image(systemName: hasChildren ? "circle.fill" : "circle")
-                    .font(.system(size: hasChildren ? 8 : 5))
-                    .foregroundStyle(.secondary)
-                    // The dot is 8pt; the tap target has to be a finger wide
-                    // regardless, so the frame is padded out to it rather than
-                    // drawn larger.
+            // Tapping the bullet folds, rather than zooming as it did before.
+            // Zoom moved to a swipe: it is cheap to undo but replaces the whole
+            // screen, and this column sits where a thumb brushes while
+            // scrolling. What is left here is undone by repeating the tap.
+            Button(action: onCollapse) {
+                Bullet(hasChildren: hasChildren, collapsed: node.collapsed)
+                    // The dot is 6pt; a tap target has to be a finger wide
+                    // regardless, so the frame is padded out rather than the
+                    // mark drawn larger.
                     .frame(width: 32, height: 40)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .disabled(!hasChildren)
 
             Text(node.text)
                 .strikethrough(node.done)
                 .foregroundStyle(node.done ? .secondary : .primary)
-
-            Spacer()
-
-            if hasChildren {
-                Text("\(progress.done)/\(progress.total)")
-                    .font(.caption.monospacedDigit())
-                    .foregroundStyle(.secondary)
-                Button(action: onCollapse) {
-                    Image(systemName: node.collapsed ? "chevron.right" : "chevron.down")
-                        .font(.caption)
-                        .foregroundStyle(.tertiary)
-                        .frame(width: 32, height: 40)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-            }
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(.leading, CGFloat(depth) * 18)
         // No `.contentShape(Rectangle())` here. It makes the whole row a single
-        // hit-test target, which swallows taps before they reach the checkbox,
-        // the bullet and the chevron — three separate targets is the point of
-        // the row. Add it only alongside a row-level tap action, never on its
-        // own.
+        // hit-test target, which swallows taps before they reach the checkbox
+        // and the bullet — separate targets are the point of the row. Add it
+        // only alongside a row-level tap action, never on its own.
+    }
+}
+
+/// The done control: a rounded square, filled with a tick once done.
+private struct Checkbox: View {
+    let done: Bool
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: 5)
+            .strokeBorder(done ? AnyShapeStyle(.clear) : AnyShapeStyle(.secondary), lineWidth: 2)
+            .background(
+                RoundedRectangle(cornerRadius: 5)
+                    .fill(done ? AnyShapeStyle(.tint) : AnyShapeStyle(.clear)))
+            .frame(width: 19, height: 19)
+            .overlay {
+                if done {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(.background)
+                }
+            }
+    }
+}
+
+/// The node mark, in the web app's three states: a bare dot for a leaf, a ring
+/// around the dot for an expanded parent, a solid disc for a collapsed one.
+///
+/// The states differ in *shape*, so they read with no colour information at
+/// all. The dot stays the brightest part throughout because the dot is the drag
+/// handle — the ring or disc is context around it.
+private struct Bullet: View {
+    let hasChildren: Bool
+    let collapsed: Bool
+
+    var body: some View {
+        ZStack {
+            if hasChildren {
+                if collapsed {
+                    // The disc is now the only thing saying children are hidden
+                    // here — both the chevron and the count came off the row.
+                    Circle()
+                        .fill(.secondary)
+                        .frame(width: 18, height: 18)
+                } else {
+                    Circle()
+                        .strokeBorder(.secondary, lineWidth: 2)
+                        .frame(width: 18, height: 18)
+                }
+            }
+            Circle()
+                .fill(.primary)
+                .frame(width: 6, height: 6)
+        }
+        .frame(width: 18, height: 18)
     }
 }
