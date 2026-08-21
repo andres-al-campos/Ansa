@@ -59,7 +59,7 @@ public final class SyncClient {
     /// silently. That is the same shape of bug as the deaf socket.
     private static let writeRetry: Duration = .seconds(5)
 
-    private let api: AnsaAPI
+    private let api: any SyncBackend
     private let queue: OpQueue
 
     /// Called with a server tree that should replace local state.
@@ -101,7 +101,7 @@ public final class SyncClient {
     /// Notified when `live` or `rejected` changes, so the UI can redraw.
     public var onStatusChange: (() -> Void)?
 
-    public init(api: AnsaAPI, queueURL: URL, onAdopt: @escaping (Tree) -> Void) {
+    public init(api: any SyncBackend, queueURL: URL, onAdopt: @escaping (Tree) -> Void) {
         self.api = api
         self.queue = OpQueue(url: queueURL)
         self.onAdopt = onAdopt
@@ -205,6 +205,17 @@ public final class SyncClient {
             stashed = nil
             adopt(next)
         }
+    }
+
+    /// Deliver one broadcast frame, as if it had arrived over the socket.
+    ///
+    /// The socket itself is not fakeable — `receive()` drives `URLSession`
+    /// straight from a URL — so this is where a test injects what the server
+    /// would have pushed. It is the same call `receive()` makes on a decoded
+    /// frame, so what the tests exercise is the real handler rather than a
+    /// parallel one written to be testable.
+    func deliverForTesting(tree: Tree, origin: String?) {
+        handle(Broadcast(tree: tree, origin: origin))
     }
 
     /// Adopting is not a local change, so it must not enqueue anything: the

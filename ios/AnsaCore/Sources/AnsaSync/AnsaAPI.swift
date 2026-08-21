@@ -166,7 +166,7 @@ public actor AnsaAPI {
     /// Rebuilt per connection rather than cached, because a reconnect needs a
     /// *fresh* token — reusing the original URL authenticates with an expired
     /// one and is refused, leaving the app silently deaf.
-    func eventsURL() async -> URL? {
+    public func eventsURL() async -> URL? {
         guard var parts = URLComponents(url: base, resolvingAgainstBaseURL: false) else {
             return nil
         }
@@ -207,4 +207,9 @@ struct Broadcast: Decodable {
     /// change with no client behind it. Matching our own means this is the echo
     /// of our own edit and must not be re-adopted.
     let origin: String?
+
+    init(tree: Tree, origin: String?) {
+        self.tree = tree
+        self.origin = origin
+    }
 }
