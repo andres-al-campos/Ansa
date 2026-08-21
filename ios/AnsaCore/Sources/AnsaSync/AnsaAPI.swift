@@ -81,6 +81,11 @@ public actor AnsaAPI {
         var req = URLRequest(url: base.appending(path: path))
         req.httpMethod = method
         req.httpBody = body
+        // Never answer a tree request from the URL cache. Every call here asks
+        // for live state, and a cached 200 is indistinguishable from a fresh
+        // one at the call site — the app comes up rendering an old tree while
+        // believing it is in sync, which is worse than showing nothing.
+        req.cachePolicy = .reloadIgnoringLocalCacheData
         for (k, v) in await headers() { req.setValue(v, forHTTPHeaderField: k) }
         return req
     }
