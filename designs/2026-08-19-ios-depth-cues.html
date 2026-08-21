@@ -1,0 +1,198 @@
+<title>Depth Without Guides</title>
+<style>
+  :root {
+    --ground: #f7f8fa; --panel: #ffffff; --sunk: #eff2f6;
+    --edge: #dce1e8; --edge-soft: #e9edf2; --guide: #9ea6b4;
+    --mark: #6c7686; --mark-dot: #333a47;
+    --ink: #181d28; --ink-mid: #525a69; --ink-faint: #8a93a3; --ink-struck: #7e8797;
+    --bar: #4a7bb5; --bar-track: #e2e7ee; --leaf: #2c7457;
+    --tint: 214;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #10131a; --panel: #181c24; --sunk: #13161d;
+      --edge: #2a303b; --edge-soft: #222831; --guide: #4c5464;
+      --mark: #6e7889; --mark-dot: #b6bfcc;
+      --ink: #e7eaf0; --ink-mid: #98a1b0; --ink-faint: #6a7382; --ink-struck: #6b7686;
+      --bar: #6f9fd8; --bar-track: #252b35; --leaf: #64b795;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground: #10131a; --panel: #181c24; --sunk: #13161d;
+    --edge: #2a303b; --edge-soft: #222831; --guide: #4c5464;
+    --mark: #6e7889; --mark-dot: #b6bfcc;
+    --ink: #e7eaf0; --ink-mid: #98a1b0; --ink-faint: #6a7382; --ink-struck: #6b7686;
+    --bar: #6f9fd8; --bar-track: #252b35; --leaf: #64b795;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--ground); color: var(--ink);
+    font: 15px/1.5 ui-sans-serif, -apple-system, "SF Pro Text", system-ui, sans-serif;
+    padding: 32px 20px 72px;
+  }
+  h1 { font-size: 22px; margin: 0 0 6px; letter-spacing: -.01em; }
+  .sub { color: var(--ink-mid); max-width: 62ch; margin: 0 0 32px; }
+
+  .rack { display: flex; gap: 24px; flex-wrap: wrap; align-items: flex-start; }
+  .opt { flex: 0 0 auto; width: 300px; }
+  .opt > h2 {
+    font-size: 12px; text-transform: uppercase; letter-spacing: .07em;
+    color: var(--ink-faint); margin: 0 0 3px; font-weight: 600;
+  }
+  .opt > p { font-size: 12.5px; color: var(--ink-mid); margin: 0 0 12px; min-height: 3.4em; }
+
+  /* the phone */
+  .phone {
+    background: var(--panel); border: 1px solid var(--edge);
+    border-radius: 20px; overflow: hidden;
+  }
+  .hdr { padding: 12px 14px 10px; display: flex; align-items: center; gap: 9px; }
+  .track { flex: 1; height: 4px; border-radius: 2px; background: var(--bar-track); }
+  .fill { height: 100%; width: 9%; border-radius: 2px; background: var(--bar); }
+  .pct { font: 500 11px/1 ui-monospace, monospace; color: var(--ink-faint); }
+
+  .row {
+    display: flex; align-items: flex-start; gap: 9px;
+    padding: 9px 12px 9px 12px; position: relative;
+    border-top: 1px solid var(--edge-soft);
+  }
+  .lbl { flex: 1; padding-top: 1px; }
+  .done .lbl { color: var(--ink-struck); text-decoration: line-through; }
+
+  /* checkbox */
+  .cb { flex: 0 0 18px; height: 18px; margin-top: 1px; border-radius: 5px;
+        border: 2px solid var(--mark); }
+  .done .cb { background: var(--bar); border-color: var(--bar); position: relative; }
+  .done .cb::after {
+    content: ""; position: absolute; left: 4.5px; top: 1px; width: 4px; height: 8px;
+    border: solid var(--panel); border-width: 0 2px 2px 0; transform: rotate(43deg);
+  }
+  /* bullet */
+  .bu { flex: 0 0 18px; height: 18px; margin-top: 1px; display: grid; place-items: center; }
+  .bu i { width: 6px; height: 6px; border-radius: 50%; background: var(--mark-dot); }
+  .bu.par { border: 2px solid var(--mark); border-radius: 50%; }
+
+  /* ---- A: guides (today) ---- */
+  .guides .row { padding-left: calc(12px + var(--d) * 18px); }
+  .guides .row::before {
+    content: ""; position: absolute; left: 12px; top: 0; bottom: 0;
+    width: calc(var(--d) * 18px);
+    background-image: repeating-linear-gradient(
+      to right, var(--guide) 0 1px, transparent 1px 18px);
+    background-position: 8px 0;
+  }
+
+  /* ---- B: surface tint ---- */
+  .tint .row { padding-left: calc(12px + var(--d) * 12px); }
+  .tint .row[style*="--d: 1"], .tint .row[data-d="1"] { background: var(--sunk); }
+  .tint .row[data-d="2"] { background: color-mix(in srgb, var(--sunk) 55%, var(--ground)); }
+  .tint .row[data-d="3"] { background: color-mix(in srgb, var(--sunk) 30%, var(--ground)); }
+
+  /* ---- C: leading bar ---- */
+  .bar3 .row { padding-left: calc(14px + var(--d) * 14px); }
+  .bar3 .row[data-d="1"]::before,
+  .bar3 .row[data-d="2"]::before,
+  .bar3 .row[data-d="3"]::before {
+    content: ""; position: absolute; top: 0; bottom: 0; width: 3px;
+    border-radius: 2px;
+    left: calc(4px + (var(--d) - 1) * 14px);
+    background: color-mix(in srgb, var(--bar) calc(var(--d) * 26%), var(--guide));
+  }
+
+  /* ---- D: type weight ---- */
+  .wt .row { padding-left: calc(12px + var(--d) * 10px); }
+  .wt .row[data-d="0"] .lbl { font-weight: 600; }
+  .wt .row[data-d="1"] .lbl { font-weight: 400; }
+  .wt .row[data-d="2"] .lbl { font-weight: 400; color: var(--ink-mid); font-size: 14px; }
+  .wt .row[data-d="2"].done .lbl { color: var(--ink-struck); }
+
+  .verdict {
+    margin-top: 34px; max-width: 68ch; border-top: 1px solid var(--edge);
+    padding-top: 18px; color: var(--ink-mid); font-size: 14px;
+  }
+  .verdict strong { color: var(--ink); }
+  .verdict li { margin-bottom: 8px; }
+</style>
+
+<h1>Depth without guides</h1>
+<p class="sub">Four ways to say how deep a row sits, with the real tutorial tree
+and the app's own tokens. Guides are shown first as the baseline they'd replace —
+they break between rows because each row draws its own segment.</p>
+
+<div class="rack">
+
+  <div class="opt">
+    <h2>A · Guides (today)</h2>
+    <p>One hairline per ancestor. Precise, and the only one that stays readable
+    past three levels. Dashes wherever a row boundary falls.</p>
+    <div class="phone guides" id="a"></div>
+  </div>
+
+  <div class="opt">
+    <h2>B · Surface tint</h2>
+    <p>Depth shifts the row's background. Survives wrapping, costs no horizontal
+    space, needs no lines. Collapses past ~3 levels.</p>
+    <div class="phone tint" id="b"></div>
+  </div>
+
+  <div class="opt">
+    <h2>C · Leading bar</h2>
+    <p>One continuous 3pt bar per row instead of N hairlines, colour deepening
+    with level. Reads as one object, not a dotted column.</p>
+    <div class="phone bar3" id="c"></div>
+  </div>
+
+  <div class="opt">
+    <h2>D · Type weight</h2>
+    <p>Level 0 semibold, level 1 regular, level 2 smaller and dimmer. Zero
+    chrome. Fails when a deep row is alone on screen.</p>
+    <div class="phone wt" id="d"></div>
+  </div>
+
+</div>
+
+<div class="verdict">
+  <p><strong>What the phone screenshot actually showed:</strong> rows wrap to
+  three lines, so the text's left edge moves more from wrapping than from
+  nesting. Any cue that lives in the horizontal gap is fighting that. B and C
+  don't — they mark the row, not the space beside it.</p>
+  <ul>
+    <li><strong>B</strong> is the safest and the cheapest to build. Even once the
+    tints stop being separable, the boundary between two rows still says which
+    is deeper.</li>
+    <li><strong>C</strong> keeps more precision than B and doesn't dash, but adds
+    a coloured element to a row that already has two marks on its left.</li>
+    <li><strong>D</strong> is free and pairs with either — worth stacking on B
+    rather than shipping alone.</li>
+  </ul>
+  <p>None of these fix deep trees. That's zoom's job, and Workflowy's own mobile
+  app answers it that way: it barely renders depth because you're never more than
+  a level or two from your scope.</p>
+</div>
+
+<script>
+  const tree = [
+    [0, "Start here — a tour of Ansa", 0, 1],
+    [1, "Tick this off — click the circle on the left", 1, 1],
+    [2, 'Ticking a parent ticks everything under it. Try it on "Tick this off".', 1, 0],
+    [1, "Rename me — click the text and type", 0, 1],
+    [2, "Enter starts a new task below. Escape stops editing.", 0, 0],
+    [1, "Make me a sub-task — press Tab", 0, 1],
+    [2, "Shift-Tab moves it back out again.", 0, 0],
+    [2, "Drag a bullet to move a task and everything under it.", 0, 0],
+    [1, "Collapse me — click my bullet", 0, 1],
+    [2, "Hidden. Click the bullet again to bring this back.", 0, 0],
+  ];
+  const hdr = `<div class="hdr"><div class="track"><div class="fill"></div></div>
+    <span class="pct">9%</span></div>`;
+  const rows = tree.map(([d, text, done, par]) => `
+    <div class="row ${done ? "done" : ""}" data-d="${d}" style="--d: ${d}">
+      <span class="cb"></span>
+      <span class="bu ${par ? "par" : ""}"><i></i></span>
+      <span class="lbl">${text}</span>
+    </div>`).join("");
+  for (const id of ["a", "b", "c", "d"]) {
+    document.getElementById(id).innerHTML = hdr + rows;
+  }
+</script>

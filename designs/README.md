@@ -67,3 +67,24 @@ what. Written after the sync work landed, before any UI refinement started.
   for the web ("press Tab", "click the circle"). The phone likely wants a
   device-neutral tutorial plus a one-time gesture card. Worth doing once the
   gestures actually ship, so the card documents what exists.
+
+## 2026-08-19 — Depth without guides
+
+Four ways for a row to say how deep it sits: the guides that ship today, a
+surface tint, a leading bar, and type weight. Written against the open question
+the row-anatomy notes left — that depth rests entirely on padding and guides.
+
+**What the phone screenshot forced:** rows wrap to three lines, so the text's
+left edge moves more from wrapping than from nesting. Any cue living in the
+horizontal gap fights that. Tint and the leading bar mark the row itself, so
+they don't.
+
+**Where it landed:** tint is the cheapest and degrades best — once the shades
+stop being separable, the boundary between two rows still says which is deeper.
+The leading bar keeps more precision but adds a third coloured mark to a row
+that already has a checkbox and a bullet. Type weight is free and stacks with
+either rather than shipping alone.
+
+Nothing here fixes deep trees. That is zoom's job, which is also how Workflowy's
+mobile app answers it — it barely renders depth, because you are never more than
+a level or two from your scope.
