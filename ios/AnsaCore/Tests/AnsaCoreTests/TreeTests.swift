@@ -97,6 +97,41 @@ struct LeavesUnderTests {
     }
 }
 
+@Suite("leaving an edited row")
+struct CommitEditTests {
+    @Test("an unchanged row writes nothing")
+    func unchanged() {
+        let t = fixture()
+        guard let node = t.first else { return #expect(Bool(false)) }
+        #expect(TreeOps.commitEdit(t, node.id, node.text) == nil)
+        // Trimming happens before the comparison, so whitespace alone is not a
+        // change either.
+        #expect(TreeOps.commitEdit(t, node.id, "  \(node.text)  ") == nil)
+    }
+
+    @Test("new text renames")
+    func renames() {
+        let t = fixture()
+        guard let node = t.first else { return #expect(Bool(false)) }
+        #expect(TreeOps.commitEdit(t, node.id, " Renamed ") == .setText(id: node.id, text: "Renamed"))
+    }
+
+    @Test("emptying a row deletes it, even when it was already empty")
+    func emptyDeletes() {
+        // The stranded-row case: a row created and left without typing has
+        // empty stored text and empty live text, and must still be removed.
+        var t = fixture()
+        t = TreeOps.addChild(t, nil, "").tree
+        guard let blank = t.last else { return #expect(Bool(false)) }
+        #expect(TreeOps.commitEdit(t, blank.id, "") == .removeNode(id: blank.id))
+    }
+
+    @Test("a row that is already gone writes nothing")
+    func missing() {
+        #expect(TreeOps.commitEdit(fixture(), "no-such-id", "") == nil)
+    }
+}
+
 @Suite("the project list")
 struct ProjectListTests {
     @Test("pinned projects come first, without disturbing manual order")

@@ -316,6 +316,27 @@ public enum TreeOps {
         return tree.filter { !doomed.contains($0.id) }
     }
 
+    /// What leaving an edited row should do — nothing, a rename, or a delete.
+    ///
+    /// Ports `commitEditEdit` from `src/edits.ts`, and the empty case is the
+    /// reason it is worth sharing rather than reimplementing. An emptied row is
+    /// a deletion, which is how outliners behave, and that has to fire even when
+    /// the stored text was *already* empty: a row created and left without
+    /// typing is exactly that case, and treating "empty and unchanged" as a
+    /// no-op would strand it on screen forever.
+    ///
+    /// An unchanged non-empty row writes nothing, so leaving a row you only
+    /// looked at does not put an op on the wire.
+    public static func commitEdit(_ tree: Tree, _ id: NodeId, _ text: String) -> Op? {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty {
+            guard byId(tree, id) != nil else { return nil }
+            return .removeNode(id: id)
+        }
+        if byId(tree, id)?.text == trimmed { return nil }
+        return .setText(id: id, text: trimmed)
+    }
+
     public static func setText(_ tree: Tree, _ id: NodeId, _ text: String) -> Tree {
         tree.map { node in
             guard node.id == id else { return node }
