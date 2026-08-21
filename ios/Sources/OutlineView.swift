@@ -99,6 +99,18 @@ struct OutlineView: View {
                 default: break
                 }
             }
+            // Follow the tree when the node being viewed is deleted elsewhere.
+            // Without this the zoom keeps pointing at an id that is gone: the
+            // row list walks children of nothing and comes back empty, and the
+            // title falls through to "Ansa", so the screen says the project is
+            // empty rather than that it is no longer there.
+            //
+            // Both trees are needed. A deleted node has no ancestors left in
+            // the new tree, so where to land is a question only the previous
+            // one can answer.
+            .onChange(of: tree) { was, now in
+                scope = TreeOps.survivingScope(scope, was: was, now: now)
+            }
             // Two mid-edit states, and the store takes one flag, so they are
             // combined here rather than each calling setBusy on its own — the
             // one that ends first would otherwise clear the other's hold.
