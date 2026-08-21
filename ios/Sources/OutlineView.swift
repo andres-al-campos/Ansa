@@ -171,14 +171,14 @@ struct OutlineView: View {
                     onToggleDone: { apply(.setDone(id: row.node.id, done: !row.node.done)) },
                     onCollapse: { apply(.toggleCollapsed(id: row.node.id)) },
                     onBeginEdit: { beginEdit(row.node) },
-                    onBlur: { id in commitEdit(newSibling: false, from: id) },
+                    onBlur: { id in commitEdit(from: id) },
                     // Return commits and stops, rather than opening a fresh row
                     // below. The web auto-advances because typing is how you add
                     // there; the phone has a permanent "New task" field at the
                     // bottom, so a new row here was a second way to do the same
                     // thing — and it cost a keyboard dismiss-and-reopen on every
                     // Return as focus jumped.
-                    onSubmit: { commitEdit(newSibling: false) },
+                    onSubmit: { commitEdit() },
                     onDragBegan: { beginDrag(row.node.id) },
                     onDragMoved: { p in dragMoved(p) },
                     onDragEnded: endDrag,
@@ -404,15 +404,17 @@ struct OutlineView: View {
     /// a delete, or nothing at all — the same rule the web applies, so a row
     /// emptied on the phone disappears exactly as it would in the browser.
     ///
-    /// - Parameter newSibling: whether to open a fresh row after this one, which
-    ///   is what Return does. A row that just deleted itself gets no successor:
-    ///   Return on an empty row means "I am done here", not "give me another".
+    /// Both Return and tapping away land here: on the phone they mean the same
+    /// thing. Return used to open a fresh row below, the way the web still
+    /// does, but the phone has a permanent "Add a task" field — so that was a
+    /// second route to one outcome, and it cost a keyboard dismiss-and-reopen
+    /// as focus jumped to the new row.
+    ///
     /// - Parameter from: the row the caller believes it is committing. A blur
     ///   arrives after the field has gone, so by then `editing` may already
-    ///   name the row that replaced it — Return creates a sibling and focuses
-    ///   it, and the outgoing field's blur lands a beat later. Committing then
-    ///   would tear down the new row the instant it opened.
-    private func commitEdit(newSibling: Bool, from: NodeId? = nil) {
+    ///   name a different row; committing that one would end an edit the user
+    ///   just started.
+    private func commitEdit(from: NodeId? = nil) {
         guard let id = editing else { return }
         if let from, from != id { return }
         let op = TreeOps.commitEdit(tree, id, editText)
@@ -420,27 +422,7 @@ struct OutlineView: View {
 
         editing = nil
         editText = ""
-
-        guard newSibling, op != .removeNode(id: id) else {
-            focusedRow = nil
-            return
-        }
-        // The sibling is a child of this row's parent, appended at the end.
-        // There is no addSibling op — the server does not have one — and the
-        // rows this creates are almost always at the bottom anyway.
-        guard let parentId = TreeOps.byId(tree, id)?.parentId ?? scope else {
-            focusedRow = nil
-            return
-        }
-        let fresh = TreeOps.newId()
-        apply(.addChild(
-            id: fresh, parentId: parentId, text: "",
-            at: Date().timeIntervalSince1970 * 1000))
-        // Deferred for the same reason as `beginEdit` — the row does not
-        // exist to focus until SwiftUI has diffed it into the List.
-        editText = ""
-        editing = fresh
-        DispatchQueue.main.async { focusedRow = fresh }
+        focusedRow = nil
     }
 
     private func confirmDeleteProject(_ id: NodeId) {
