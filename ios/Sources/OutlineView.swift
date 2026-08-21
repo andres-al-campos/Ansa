@@ -15,6 +15,18 @@ struct OutlineView: View {
     @State private var dragging = false
     /// The project whose delete is awaiting confirmation.
     @State private var pendingDelete: Node?
+    /// The row being renamed in place, and its live text. Held here rather than
+    /// in the row so the tree can change underneath without resetting the field
+    /// the user is typing into.
+    @State private var editing: NodeId?
+    @State private var editText = ""
+    /// Which row's field holds focus, by node id rather than a bare Bool.
+    ///
+    /// A single shared `Bool` across the ForEach cannot express "focus the row
+    /// that is replacing this one" — the write is ambiguous between the field
+    /// being torn down and the one being built, and Return-for-new-sibling
+    /// lost it every time. Naming the id makes the target unambiguous.
+    @FocusState private var focusedRow: NodeId?
     @Environment(\.scenePhase) private var scenePhase
 
     private var tree: Tree { store.tree }
@@ -81,7 +93,7 @@ struct OutlineView: View {
             // adopting a server tree under it is what makes text vanish as it
             // is being written. Dragging: the row would move out from under the
             // finger mid-gesture.
-            .onChange(of: capturing || dragging) { _, busy in store.setBusy(busy) }
+            .onChange(of: capturing || dragging || editing != nil) { _, busy in store.setBusy(busy) }
             // A project takes its whole subtree with it, and unlike ticking a
             // parent that is not undoable — the ops are one-way. The web arms
             // the trash and confirms in place; a dialog is the same idea in the
@@ -119,14 +131,20 @@ struct OutlineView: View {
     /// The rows themselves. Only drawn inside a project — the root shows the
     /// project grid instead.
     private var outline: some View {
-                List {
+        List {
             ForEach(rows, id: \.node.id) { row in
                 OutlineRow(
                     node: row.node,
                     depth: row.depth,
                     hasChildren: !TreeOps.isLeaf(tree, row.node.id),
+                    editing: editing == row.node.id,
+                    editText: $editText,
+                    focusedRow: $focusedRow,
                     onToggleDone: { apply(.setDone(id: row.node.id, done: !row.node.done)) },
-                    onCollapse: { apply(.toggleCollapsed(id: row.node.id)) })
+                    onCollapse: { apply(.toggleCollapsed(id: row.node.id)) },
+                    onBeginEdit: { beginEdit(row.node) },
+                    onBlur: { id in commitEdit(newSibling: false, from: id) },
+                    onSubmit: { commitEdit(newSibling: true) })
                     // Zoom lives on a swipe rather than on the bullet.
                     // It is one Back tap to undo but replaces the whole
                     // screen, and a revealed action cannot fire from a
@@ -216,6 +234,62 @@ struct OutlineView: View {
         apply(.markOpened(id: root, at: Date().timeIntervalSince1970 * 1000))
     }
 
+    /// Start renaming a row, seeding the field with what is already there.
+    ///
+    /// The focus has to wait a turn. `editing` is what causes the TextField to
+    /// exist at all, so focusing in the same pass targets a field that has not
+    /// been built yet — the write lands on nothing, the field comes up
+    /// unfocused, and the focus-loss commit tears the edit down before it
+    /// starts.
+    private func beginEdit(_ node: Node) {
+        editText = node.text
+        editing = node.id
+        DispatchQueue.main.async { focusedRow = node.id }
+    }
+
+    /// Finish renaming. `AnsaCore.commitEdit` decides whether that is a rename,
+    /// a delete, or nothing at all — the same rule the web applies, so a row
+    /// emptied on the phone disappears exactly as it would in the browser.
+    ///
+    /// - Parameter newSibling: whether to open a fresh row after this one, which
+    ///   is what Return does. A row that just deleted itself gets no successor:
+    ///   Return on an empty row means "I am done here", not "give me another".
+    /// - Parameter from: the row the caller believes it is committing. A blur
+    ///   arrives after the field has gone, so by then `editing` may already
+    ///   name the row that replaced it — Return creates a sibling and focuses
+    ///   it, and the outgoing field's blur lands a beat later. Committing then
+    ///   would tear down the new row the instant it opened.
+    private func commitEdit(newSibling: Bool, from: NodeId? = nil) {
+        guard let id = editing else { return }
+        if let from, from != id { return }
+        let op = TreeOps.commitEdit(tree, id, editText)
+        if let op { apply(op) }
+
+        editing = nil
+        editText = ""
+
+        guard newSibling, op != .removeNode(id: id) else {
+            focusedRow = nil
+            return
+        }
+        // The sibling is a child of this row's parent, appended at the end.
+        // There is no addSibling op — the server does not have one — and the
+        // rows this creates are almost always at the bottom anyway.
+        guard let parentId = TreeOps.byId(tree, id)?.parentId ?? scope else {
+            focusedRow = nil
+            return
+        }
+        let fresh = TreeOps.newId()
+        apply(.addChild(
+            id: fresh, parentId: parentId, text: "",
+            at: Date().timeIntervalSince1970 * 1000))
+        // Deferred for the same reason as `beginEdit` — the row does not
+        // exist to focus until SwiftUI has diffed it into the List.
+        editText = ""
+        editing = fresh
+        DispatchQueue.main.async { focusedRow = fresh }
+    }
+
     private func confirmDeleteProject(_ id: NodeId) {
         pendingDelete = TreeOps.byId(tree, id)
     }
@@ -288,8 +362,14 @@ private struct OutlineRow: View {
     let node: Node
     let depth: Int
     let hasChildren: Bool
+    let editing: Bool
+    @Binding var editText: String
+    @FocusState.Binding var focusedRow: NodeId?
     let onToggleDone: () -> Void
     let onCollapse: () -> Void
+    let onBeginEdit: () -> Void
+    let onBlur: (NodeId) -> Void
+    let onSubmit: () -> Void
 
     /// One indent step. Smaller than the web's, because the tint carries most
     /// of the depth signal and every point spent here comes off the text.
@@ -325,14 +405,65 @@ private struct OutlineRow: View {
             .buttonStyle(.plain)
             .disabled(!hasChildren)
 
-            Text(node.text)
-                .strikethrough(node.done)
-                .foregroundStyle(node.done ? .secondary : .primary)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                // Without this the last word runs under the screen edge. The
-                // list's own inset is spent on the leading marks, and a row
-                // that wraps takes every point it is given.
-                .padding(.trailing, 4)
+            // Tap the label to rename in place. The field replaces the text
+            // rather than sitting beside it, so the row does not reflow when
+            // editing starts and the words stay exactly where they were.
+            Group {
+                if editing {
+                    TextField("", text: $editText, axis: .vertical)
+                        .textFieldStyle(.plain)
+                        .focused($focusedRow, equals: node.id)
+                        .submitLabel(.return)
+                        // Return means "done, give me the next row", so it goes
+                        // through onSubmit rather than the focus-loss commit.
+                        .onSubmit(onSubmit)
+                        // A vertical-axis TextField can also take Return as a
+                        // literal newline — from paste, or a keyboard onSubmit
+                        // does not cover. Rows are one line of text
+                        // conceptually; the axis exists only so long text wraps
+                        // instead of scrolling sideways.
+                        .onChange(of: editText) { _, text in
+                            guard text.contains("\n") else { return }
+                            editText = text.replacingOccurrences(of: "\n", with: "")
+                            onSubmit()
+                        }
+                        // Losing focus is what "tapped away" looks like:
+                        // another row, the capture field, or the keyboard's
+                        // dismiss. onDisappear cannot serve here — by the time
+                        // the field is torn down the commit has usually already
+                        // run and cleared the state it needs.
+                        //
+                        // Only a true→false transition commits. The field is
+                        // born unfocused and gains focus a beat later, so
+                        // reacting to the initial false would end the edit on
+                        // the frame it began.
+                        .onChange(of: focusedRow) { was, now in
+                            guard was == node.id, now != node.id else { return }
+                            onBlur(node.id)
+                        }
+                } else {
+                    // A Button, not `.onTapGesture` — inside a List row the
+                    // bare tap gesture never fires, while the checkbox and
+                    // bullet beside it, both plain Buttons, work.
+                    //
+                    // The frame goes *inside* the contentShape. Reversed, the
+                    // shape is taken from the text's own size and the space
+                    // past a short word stays dead, which is most rows.
+                    Button(action: onBeginEdit) {
+                        Text(node.text)
+                            .strikethrough(node.done)
+                            .foregroundStyle(node.done ? .secondary : .primary)
+                            .frame(maxWidth: .infinity, minHeight: 40, alignment: .leading)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            // Without this the last word runs under the screen edge. The
+            // list's own inset is spent on the leading marks, and a row
+            // that wraps takes every point it is given.
+            .padding(.trailing, 4)
         }
         .padding(.leading, CGFloat(depth) * Self.indent)
         .listRowBackground(tint)
