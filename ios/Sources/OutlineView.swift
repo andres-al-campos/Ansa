@@ -172,7 +172,13 @@ struct OutlineView: View {
                     onCollapse: { apply(.toggleCollapsed(id: row.node.id)) },
                     onBeginEdit: { beginEdit(row.node) },
                     onBlur: { id in commitEdit(newSibling: false, from: id) },
-                    onSubmit: { commitEdit(newSibling: true) },
+                    // Return commits and stops, rather than opening a fresh row
+                    // below. The web auto-advances because typing is how you add
+                    // there; the phone has a permanent "New task" field at the
+                    // bottom, so a new row here was a second way to do the same
+                    // thing — and it cost a keyboard dismiss-and-reopen on every
+                    // Return as focus jumped.
+                    onSubmit: { commitEdit(newSibling: false) },
                     onDragBegan: { beginDrag(row.node.id) },
                     onDragMoved: { p in dragMoved(p) },
                     onDragEnded: endDrag,
@@ -607,9 +613,12 @@ private struct OutlineRow: View {
                     TextField("", text: $editText, axis: .vertical)
                         .textFieldStyle(.plain)
                         .focused($focusedRow, equals: node.id)
-                        .submitLabel(.return)
-                        // Return means "done, give me the next row", so it goes
-                        // through onSubmit rather than the focus-loss commit.
+                        .submitLabel(.done)
+                        // Return commits and dismisses. It goes through
+                        // onSubmit rather than the focus-loss commit so the
+                        // two paths stay distinguishable — blur can also be a
+                        // tap onto another row, which commits the same way but
+                        // is not the user saying they are finished.
                         .onSubmit(onSubmit)
                         // A vertical-axis TextField can also take Return as a
                         // literal newline — from paste, or a keyboard onSubmit
