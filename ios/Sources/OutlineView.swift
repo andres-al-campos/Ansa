@@ -291,6 +291,13 @@ struct OutlineView: View {
         }
     }
 
+    /// The rows' shared left edge in global space.
+    ///
+    /// Any row's will do: the indent is padding *inside* the row, so every
+    /// frame starts at the list's own inset whatever its depth. Taking the
+    /// minimum avoids depending on which row happens to be first.
+    private var rowsLeft: CGFloat { rowFrames.values.map(\.minX).min() ?? 0 }
+
     private func beginDrag(_ id: NodeId) {
         dragging = id
         dropTarget = nil
@@ -305,7 +312,7 @@ struct OutlineView: View {
     private func dragMoved(_ point: CGPoint) {
         guard let dragging else { return }
         dragPoint = point
-        let left = boxes.isEmpty ? 0 : (rowFrames[rows.first?.node.id ?? ""]?.minX ?? 0)
+        let left = rowsLeft
         let next = TreeOps.dropTargetAt(
             x: Double(point.x - left),
             y: Double(point.y),
@@ -341,7 +348,7 @@ struct OutlineView: View {
     /// gap to draw in.
     @ViewBuilder private var dropIndicator: some View {
         if let target = dropTarget, let frame = rowFrames[target.id] {
-            let left = rowFrames[rows.first?.node.id ?? ""]?.minX ?? 0
+            let left = rowsLeft
             switch target.mode {
             case .into:
                 RoundedRectangle(cornerRadius: 6)
