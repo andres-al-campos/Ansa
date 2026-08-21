@@ -12,7 +12,17 @@ struct OutlineView: View {
     @State private var scope: NodeId?
     @State private var draft = ""
     @FocusState private var capturing: Bool
-    @State private var dragging = false
+    /// The row being dragged, once a long press has armed it, plus where the
+    /// finger is and where the row would land. All three are one gesture's
+    /// worth of state, so they live and die together in `endDrag`.
+    @State private var dragging: NodeId?
+    @State private var dragPoint: CGPoint = .zero
+    @State private var dropTarget: TreeOps.DropTarget?
+    /// Row boxes in list space, keyed by id, refreshed as rows lay out.
+    @State private var rowFrames: [NodeId: CGRect] = [:]
+    /// The list's own origin, so a touch in global space can be rebased onto
+    /// the rows without every row having to know where the list starts.
+    @State private var listOrigin: CGPoint = .zero
     /// The project whose delete is awaiting confirmation.
     @State private var pendingDelete: Node?
     /// The row being renamed in place, and its live text. Held here rather than
@@ -28,6 +38,10 @@ struct OutlineView: View {
     /// lost it every time. Naming the id makes the target unambiguous.
     @FocusState private var focusedRow: NodeId?
     @Environment(\.scenePhase) private var scenePhase
+
+    /// Prepared once rather than per tick: a generator built at the moment of
+    /// the tap fires late enough to feel unrelated to the move that caused it.
+    private let haptic = UIImpactFeedbackGenerator(style: .light)
 
     private var tree: Tree { store.tree }
 
@@ -93,7 +107,9 @@ struct OutlineView: View {
             // adopting a server tree under it is what makes text vanish as it
             // is being written. Dragging: the row would move out from under the
             // finger mid-gesture.
-            .onChange(of: capturing || dragging || editing != nil) { _, busy in store.setBusy(busy) }
+            .onChange(of: capturing || dragging != nil || editing != nil) { _, busy in
+                store.setBusy(busy)
+            }
             // A project takes its whole subtree with it, and unlike ticking a
             // parent that is not undoable — the ops are one-way. The web arms
             // the trash and confirms in place; a dialog is the same idea in the
@@ -144,7 +160,17 @@ struct OutlineView: View {
                     onCollapse: { apply(.toggleCollapsed(id: row.node.id)) },
                     onBeginEdit: { beginEdit(row.node) },
                     onBlur: { id in commitEdit(newSibling: false, from: id) },
-                    onSubmit: { commitEdit(newSibling: true) })
+                    onSubmit: { commitEdit(newSibling: true) },
+                    onDragBegan: { beginDrag(row.node.id) },
+                    onDragMoved: { p in dragMoved(p) },
+                    onDragEnded: endDrag,
+                    isDragging: dragging == row.node.id)
+                    .background(
+                        GeometryReader { geo in
+                            Color.clear.preference(
+                                key: RowFramesKey.self,
+                                value: [row.node.id: geo.frame(in: .global)])
+                        })
                     // Zoom lives on a swipe rather than on the bullet.
                     // It is one Back tap to undo but replaces the whole
                     // screen, and a revealed action cannot fire from a
@@ -163,6 +189,17 @@ struct OutlineView: View {
             .onDelete(perform: delete)
         }
         .listStyle(.plain)
+        .onPreferenceChange(RowFramesKey.self) { rowFrames = $0 }
+        // The indicator is drawn in the list's space while every frame is
+        // measured globally, so the overlay records its own origin to convert
+        // between the two.
+        .overlay(alignment: .topLeading) {
+            GeometryReader { geo in
+                dropIndicator
+                    .onAppear { listOrigin = geo.frame(in: .global).origin }
+                    .onChange(of: geo.frame(in: .global).origin) { _, o in listOrigin = o }
+            }
+        }
 
     }
 
@@ -232,6 +269,97 @@ struct OutlineView: View {
         scope = id
         let root = TreeOps.lineageOf(tree, id).first?.id ?? id
         apply(.markOpened(id: root, at: Date().timeIntervalSince1970 * 1000))
+    }
+
+    // MARK: - Dragging
+
+    /// The rows as the hit-test wants them: visual order, with depth.
+    private var hitRows: [TreeOps.HitRow] {
+        rows.map { .init(id: $0.node.id, depth: $0.depth) }
+    }
+
+    /// Row boxes in global space, in visual order, from the measured frames.
+    ///
+    /// Measured rather than derived from a uniform height, because a row whose
+    /// text wraps is taller than one that does not — and the band arithmetic
+    /// splits each row into quarters, so a wrong height puts the `into` band in
+    /// the wrong place rather than merely off by a little.
+    private var boxes: [TreeOps.RowBox] {
+        rows.compactMap { row in
+            guard let f = rowFrames[row.node.id] else { return nil }
+            return .init(id: row.node.id, top: f.minY, height: f.height)
+        }
+    }
+
+    private func beginDrag(_ id: NodeId) {
+        dragging = id
+        dropTarget = nil
+    }
+
+    /// Re-run the hit-test for the finger's current position.
+    ///
+    /// Global coordinates throughout: the row frames are measured in global
+    /// space and the gesture reports in it, so nothing has to know where the
+    /// list begins. Only the X needs rebasing, onto the row's own left edge,
+    /// because that is where the indent steps are counted from.
+    private func dragMoved(_ point: CGPoint) {
+        guard let dragging else { return }
+        dragPoint = point
+        let left = boxes.isEmpty ? 0 : (rowFrames[rows.first?.node.id ?? ""]?.minX ?? 0)
+        let next = TreeOps.dropTargetAt(
+            x: Double(point.x - left),
+            y: Double(point.y),
+            dragging: dragging,
+            tree: tree,
+            visible: hitRows,
+            boxes: boxes,
+            guideX0: Double(OutlineRow.guideX0),
+            indent: Double(OutlineRow.indent))
+        // Haptic on every change of target, not just of depth: crossing from a
+        // nest into a gap is as much a change of meaning as changing level, and
+        // the indicator moves for both.
+        if next != dropTarget { haptic.impactOccurred(intensity: 0.6) }
+        dropTarget = next
+    }
+
+    /// Release: apply the drop, then clear every piece of drag state together.
+    private func endDrag() {
+        defer {
+            dragging = nil
+            dropTarget = nil
+        }
+        guard let dragging, let target = dropTarget,
+              let op = TreeOps.dropOp(tree, dragging, target, scope: scope) else { return }
+        apply(op)
+    }
+
+    /// The line showing where the row would land, drawn over the list.
+    ///
+    /// A gap shows a line indented to the depth the finger picked — that indent
+    /// is the only thing distinguishing "sibling" from "child" at the same
+    /// gap. Nesting into a row highlights the row instead, because there is no
+    /// gap to draw in.
+    @ViewBuilder private var dropIndicator: some View {
+        if let target = dropTarget, let frame = rowFrames[target.id] {
+            let left = rowFrames[rows.first?.node.id ?? ""]?.minX ?? 0
+            switch target.mode {
+            case .into:
+                RoundedRectangle(cornerRadius: 6)
+                    .strokeBorder(Color.accentColor, lineWidth: 2)
+                    .frame(width: frame.width, height: frame.height)
+                    .offset(x: frame.minX - left, y: frame.minY - listOrigin.y)
+            case .before, .after:
+                let x = OutlineRow.guideX0 + CGFloat(target.depth ?? 0) * OutlineRow.indent
+                Capsule()
+                    .fill(Color.accentColor)
+                    .frame(width: max(0, frame.width - x), height: 3)
+                    .offset(
+                        x: x,
+                        y: (target.mode == .before ? frame.minY : frame.maxY) - listOrigin.y)
+            case .return:
+                EmptyView()
+            }
+        }
     }
 
     /// Start renaming a row, seeding the field with what is already there.
@@ -370,10 +498,47 @@ private struct OutlineRow: View {
     let onBeginEdit: () -> Void
     let onBlur: (NodeId) -> Void
     let onSubmit: () -> Void
+    /// Drag, reported in global coordinates. The row does not know where the
+    /// list starts, so the view that owns the hit-test rebases these.
+    let onDragBegan: () -> Void
+    let onDragMoved: (CGPoint) -> Void
+    let onDragEnded: () -> Void
+    /// True while this row is the one being carried, which dims it in place.
+    let isDragging: Bool
+
+    /// Long-press to arm, then drag. Without the press a drag off the bullet
+    /// would fight the List's own scroll, and the bullet's fold tap would be
+    /// impossible to land — a fold is a tap, and every tap starts as a tiny
+    /// drag. The delay is what separates the two, so it is load-bearing rather
+    /// than polish.
+    private var dragGesture: some Gesture {
+        LongPressGesture(minimumDuration: 0.35)
+            .sequenced(before: DragGesture(coordinateSpace: .global))
+            .onChanged { value in
+                switch value {
+                case .first:
+                    break
+                case .second(_, let drag):
+                    guard let drag else {
+                        onDragBegan()
+                        return
+                    }
+                    onDragMoved(drag.location)
+                }
+            }
+            .onEnded { _ in onDragEnded() }
+    }
 
     /// One indent step. Smaller than the web's, because the tint carries most
     /// of the depth signal and every point spent here comes off the text.
-    private static let indent: CGFloat = 12
+    ///
+    /// Not private: the drag hit-test has to count indent steps in exactly the
+    /// units the row draws them in, and a second copy of these numbers is how
+    /// the indicator ends up pointing at a different level than the drop.
+    static let indent: CGFloat = 12
+    /// X of depth 0 — past the checkbox and bullet columns, where the text
+    /// starts. Both columns are 32pt wide with 10pt gaps.
+    static let guideX0: CGFloat = 84
 
     var body: some View {
         HStack(spacing: 10) {
@@ -403,7 +568,11 @@ private struct OutlineRow: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            // Only a parent can fold, but every row can be dragged, so the
+            // disable covers the Button alone and the drag gesture is attached
+            // outside it.
             .disabled(!hasChildren)
+            .gesture(dragGesture)
 
             // Tap the label to rename in place. The field replaces the text
             // rather than sitting beside it, so the row does not reflow when
@@ -642,5 +811,17 @@ private struct ProjectRow: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+    }
+}
+
+/// Row frames in global space, collected up the view tree.
+///
+/// The hit-test needs every row's box at once, but only each row knows its own.
+/// A preference is the way SwiftUI passes that upward without the parent
+/// measuring children it does not own.
+private struct RowFramesKey: PreferenceKey {
+    static var defaultValue: [NodeId: CGRect] { [:] }
+    static func reduce(value: inout [NodeId: CGRect], nextValue: () -> [NodeId: CGRect]) {
+        value.merge(nextValue()) { _, new in new }
     }
 }
