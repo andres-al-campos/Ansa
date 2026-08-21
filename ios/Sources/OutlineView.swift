@@ -591,7 +591,13 @@ private struct OutlineRow: View {
             // disable covers the Button alone and the drag gesture is attached
             // outside it.
             .disabled(!hasChildren)
-            .gesture(dragGesture)
+            // High priority, not `.gesture`: a plain gesture loses the touch to
+            // the List's own scroll, so a real finger on the bullet scrolls the
+            // page and the drag never arms. (Injected touches in a simulator
+            // skip that arbitration, which is why this looked like it worked.)
+            // The long-press delay is what keeps this from stealing the fold
+            // tap — the press has to complete before the drag sees anything.
+            .highPriorityGesture(dragGesture)
 
             // Tap the label to rename in place. The field replaces the text
             // rather than sitting beside it, so the row does not reflow when
