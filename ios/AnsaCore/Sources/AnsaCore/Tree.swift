@@ -374,6 +374,38 @@ public enum TreeOps {
         }
     }
 
+    /// Where the zoom should point after the tree changed underneath it.
+    ///
+    /// Returns the scope unchanged while it still resolves, which is every
+    /// ordinary edit. It only does work when the node being viewed has gone —
+    /// deleted on another device, or by an op that arrived over the socket —
+    /// and the alternative is a screen showing an empty list under a title for
+    /// something that no longer exists.
+    ///
+    /// The fallback walks the lineage the node had in the tree it was *last
+    /// seen in*, because a deleted node has no ancestors in the new tree to
+    /// walk. That lineage is why `was` is a parameter: the new tree alone
+    /// cannot say where the user was standing. The first ancestor that
+    /// survived wins; nil means none did, which lands on the project list.
+    ///
+    /// - Parameters:
+    ///   - scope: the node currently zoomed into, nil for the project list.
+    ///   - was: the tree the scope was resolving against a moment ago.
+    ///   - now: the tree that just arrived.
+    public static func survivingScope(
+        _ scope: NodeId?, was: Tree, now: Tree
+    ) -> NodeId? {
+        guard let scope else { return nil }
+        if byId(now, scope) != nil { return scope }
+        // `lineageOf` is root-first, so walk it backwards to prefer the
+        // closest surviving ancestor over the outermost one — landing the
+        // user one level out, not all the way at the top.
+        for ancestor in lineageOf(was, scope).reversed() where ancestor.id != scope {
+            if byId(now, ancestor.id) != nil { return ancestor.id }
+        }
+        return nil
+    }
+
     /// Where to land on open: the project last worked in, or nil for the home
     /// list. The port of `resumeScope` — see the TypeScript for why it is
     /// derived from `lastOpenedAt` rather than stored per device.

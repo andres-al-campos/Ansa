@@ -296,6 +296,67 @@ struct EditingTests {
     }
 }
 
+/// No TypeScript counterpart: the web reads its scope from the URL, so a
+/// vanished node lands on a 404-ish empty route the user can navigate out of.
+/// The phone holds it in view state, where the same event leaves a blank list
+/// under a stale title and no way to tell what happened.
+@Suite("survivingScope — where the zoom goes when its node is deleted")
+struct SurvivingScopeTests {
+
+    /// The fixture minus `id` and everything under it, the way a `removeNode`
+    /// broadcast from another device arrives.
+    func without(_ id: NodeId) -> Tree {
+        TreeOps.removeNode(fixture(), id)
+    }
+
+    @Test("a scope that still resolves is left alone")
+    func unchangedWhenPresent() {
+        // The common case by a wide margin: every ordinary edit reaches here,
+        // so it has to be a no-op rather than a re-derivation.
+        #expect(
+            TreeOps.survivingScope("p2b", was: fixture(), now: fixture()) == "p2b")
+    }
+
+    @Test("the project list stays the project list")
+    func nilStaysNil() {
+        #expect(TreeOps.survivingScope(nil, was: fixture(), now: fixture()) == nil)
+    }
+
+    @Test("a deleted scope falls back to its nearest surviving ancestor")
+    func fallsBackToParent() {
+        // Standing on `p2b1` when it goes should land on `p2b`, one level out,
+        // not at the root — the user keeps their place as nearly as the tree
+        // allows.
+        #expect(
+            TreeOps.survivingScope("p2b1", was: fixture(), now: without("p2b1"))
+                == "p2b")
+    }
+
+    @Test("a deleted subtree skips past the ancestors that went with it")
+    func skipsDeletedAncestors() {
+        // Removing `p2` takes `p2b` and `p2b1` too. The nearest ancestor that
+        // actually survived is `forms`, and walking the *old* lineage is the
+        // only way to find it — none of the intermediate ids exist any more.
+        #expect(
+            TreeOps.survivingScope("p2b1", was: fixture(), now: without("p2"))
+                == "forms")
+    }
+
+    @Test("a deleted project lands on the project list")
+    func rootDeletionLandsHome() {
+        // Nothing above a root survived because there was nothing above it.
+        #expect(TreeOps.survivingScope("taxes", was: fixture(), now: without("taxes")) == nil)
+        #expect(TreeOps.survivingScope("p2b1", was: fixture(), now: without("taxes")) == nil)
+    }
+
+    @Test("a scope missing from both trees lands on the project list")
+    func unknownScopeLandsHome() {
+        // No lineage to walk. Reachable if the scope was already stale when
+        // the tree arrived, and the answer that cannot strand anyone is home.
+        #expect(TreeOps.survivingScope("ghost", was: fixture(), now: fixture()) == nil)
+    }
+}
+
 @Suite("resumeScope — where to land on open")
 struct ResumeScopeTests {
     func withOpened(_ stamps: [NodeId: Double]) -> Tree {
