@@ -536,16 +536,28 @@ private struct OutlineRow: View {
             .onEnded { _ in onDragEnded() }
     }
 
-    /// One indent step. Smaller than the web's, because the tint carries most
-    /// of the depth signal and every point spent here comes off the text.
+    /// One indent step, and the spacing between two depth guides.
+    ///
+    /// Wider than it needs to be for the tint alone. The guides are what set
+    /// it: at 12pt four levels read as a hatch rather than four rails, and the
+    /// guide is the only thing on screen that says which depth a drag landed
+    /// on. The cost is label width at every level — depth 4 starts 164pt into
+    /// a 390pt screen — which is a deliberate nudge toward zooming into a
+    /// subtree rather than nesting deeply in place.
     ///
     /// Not private: the drag hit-test has to count indent steps in exactly the
     /// units the row draws them in, and a second copy of these numbers is how
     /// the indicator ends up pointing at a different level than the drop.
-    static let indent: CGFloat = 12
-    /// X of depth 0 — past the checkbox and bullet columns, where the text
-    /// starts. Both columns are 32pt wide with 10pt gaps.
-    static let guideX0: CGFloat = 84
+    static let indent: CGFloat = 20
+
+    /// X of depth 0 — the centre of the bullet column, which is where a depth
+    /// guide runs.
+    ///
+    /// The bullet leads the row, so this is half a mark rather than the full
+    /// width of two columns it used to be. That is the whole reason the bullet
+    /// and the checkbox swapped: a guide through bullet centres is only a
+    /// straight line if nothing else shares that column.
+    static let guideX0: CGFloat = 16
 
     var body: some View {
         HStack(spacing: 10) {
@@ -555,13 +567,6 @@ private struct OutlineRow: View {
             // converged on one mark meaning two things in adjacent columns.
             // Shape is categorical: it says what the control is, whatever state
             // it happens to be in, which leaves fill free to mean only "done".
-            Button(action: onToggleDone) {
-                Checkbox(done: node.done)
-                    .frame(width: 32, height: 40)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-
             // Tapping the bullet folds, rather than zooming as it did before.
             // Zoom moved to a swipe: it is cheap to undo but replaces the whole
             // screen, and this column sits where a thumb brushes while
@@ -586,6 +591,13 @@ private struct OutlineRow: View {
             // The long-press delay is what keeps this from stealing the fold
             // tap — the press has to complete before the drag sees anything.
             .highPriorityGesture(dragGesture)
+
+            Button(action: onToggleDone) {
+                Checkbox(done: node.done)
+                    .frame(width: 32, height: 40)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
 
             // Tap the label to rename in place. The field replaces the text
             // rather than sitting beside it, so the row does not reflow when
