@@ -213,7 +213,10 @@ struct OutlineView: View {
         // between the two.
         .overlay(alignment: .topLeading) {
             GeometryReader { geo in
-                dropIndicator
+                ZStack(alignment: .topLeading) {
+                    depthGuides
+                    dropIndicator
+                }
                     .onAppear { listOrigin = geo.frame(in: .global).origin }
                     .onChange(of: geo.frame(in: .global).origin) { _, o in listOrigin = o }
             }
@@ -356,6 +359,40 @@ struct OutlineView: View {
         guard let dragging, let target = dropTarget,
               let op = TreeOps.dropOp(tree, dragging, target, scope: scope) else { return }
         apply(op)
+    }
+
+    /// The vertical lines connecting a parent to everything under it.
+    ///
+    /// Drawn here, over the list, rather than in each row's background. The
+    /// earlier attempt put them behind the rows and `List`'s per-row insets cut
+    /// every line into segments; one rect spanning the whole run cannot be cut
+    /// that way. They also sit in the bullet column now, which does not move
+    /// when text wraps — the two reasons guides failed the first time.
+    ///
+    /// A span whose rows are all scrolled out simply produces an empty frame,
+    /// so nothing needs to know about the viewport.
+    @ViewBuilder private var depthGuides: some View {
+        // Rebased onto the rows' own left edge: the overlay starts at the
+        // list's edge, and `List` spends its own inset before the row begins.
+        let left = rowsLeft - listOrigin.x
+        ForEach(TreeOps.guides(hitRows), id: \.parent) { guide in
+            if let first = rowFrames[rows[guide.first].node.id],
+               let last = rowFrames[rows[guide.last].node.id],
+               let parent = rowFrames[guide.parent] {
+                // From just below the parent's bullet to the bottom of the last
+                // descendant. Starting at the parent's own centre would run the
+                // line through the mark; starting at the row boundary would
+                // leave a gap where the bullet's lower half is.
+                let top = max(parent.midY + OutlineRow.markRadius, first.minY)
+                Capsule()
+                    .fill(Color.primary.opacity(0.12))
+                    .frame(width: 1.5, height: max(0, last.maxY - top - 6))
+                    .offset(
+                        x: left + OutlineRow.guideX0
+                            + CGFloat(guide.depth) * OutlineRow.indent - 0.75,
+                        y: top - listOrigin.y)
+            }
+        }
     }
 
     /// The line showing where the row would land, drawn over the list.
@@ -558,6 +595,10 @@ private struct OutlineRow: View {
     /// and the checkbox swapped: a guide through bullet centres is only a
     /// straight line if nothing else shares that column.
     static let guideX0: CGFloat = 16
+
+    /// Half the bullet ring, so a guide can start clear of the mark it hangs
+    /// from rather than through it.
+    static let markRadius: CGFloat = 9
 
     var body: some View {
         HStack(spacing: 10) {
