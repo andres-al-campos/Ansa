@@ -18,6 +18,13 @@ struct OutlineView: View {
     @State private var dragging: NodeId?
     @State private var dragPoint: CGPoint = .zero
     @State private var dropTarget: TreeOps.DropTarget?
+    /// The list's own bounds in global space, so a drag can tell how close the
+    /// finger is to an edge. Recorded by the same overlay that draws the guides.
+    @State private var listBounds: CGRect = .zero
+    /// Ticks while a drag sits in an edge band. Held here rather than started
+    /// per move, so a finger that stops moving keeps scrolling — which is the
+    /// whole point, since holding still at the edge is the gesture.
+    @State private var scroller: Timer?
     /// Row boxes in list space, keyed by id, refreshed as rows lay out.
     @State private var rowFrames: [NodeId: CGRect] = [:]
     /// The list's own origin, so a touch in global space can be rebased onto
@@ -159,6 +166,7 @@ struct OutlineView: View {
     /// The rows themselves. Only drawn inside a project — the root shows the
     /// project grid instead.
     private var outline: some View {
+        ScrollViewReader { proxy in
         List {
             ForEach(rows, id: \.node.id) { row in
                 OutlineRow(
@@ -217,11 +225,22 @@ struct OutlineView: View {
                     depthGuides
                     dropIndicator
                 }
-                    .onAppear { listOrigin = geo.frame(in: .global).origin }
-                    .onChange(of: geo.frame(in: .global).origin) { _, o in listOrigin = o }
+                    .onAppear {
+                        listOrigin = geo.frame(in: .global).origin
+                        listBounds = geo.frame(in: .global)
+                    }
+                    .onChange(of: geo.frame(in: .global)) { _, f in
+                        listOrigin = f.origin
+                        listBounds = f
+                    }
             }
         }
-
+        // The timer outlives any single gesture callback, so it is armed and
+        // disarmed by the drag's existence rather than by a move event.
+        .onChange(of: dragging) { _, id in
+            if id == nil { stopScrolling() } else { startScrolling(proxy) }
+        }
+        }
     }
 
     private var captureField: some View {
@@ -348,6 +367,43 @@ struct OutlineView: View {
         // the indicator moves for both.
         if next != dropTarget { haptic.impactOccurred(intensity: 0.6) }
         dropTarget = next
+    }
+
+    /// Start the edge-scroll tick for the life of this drag.
+    ///
+    /// A timer rather than work inside `dragMoved`, because the gesture only
+    /// reports when the finger *moves* — and holding still at the edge is
+    /// exactly how this is used. Driving it from move events would mean the
+    /// list scrolled only while the finger jittered.
+    private func startScrolling(_ proxy: ScrollViewProxy) {
+        stopScrolling()
+        // ~7 rows a second at a full hold. Fast enough to cross a long tree
+        // without the drag feeling stuck, slow enough to stop on a chosen row.
+        scroller = Timer.scheduledTimer(withTimeInterval: 0.14, repeats: true) { _ in
+            guard dragging != nil else { return }
+            let step = TreeOps.dragScroll(
+                y: Double(dragPoint.y),
+                top: Double(listBounds.minY),
+                bottom: Double(listBounds.maxY),
+                boxes: boxes)
+            switch step {
+            case .none:
+                break
+            case .up(let id):
+                withAnimation(.linear(duration: 0.14)) { proxy.scrollTo(id, anchor: .top) }
+            case .down(let id):
+                withAnimation(.linear(duration: 0.14)) { proxy.scrollTo(id, anchor: .bottom) }
+            }
+            // The rows moved under a finger that did not, so the target the
+            // indicator is showing is about to be wrong. `dragMoved` only fires
+            // on movement, so nothing else would re-ask.
+            if step != .none { dragMoved(dragPoint) }
+        }
+    }
+
+    private func stopScrolling() {
+        scroller?.invalidate()
+        scroller = nil
     }
 
     /// Release: apply the drop, then clear every piece of drag state together.
