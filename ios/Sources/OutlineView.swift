@@ -440,15 +440,41 @@ struct OutlineView: View {
                 // line through the mark; starting at the row boundary would
                 // leave a gap where the bullet's lower half is.
                 let top = max(parent.midY + OutlineRow.markRadius, first.minY)
+                // The guide at the depth a gap-drop would land on lights up.
+                // The insertion line already sits at that x, but the line is
+                // 3pt of a 40pt row and often under the thumb — the lit guide
+                // is the same answer said somewhere the finger is not.
+                let lit = isTargetDepth(guide.depth)
                 Capsule()
-                    .fill(Color.primary.opacity(0.12))
-                    .frame(width: 1.5, height: max(0, last.maxY - top - 6))
+                    .fill(lit
+                        ? DropPalette.nest.opacity(0.45)
+                        : Color.primary.opacity(0.12))
+                    .frame(width: lit ? 2.5 : 1.5, height: max(0, last.maxY - top - 6))
+                    .animation(.easeOut(duration: 0.12), value: lit)
                     .offset(
                         x: left + OutlineRow.guideX0
                             + CGFloat(guide.depth) * OutlineRow.indent - 0.75,
                         y: top - listOrigin.y)
             }
         }
+    }
+
+    /// Whether the guide drawn by a parent at `depth` is the one the dragged
+    /// row would hang from.
+    ///
+    /// A guide at depth *d* belongs to a parent at *d* and its children sit at
+    /// *d+1*, so the guide to light for a drop at depth *n* is the one at
+    /// *n-1*. A drop at depth 0 lights nothing, which is correct rather than a
+    /// gap: a root row has no parent, so there is no guide it could hang from,
+    /// and the insertion line's x is the only depth cue at that level.
+    ///
+    /// Only for gap drops. Nesting says the same thing by highlighting the row
+    /// itself, and saying it twice in two places reads as two answers.
+    private func isTargetDepth(_ depth: Int) -> Bool {
+        guard let target = dropTarget,
+              target.mode == .before || target.mode == .after,
+              let d = target.depth else { return false }
+        return depth == d - 1
     }
 
     /// The line showing where the row would land, drawn over the list.
@@ -459,21 +485,36 @@ struct OutlineView: View {
     /// gap to draw in.
     @ViewBuilder private var dropIndicator: some View {
         if let target = dropTarget, let frame = rowFrames[target.id] {
-            let left = rowsLeft
+            // Same rebase as the guides: row frames are global, the overlay
+            // starts at the list's edge, and `List` insets the rows past it.
+            let left = rowsLeft - listOrigin.x
             switch target.mode {
             case .into:
+                // The whole row, filled as well as outlined. An outline alone
+                // was easy to miss against a row that already has a depth tint.
                 RoundedRectangle(cornerRadius: 6)
-                    .strokeBorder(Color.accentColor, lineWidth: 2)
+                    .fill(DropPalette.nest.opacity(0.14))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 6)
+                            .strokeBorder(DropPalette.nest, lineWidth: 2))
                     .frame(width: frame.width, height: frame.height)
-                    .offset(x: frame.minX - left, y: frame.minY - listOrigin.y)
+                    .offset(x: left, y: frame.minY - listOrigin.y)
             case .before, .after:
-                let x = OutlineRow.guideX0 + CGFloat(target.depth ?? 0) * OutlineRow.indent
+                let x = left + OutlineRow.guideX0
+                    + CGFloat(target.depth ?? 0) * OutlineRow.indent
+                let y = (target.mode == .before ? frame.minY : frame.maxY) - listOrigin.y
+                // The dot marks where the line meets the guide it would hang
+                // from, which is the one thing a thumb covering the line's
+                // left end would otherwise hide.
+                Circle()
+                    .fill(DropPalette.insert)
+                    .frame(width: 7, height: 7)
+                    .offset(x: x - 3.5, y: y - 3.5)
                 Capsule()
-                    .fill(Color.accentColor)
-                    .frame(width: max(0, frame.width - x), height: 3)
-                    .offset(
-                        x: x,
-                        y: (target.mode == .before ? frame.minY : frame.maxY) - listOrigin.y)
+                    .fill(DropPalette.insert)
+                    .frame(width: max(0, frame.width - OutlineRow.guideX0
+                        - CGFloat(target.depth ?? 0) * OutlineRow.indent), height: 3)
+                    .offset(x: x, y: y - 1.5)
             case .return:
                 EmptyView()
             }
