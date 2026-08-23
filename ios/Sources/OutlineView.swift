@@ -205,6 +205,24 @@ struct OutlineView: View {
                                 key: RowFramesKey.self,
                                 value: [row.node.id: geo.frame(in: .global)])
                         })
+                    // One segment per guide, drawn inside the row.
+                    //
+                    // The segments abut into what reads as a single unbroken
+                    // line, which is how the web does it. Drawing one tall
+                    // overlay instead looked the same at rest and broke on a
+                    // swipe: `List` slides the row aside and an overlay stays
+                    // put, so the line cut straight across the revealed action
+                    // and had to punch a hole in itself to fake being covered.
+                    // A segment is part of the row, so it slides with the row
+                    // and only that row's piece of the line goes with it.
+                    //
+                    // Stretched over `List`'s row padding, which the row's own
+                    // bounds exclude — without that each segment stops 11pt
+                    // short at both ends and the seams show at every boundary.
+                    .background(alignment: .topLeading) {
+                        guideSegments(for: row.node.id)
+                            .padding(.vertical, -OutlineRow.rowPadding / 2)
+                    }
                     // Zoom lives on a swipe rather than on the bullet.
                     // It is one Back tap to undo but replaces the whole
                     // screen, and a revealed action cannot fire from a
@@ -230,7 +248,6 @@ struct OutlineView: View {
         .overlay(alignment: .topLeading) {
             GeometryReader { geo in
                 ZStack(alignment: .topLeading) {
-                    depthGuides
                     dropIndicator
                     dragLabel
                 }
@@ -466,172 +483,29 @@ struct OutlineView: View {
         }
     }
 
-    /// The vertical lines connecting a parent to everything under it.
+    /// The guide segments this row draws: one thin bar per ancestor whose
+    /// subtree the row is inside.
     ///
-    /// Drawn here, over the list, rather than in each row's background. The
-    /// earlier attempt put them behind the rows and `List`'s per-row insets cut
-    /// every line into segments; one rect spanning the whole run cannot be cut
-    /// that way. They also sit in the bullet column now, which does not move
-    /// when text wraps — the two reasons guides failed the first time.
-    ///
-    /// A span whose rows are all scrolled out simply produces an empty frame,
-    /// so nothing needs to know about the viewport.
-    @ViewBuilder private var depthGuides: some View {
-        // Rebased onto the rows' own left edge: the overlay starts at the
-        // list's edge, and `List` spends its own inset before the row begins.
-        let left = rowsLeft - listOrigin.x
-        ForEach(TreeOps.guides(hitRows), id: \.parent) { guide in
-            // Clamped to the rows `List` has actually measured, rather than
-            // requiring the run's true endpoints.
-            //
-            // `List` is lazy: it builds rows near the viewport and no others,
-            // so `rowFrames` holds only what is on screen. A long subtree has
-            // its parent at the top of the screen and its last descendant far
-            // below it, unmeasured — and demanding both frames dropped the
-            // whole guide. That is why the lines showed up in a small new
-            // project and vanished in an established one: the bug scaled with
-            // the size of the subtree, not with anything about the rows.
-            //
-            // Scrolling past either end is not a special case. The guide is
-            // drawn between the measured rows it does have, so it simply runs
-            // off the edge of the screen the way a full-length line would.
-            if let firstChild = rowFrames[rows[guide.first].node.id]
-                    ?? measuredFrame(from: guide.first, to: guide.last),
-               let last = rowFrames[rows[guide.last].node.id]
-                    ?? lastMeasuredFrame(from: guide.first, to: guide.last) {
-                // The guide spans its children's rows: from the top edge
-                // of the first child's row to the bottom edge of the last
-                // child's. No clearance arithmetic — the run of children *is*
-                // the extent of the line, so the endpoints are row edges rather
-                // than a distance measured off a bullet.
-                //
-                // This is the desktop rule. There `.guide` is `top: 0;
-                // bottom: 0` on every child row and the lines abut into one
-                // continuous stroke, with no length calculation anywhere. The
-                // gap at each bullet comes from the fold button's disc painting
-                // over the line, which does not port — here the guides are an
-                // overlay above the rows, because in a row background `List`'s
-                // per-row insets cut every line into segments, and a masking
-                // disc drawn in that same overlay covers the mark instead of
-                // hiding behind it. So the iOS line runs unbroken past the
-                // bullets rather than being notched by them.
-                //
-                // Earlier versions shortened each end by the radius of whatever
-                // mark sat there. That kept the line off the bullets, but it
-                // also left the last child hanging below the line meant to hold
-                // it, and made the two ends read as unequal because a ring and
-                // a dot are different sizes.
-                // Extended by half `List`'s inter-row padding at each end, so
-                // consecutive guides abut instead of leaving a notch at every
-                // row boundary.
-                //
-                // The frame comes from a `GeometryReader` on the row's content,
-                // which sits *inside* the row cell's insets — measured at 40pt
-                // of content on a 62pt pitch, so 22pt of the cell is padding
-                // the frame never reports. Spanning minY...maxY therefore drew
-                // a line 22pt shorter than the row it was supposed to cover,
-                // and the shortfall showed up as a gap between one guide's end
-                // and the next row's start.
-                let pad = OutlineRow.rowPadding / 2
-                let top = firstChild.minY - pad
-                let bottom = last.maxY + pad
-                // The guide at the depth a gap-drop would land on lights up.
-                // The insertion line already sits at that x, but the line is
-                // 3pt of a 40pt row and often under the thumb — the lit guide
-                // is the same answer said somewhere the finger is not.
-                let lit = guide.parent == litGuideParent
-                Capsule()
-                    .fill(lit
-                        ? DropPalette.nest.opacity(0.45)
-                        : Color.primary.opacity(0.12))
-                    .frame(
-                        width: lit ? 2.5 : 1.5,
-                        height: max(0, bottom - top))
-                    .animation(.easeOut(duration: 0.12), value: lit)
-                    // Punched out across a row that has been swiped aside, so
-                    // the row reads as passing over the line rather than the
-                    // line cutting through it.
-                    .mask(swipeMask(top: top, bottom: bottom))
-                    .offset(
-                        x: left + OutlineRow.guideX0
-                            + CGFloat(guide.depth) * OutlineRow.indent - 0.75,
-                        y: top - listOrigin.y)
-            }
-        }
-    }
-
-    /// The frames of rows `List` has slid aside to reveal a swipe action.
-    ///
-    /// A row's frame comes from a `GeometryReader` in its background, which
-    /// spans the row before the leading padding applies — so at rest every row
-    /// reports the same `minX` whatever its depth. Only a swipe moves one, and
-    /// it moves left by the width of the revealed action.
-    ///
-    /// Depth deliberately does not enter this. An earlier version subtracted
-    /// `depth * indent` on the theory that an indented row sits further left;
-    /// it does not, so that subtraction invented differences where there were
-    /// none and marked every indented row as swiped — which punched holes in
-    /// the guides with nothing swiped at all.
-    private func swipedRowFrames() -> [CGRect] {
-        // The x the most rows agree on is the resting one: at most one row is
-        // ever swiped, so it can never be the majority.
-        var tally: [CGFloat: Int] = [:]
-        for f in rowFrames.values { tally[f.minX.rounded(), default: 0] += 1 }
-        guard let resting = tally.max(by: { $0.value < $1.value })?.key else { return [] }
-        return rowFrames.values.filter { $0.minX < resting - 1 }
-    }
-
-    /// A guide, with the band of any swiped-aside row cut out of it.
-    ///
-    /// The guides are an overlay above the list and the rows cannot paint over
-    /// them — a `.listRowBackground` sits under the overlay no matter how
-    /// opaque it is, which is the obvious fix and does nothing. So the hole is
-    /// cut from this side instead.
-    ///
-    /// A swiped row is found by its own frame: `List` slides the row's content
-    /// left to reveal the action, and the `GeometryReader` recording that frame
-    /// slides with it, so the swiped row's `minX` drops below every other
-    /// row's while the guides stay where the tree says they go. Nothing else
-    /// moves a row sideways, which is what makes the test safe.
-    ///
-    /// Only the swiped row's band is removed, not the whole guide: the run
-    /// continues above and below it, and a line that vanished entirely would
-    /// say the subtree had come apart.
-    private func swipeMask(top: CGFloat, bottom: CGFloat) -> some View {
-        let swiped = swipedRowFrames()
-        return Rectangle()
-            .fill(Color.black)
-            .frame(height: max(0, bottom - top))
-            .overlay {
-                // Blend mode rather than a subtracted shape: the bands are
-                // arbitrary rects in the middle of the run, and destination-out
-                // punches each one without having to rebuild the capsule as a
-                // path with holes in it.
-                ForEach(swiped, id: \.minY) { f in
-                    Rectangle()
-                        .fill(Color.black)
-                        .frame(height: f.height)
-                        .offset(y: f.minY - top)
-                        .blendMode(.destinationOut)
+    /// Highlighted rather than the whole line when a drop would land under that
+    /// parent — each row lights its own piece, and together they light the run.
+    @ViewBuilder private func guideSegments(for id: NodeId) -> some View {
+        if let i = rows.firstIndex(where: { $0.node.id == id }) {
+            let all = TreeOps.guides(hitRows)
+            let here = all.filter { $0.first <= i && i <= $0.last }
+            ZStack(alignment: .topLeading) {
+                ForEach(here, id: \.parent) { guide in
+                    let lit = guide.parent == litGuideParent
+                    Capsule()
+                        .fill(lit
+                            ? DropPalette.nest.opacity(0.45)
+                            : Color.primary.opacity(0.12))
+                        .frame(width: lit ? 2.5 : 1.5)
+                        .offset(x: OutlineRow.guideX0
+                            + CGFloat(guide.depth) * OutlineRow.indent - 0.75)
+                        .animation(.easeOut(duration: 0.12), value: lit)
                 }
             }
-            .compositingGroup()
-    }
-
-    /// The first measured frame in a run of rows, for a guide whose parent has
-    /// been scrolled off the top and so has no frame of its own.
-    private func measuredFrame(from first: Int, to last: Int) -> CGRect? {
-        (first...max(first, last)).lazy
-            .compactMap { rowFrames[rows[$0].node.id] }
-            .first
-    }
-
-    /// The last measured frame in a run, for a subtree running past the bottom
-    /// of what `List` has built.
-    private func lastMeasuredFrame(from first: Int, to last: Int) -> CGRect? {
-        (first...max(first, last)).lazy
-            .compactMap { rowFrames[rows[$0].node.id] }
-            .last
+        }
     }
 
     /// The row whose guide the dragged row would hang from, or nil when no gap
