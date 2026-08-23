@@ -481,8 +481,23 @@ struct OutlineView: View {
         // list's edge, and `List` spends its own inset before the row begins.
         let left = rowsLeft - listOrigin.x
         ForEach(TreeOps.guides(hitRows), id: \.parent) { guide in
-            if let last = rowFrames[rows[guide.last].node.id],
-               let parent = rowFrames[guide.parent] {
+            // Clamped to the rows `List` has actually measured, rather than
+            // requiring the run's true endpoints.
+            //
+            // `List` is lazy: it builds rows near the viewport and no others,
+            // so `rowFrames` holds only what is on screen. A long subtree has
+            // its parent at the top of the screen and its last descendant far
+            // below it, unmeasured — and demanding both frames dropped the
+            // whole guide. That is why the lines showed up in a small new
+            // project and vanished in an established one: the bug scaled with
+            // the size of the subtree, not with anything about the rows.
+            //
+            // Scrolling past either end is not a special case. The guide is
+            // drawn between the measured rows it does have, so it simply runs
+            // off the edge of the screen the way a full-length line would.
+            if let parent = rowFrames[guide.parent] ?? measuredFrame(from: guide.first, to: guide.last),
+               let last = rowFrames[rows[guide.last].node.id]
+                    ?? lastMeasuredFrame(from: guide.first, to: guide.last) {
                 // Clear of the parent's mark at the top and the last child's at
                 // the bottom, by the same margin at both ends.
                 //
@@ -520,6 +535,22 @@ struct OutlineView: View {
                         y: top - listOrigin.y)
             }
         }
+    }
+
+    /// The first measured frame in a run of rows, for a guide whose parent has
+    /// been scrolled off the top and so has no frame of its own.
+    private func measuredFrame(from first: Int, to last: Int) -> CGRect? {
+        (first...max(first, last)).lazy
+            .compactMap { rowFrames[rows[$0].node.id] }
+            .first
+    }
+
+    /// The last measured frame in a run, for a subtree running past the bottom
+    /// of what `List` has built.
+    private func lastMeasuredFrame(from first: Int, to last: Int) -> CGRect? {
+        (first...max(first, last)).lazy
+            .compactMap { rowFrames[rows[$0].node.id] }
+            .last
     }
 
     /// Whether the guide drawn by a parent at `depth` is the one the dragged
