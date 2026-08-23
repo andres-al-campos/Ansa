@@ -515,7 +515,7 @@ struct OutlineView: View {
                 // The insertion line already sits at that x, but the line is
                 // 3pt of a 40pt row and often under the thumb — the lit guide
                 // is the same answer said somewhere the finger is not.
-                let lit = isTargetDepth(guide.depth)
+                let lit = guide.parent == litGuideParent
                 Capsule()
                     .fill(lit
                         ? DropPalette.nest.opacity(0.45)
@@ -553,22 +553,26 @@ struct OutlineView: View {
             .last
     }
 
-    /// Whether the guide drawn by a parent at `depth` is the one the dragged
-    /// row would hang from.
+    /// The row whose guide the dragged row would hang from, or nil when no gap
+    /// drop is live.
     ///
-    /// A guide at depth *d* belongs to a parent at *d* and its children sit at
-    /// *d+1*, so the guide to light for a drop at depth *n* is the one at
-    /// *n-1*. A drop at depth 0 lights nothing, which is correct rather than a
-    /// gap: a root row has no parent, so there is no guide it could hang from,
-    /// and the insertion line's x is the only depth cue at that level.
+    /// Identified by node, not by depth. Depth alone matches every guide on
+    /// that level — all of the future parent's siblings light up alongside it,
+    /// which says the row could land under any of them. `parentAtDepth` walks
+    /// the same lineage `insertAtDepth` walks to choose the real parent, so the
+    /// lit guide and the landing place cannot disagree.
+    ///
+    /// A drop at depth 0 lights nothing, which is correct rather than missing:
+    /// a root row has no parent, so there is no guide it could hang from, and
+    /// the insertion line's x is the only depth cue at that level.
     ///
     /// Only for gap drops. Nesting says the same thing by highlighting the row
     /// itself, and saying it twice in two places reads as two answers.
-    private func isTargetDepth(_ depth: Int) -> Bool {
+    private var litGuideParent: NodeId? {
         guard let target = dropTarget,
               target.mode == .before || target.mode == .after,
-              let d = target.depth else { return false }
-        return depth == d - 1
+              let d = target.depth else { return nil }
+        return TreeOps.parentAtDepth(tree, target.id, d, scope)
     }
 
     /// The deepest indent the current gap will accept.
