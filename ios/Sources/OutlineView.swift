@@ -216,9 +216,19 @@ struct OutlineView: View {
                     // A segment is part of the row, so it slides with the row
                     // and only that row's piece of the line goes with it.
                     //
-                    // Stretched over `List`'s row padding, which the row's own
-                    // bounds exclude — without that each segment stops 11pt
-                    // short at both ends and the seams show at every boundary.
+                    // The row owns its vertical spacing, and `List`'s own row
+                    // insets are zeroed below, so the row frame *is* the cell.
+                    // That is what lets a segment simply fill its row and still
+                    // meet its neighbours.
+                    //
+                    // Compensating for the insets instead was the earlier
+                    // approach and was wrong: it needed the inset height as a
+                    // measured constant, which is right only on the device it
+                    // was measured on. Where `List` insets rows differently the
+                    // segments fall short by the difference and the seams show
+                    // at every boundary.
+                    .padding(.vertical, OutlineRow.rowPadding / 2)
+                    .listRowInsets(EdgeInsets())
                     .background(alignment: .topLeading) {
                         guideSegments(for: row.node.id)
                     }
@@ -491,26 +501,20 @@ struct OutlineView: View {
         if let i = rows.firstIndex(where: { $0.node.id == id }) {
             let all = TreeOps.guides(hitRows)
             let here = all.filter { $0.first <= i && i <= $0.last }
-            // Drawn taller than the row by `List`'s row padding, and shifted up
-            // half of it, so each segment reaches the cell's true edges and the
-            // segments abut into one unbroken line.
+            // A segment fills its row's full height, top edge to bottom edge.
+            // The row carries its own spacing and `List` adds none, so
+            // consecutive rows touch and the segments abut into one unbroken
+            // line — with no constant to get wrong on a device whose `List`
+            // insets rows differently.
             //
-            // The height comes from the row's measured frame rather than a
-            // constant: a row whose text wraps is taller, and a fixed height
-            // would leave exactly the gap this is here to close. It falls back
-            // to the single-line height only for a row `List` has not measured
-            // yet, which is corrected on the next layout pass.
-            //
-            // Stretching was tried first and does not work. A shape has no
-            // intrinsic height and takes only what the stack proposes, so
-            // negative padding widened the proposal while the shape kept
-            // drawing the row's 40pt of content — a 22pt hole at every
-            // boundary.
+            // Measured rather than declared, since a row whose text wraps is
+            // taller. The fallback covers only a row not yet measured, which
+            // corrects itself on the next layout pass.
             //
             // Rectangle, not Capsule: rounded ends on a segment meant to join
             // the next one pinch the join into a visible waist.
-            let rowH = rowFrames[id]?.height ?? OutlineRow.rowHeight
-            let h = rowH + OutlineRow.rowPadding
+            let h = rowFrames[id]?.height
+                ?? (OutlineRow.rowHeight + OutlineRow.rowPadding)
             ZStack(alignment: .topLeading) {
                 ForEach(here, id: \.parent) { guide in
                     let lit = guide.parent == litGuideParent
@@ -520,12 +524,11 @@ struct OutlineView: View {
                             : Color.primary.opacity(0.12))
                         .frame(width: lit ? 2.5 : 1.5, height: h)
                         .offset(x: OutlineRow.guideX0
-                            + CGFloat(guide.depth) * OutlineRow.indent - 0.75,
-                            y: -OutlineRow.rowPadding / 2)
+                            + CGFloat(guide.depth) * OutlineRow.indent - 0.75)
                         .animation(.easeOut(duration: 0.12), value: lit)
                 }
             }
-            .frame(height: rowH, alignment: .topLeading)
+            .frame(height: h, alignment: .topLeading)
         }
     }
 
@@ -598,15 +601,10 @@ struct OutlineView: View {
             case .before, .after:
                 let x = left + OutlineRow.guideX0
                     + CGFloat(target.depth ?? 0) * OutlineRow.indent
-                // Out to the true cell boundary, not the content edge. A row
-                // frame comes from a `GeometryReader` inside `List`'s row
-                // insets, so it reports the 40pt of content on a 62pt pitch —
-                // its minY/maxY sit 11pt inside the gap, which put the line
-                // within one of the two rows instead of between them.
-                let pad = OutlineRow.rowPadding / 2
-                let edge = target.mode == .before
-                    ? frame.minY - pad
-                    : frame.maxY + pad
+                // The row frame is the whole cell now — the row owns its
+                // spacing and `List` adds no insets — so its edges already are
+                // the boundary between two rows, with nothing to add.
+                let edge = target.mode == .before ? frame.minY : frame.maxY
                 let y = edge - listOrigin.y
                 // Centred on that boundary, so it sits in the whitespace
                 // between the two rows and belongs to neither. Drawn a row
@@ -853,14 +851,15 @@ private struct OutlineRow: View {
     /// straight line if nothing else shares that column.
     static let guideX0: CGFloat = 16
 
-    /// A single-line row's content height. Only a fallback for a row `List`
-    /// has not measured yet — the guide segments use the real frame, since a
-    /// row whose text wraps is taller than this.
+    /// A single-line row's content height, without the row's own vertical
+    /// padding. Only a fallback for a row `List` has not measured yet — the
+    /// guide segments use the real frame, since a wrapped row is taller.
     static let rowHeight: CGFloat = 40
 
-    /// `List`'s vertical padding around a row's content, split evenly above and
-    /// below it. Measured, not declared: the row frame reports only the 40pt of
-    /// content, while the cells sit on a 62pt pitch.
+    /// The row's own vertical spacing, split evenly above and below its
+    /// content. Declared here rather than left to `List`: with the row insets
+    /// zeroed, the row frame is the whole cell, which is what lets a guide
+    /// segment fill its row and still meet the segments above and below.
     static let rowPadding: CGFloat = 22
 
     var body: some View {
