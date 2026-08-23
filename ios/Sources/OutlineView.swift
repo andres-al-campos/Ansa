@@ -180,7 +180,6 @@ struct OutlineView: View {
                 OutlineRow(
                     node: row.node,
                     depth: row.depth,
-                    separatorX: separatorX(below: row.node.id),
                     hasChildren: !TreeOps.isLeaf(tree, row.node.id),
                     editing: editing == row.node.id,
                     editText: $editText,
@@ -561,21 +560,6 @@ struct OutlineView: View {
         }
     }
 
-    /// Where the separator below `id` starts: on the innermost guide crossing
-    /// that gap, or at the screen edge when none does.
-    ///
-    /// Asked of the guide list rather than of the two adjacent rows. A guide
-    /// runs from a parent's first child, so directly under a parent its own
-    /// line has not started while its ancestors' still run — the adjacent
-    /// depths name a line that is not there and miss the ones that are, which
-    /// drew separators straight through the guides beside them.
-    private func separatorX(below id: NodeId) -> CGFloat {
-        guard let i = rows.firstIndex(where: { $0.node.id == id }),
-              let d = TreeOps.innermostGuideDepth(TreeOps.guides(hitRows), below: i)
-        else { return 0 }
-        return OutlineRow.guideX0 + CGFloat(d) * OutlineRow.indent
-    }
-
     /// The frames of rows `List` has slid aside to reveal a swipe action.
     ///
     /// A row's frame comes from a `GeometryReader` in its background, which
@@ -877,9 +861,6 @@ private struct SyncBanner: View {
 private struct OutlineRow: View {
     let node: Node
     let depth: Int
-    /// Where the separator below this row starts. Resolved by the list, which
-    /// is the only place that can see every guide crossing the gap.
-    let separatorX: CGFloat
     let hasChildren: Bool
     let editing: Bool
     @Binding var editText: String
@@ -1071,26 +1052,11 @@ private struct OutlineRow: View {
             .padding(.trailing, 4)
         }
         .padding(.leading, CGFloat(depth) * Self.indent)
-        // Left end lands on the innermost vertical guide crossing this gap, so
-        // a separator never cuts through one. Where no guide crosses — between
-        // two top-level rows — it runs to the screen edge, which reads as the
-        // heavier break that boundary actually is.
-        //
-        // A bullet at depth d sits on the depth-d guide's x, so stopping at the
-        // guide and stopping at a bullet are the same point; the line meets it
-        // as a T rather than a `+`.
-        //
-        // `List` measures the separator from the row's *content* by default,
-        // which is the indent plus both mark columns — so a depth-2 row's line
-        // began 48pt right of everything else in the row. Overridden here.
-        .alignmentGuide(.listRowSeparatorLeading) { d in
-            // `d[.leading]` is 0 here — measured, not assumed. The alignment
-            // guide is resolved before the row's `.padding(.leading, depth *
-            // indent)` applies, so this is an absolute x in the row's own
-            // space, and `separatorX` is computed that way.
-            _ = d
-            return separatorX
-        }
+        // No row separators. The desktop has none — rows are told apart by
+        // whitespace and the hover background, and the vertical guides are the
+        // only lines in the outline. `List` draws them by default, so they have
+        // to be turned off rather than left out.
+        .listRowSeparator(.hidden)
         // Faded to a ghost while it is being carried, so the row under the
         // finger is visibly the one in flight and not just another row the
         // indicator happens to sit near. It stays in place rather than
