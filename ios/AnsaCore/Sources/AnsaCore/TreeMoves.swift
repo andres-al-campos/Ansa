@@ -295,6 +295,23 @@ extension TreeOps {
         return aboveHasChildren ? aboveDepth + 1 : aboveDepth
     }
 
+    /// The node a gap-drop would land under, or nil for the scope's own root.
+    ///
+    /// The same lineage walk `insertAtDepth` uses to pick the new parent, split
+    /// out so the view can light that parent's guide and nothing else. Asking
+    /// by depth alone is not enough: every guide at a given depth belongs to a
+    /// *different* parent, and lighting them all says the row could land under
+    /// any of them.
+    public static func parentAtDepth(
+        _ tree: Tree, _ anchorId: NodeId, _ depth: Int, _ scope: NodeId?
+    ) -> NodeId? {
+        let full = lineageOf(tree, anchorId)
+        let scopeIdx = scope.flatMap { s in full.firstIndex { $0.id == s } } ?? -1
+        let chain = Array(full[(scopeIdx + 1)...])
+        if depth >= chain.count { return anchorId }
+        return depth == 0 ? scope : chain[depth - 1].id
+    }
+
     /// Resolve a depth-aware drop into a concrete move. `anchorId` is the
     /// visible row on the far side of the gap; `depth` is the scope-relative
     /// indent from `depthAtGap`.
