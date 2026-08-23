@@ -332,6 +332,48 @@ struct InsertAtDepthTests {
     }
 }
 
+/// The lit guide has to name the same parent the drop lands under, so these
+/// are checked against `insertAtDepth` rather than against a hand-written
+/// expectation — a rule stated twice can drift.
+@Suite("parentAtDepth")
+struct ParentAtDepthTests {
+    /// Where `insertAtDepth` actually put the row, read back off the tree.
+    func landedUnder(_ depth: Int, _ anchor: NodeId, _ scope: NodeId?) -> NodeId? {
+        let t = TreeOps.insertAtDepth(fixture(), "f1", anchor, depth, .after, scope)
+        return t.first { $0.id == "f1" }?.parentId
+    }
+
+    @Test("agrees with insertAtDepth at every depth on the deepest chain")
+    func agreesAllDepths() {
+        for depth in 0...4 {
+            #expect(
+                TreeOps.parentAtDepth(fixture(), "p2b1", depth, "taxes")
+                    == landedUnder(depth, "p2b1", "taxes"),
+                "disagrees at depth \(depth)")
+        }
+    }
+
+    @Test("depth 0 is the scope itself, nil at the root list")
+    func depthZero() {
+        #expect(TreeOps.parentAtDepth(fixture(), "p2b1", 0, "taxes") == "taxes")
+        #expect(TreeOps.parentAtDepth(fixture(), "g2", 0, nil) == nil)
+    }
+
+    @Test("past the end of the chain nests under the anchor")
+    func deeperThanChain() {
+        #expect(TreeOps.parentAtDepth(fixture(), "p2b1", 9, "taxes") == "p2b1")
+    }
+
+    /// Two rows at the same depth under different parents. Lighting by depth
+    /// alone matched both, which is the bug this exists to prevent.
+    @Test("two anchors at one depth give different parents")
+    func siblingsDoNotShareAGuide() {
+        let t = fixture()
+        #expect(TreeOps.parentAtDepth(t, "g2", 1, "taxes") == "gather")
+        #expect(TreeOps.parentAtDepth(t, "p1", 1, "taxes") == "forms")
+    }
+}
+
 @Suite("moveRow")
 struct MoveRowTests {
     @Test("moves a row down past a plain sibling")
