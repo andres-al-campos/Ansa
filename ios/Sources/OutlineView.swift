@@ -180,6 +180,7 @@ struct OutlineView: View {
                 OutlineRow(
                     node: row.node,
                     depth: row.depth,
+                    nextDepth: nextVisibleDepth(after: row.node.id),
                     hasChildren: !TreeOps.isLeaf(tree, row.node.id),
                     editing: editing == row.node.id,
                     editText: $editText,
@@ -560,6 +561,13 @@ struct OutlineView: View {
         }
     }
 
+    /// The depth of the row shown directly below `id`, or nil when it is last.
+    private func nextVisibleDepth(after id: NodeId) -> Int? {
+        guard let i = rows.firstIndex(where: { $0.node.id == id }),
+              i + 1 < rows.count else { return nil }
+        return rows[i + 1].depth
+    }
+
     /// The frames of rows `List` has slid aside to reveal a swipe action.
     ///
     /// A row's frame comes from a `GeometryReader` in its background, which
@@ -861,6 +869,10 @@ private struct SyncBanner: View {
 private struct OutlineRow: View {
     let node: Node
     let depth: Int
+    /// Depth of the next row actually on screen, or nil for the last row. The
+    /// separator below this row has to clear whichever of the two neighbours is
+    /// deeper, so the gap belongs to both of them, not just to this one.
+    let nextDepth: Int?
     let hasChildren: Bool
     let editing: Bool
     @Binding var editText: String
@@ -949,10 +961,6 @@ private struct OutlineRow: View {
     /// and the checkbox swapped: a guide through bullet centres is only a
     /// straight line if nothing else shares that column.
     static let guideX0: CGFloat = 16
-
-    /// Half the bullet ring. Keeps the separator's left end off the guide that
-    /// runs through the same gap, which would otherwise draw a `+`.
-    static let ringRadius: CGFloat = 9
 
     /// `List`'s vertical padding around a row's content, split evenly above and
     /// below it. Measured, not declared: the row frame reports only the 40pt of
@@ -1056,27 +1064,31 @@ private struct OutlineRow: View {
             .padding(.trailing, 4)
         }
         .padding(.leading, CGFloat(depth) * Self.indent)
-        // Start the separator clear of the deepest guide that passes through
-        // this gap, and run it to the screen edge.
+        // Left end lands on the bullet of the deeper of the two rows this gap
+        // sits between, so no separator ever crosses to the left of a vertical
+        // guide.
+        //
+        // A bullet at depth d sits exactly on the depth-d guide's x, so
+        // "stop at the bullet" and "never cross a guide" are one rule. The line
+        // meets the guide there and stops: a T, not a `+`. An earlier version
+        // cleared the guide by a ring radius to avoid touching it at all, which
+        // kept the two families apart but let shallower guides running through
+        // the same gap get crossed anyway.
+        //
+        // The deeper neighbour, because the gap belongs to both rows. Stopping
+        // at this row's own bullet would cross every deeper guide passing
+        // through the gap below it. `nextDepth` rather than `hasChildren`: a
+        // collapsed parent has children in the tree but shows none, so its
+        // separator would step in for a guide that is not drawn.
         //
         // `List` measures the separator from the row's *content* by default,
         // which is the indent plus both mark columns — so a depth-2 row's line
         // began 48pt right of everything else in the row. Overridden here.
-        //
-        // Landing the left end *on* a bullet centre was the previous rule, and
-        // it put the end of the separator exactly where a vertical guide runs:
-        // under a parent row, that parent's own guide crossed its separator and
-        // drew a `+`. The two line families have to stay off each other, so the
-        // separator starts a ring-radius to the right of the last guide it
-        // would otherwise touch. Its left end still says roughly how deep this
-        // gap goes; it no longer claims to be a precise tick, because a precise
-        // tick cannot share an x with a guide without intersecting it.
-        //
-        // One deeper than this row only when it already has children, matching
-        // `deepestAtGap`: under a leaf, nesting is the `into` drop instead.
         .alignmentGuide(.listRowSeparatorLeading) { d in
-            d[.leading] + Self.guideX0 + Self.ringRadius
-                + (hasChildren ? Self.indent : 0)
+            // `d[.leading]` already includes this row's own indent, so a deeper
+            // neighbour is the difference between the two depths.
+            let deeper = max(0, (nextDepth ?? depth) - depth)
+            return d[.leading] + Self.guideX0 + CGFloat(deeper) * Self.indent
         }
         // Faded to a ghost while it is being carried, so the row under the
         // finger is visibly the one in flight and not just another row the
