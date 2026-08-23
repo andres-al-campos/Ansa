@@ -549,6 +549,43 @@ struct OutlineView: View {
         }
     }
 
+    /// The frames of rows `List` has slid aside to reveal a swipe action.
+    ///
+    /// A row is swiped when it has moved left of where *its own depth* puts it.
+    /// Comparing rows to each other was the earlier version and it was wrong: a
+    /// row's frame carries its leading indent, so a depth-2 row legitimately
+    /// sits two indents left of a depth-0 row, and taking the shallowest as
+    /// "resting" marked every indented row as swiped. That is what punched
+    /// holes in guides with nothing swiped at all.
+    ///
+    /// Depth comes from `rows`, not from the geometry — reading a row's depth
+    /// back out of its x is circular when that x is the thing under test.
+    private func swipedRowFrames() -> [CGRect] {
+        var depths: [NodeId: Int] = [:]
+        for row in rows { depths[row.node.id] = row.depth }
+
+        /// Where this row's frame would start if nothing had moved it.
+        func offset(_ id: NodeId, _ f: CGRect) -> CGFloat? {
+            guard let d = depths[id] else { return nil }
+            return f.minX - CGFloat(d) * OutlineRow.indent
+        }
+
+        // The inset the most rows agree on. At most one row is ever swiped, so
+        // the majority is always the resting value, whatever the platform's
+        // own leading inset happens to be.
+        var tally: [CGFloat: Int] = [:]
+        for (id, f) in rowFrames {
+            guard let x = offset(id, f) else { continue }
+            tally[x.rounded(), default: 0] += 1
+        }
+        guard let inset = tally.max(by: { $0.value < $1.value })?.key else { return [] }
+
+        return rowFrames.compactMap { id, f in
+            guard let x = offset(id, f), x < inset - 1 else { return nil }
+            return f
+        }
+    }
+
     /// A guide, with the band of any swiped-aside row cut out of it.
     ///
     /// The guides are an overlay above the list and the rows cannot paint over
@@ -566,11 +603,7 @@ struct OutlineView: View {
     /// continues above and below it, and a line that vanished entirely would
     /// say the subtree had come apart.
     private func swipeMask(top: CGFloat, bottom: CGFloat) -> some View {
-        // Measured against the shallowest row rather than a constant: the
-        // resting `minX` is the list's own leading inset, which is a platform
-        // value, not something this file sets.
-        let resting = rowFrames.values.map(\.minX).max() ?? 0
-        let swiped = rowFrames.values.filter { $0.minX < resting - 1 }
+        let swiped = swipedRowFrames()
         return Rectangle()
             .fill(Color.black)
             .frame(height: max(0, bottom - top))
