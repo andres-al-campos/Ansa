@@ -483,14 +483,19 @@ struct OutlineView: View {
         ForEach(TreeOps.guides(hitRows), id: \.parent) { guide in
             if let last = rowFrames[rows[guide.last].node.id],
                let parent = rowFrames[guide.parent] {
-                // From just below the parent's bullet to just above the last
-                // descendant's. Both ends clear their mark by the same radius,
-                // so the line is symmetric: starting at a centre would run
-                // through the mark, and clamping the top to the first child's
-                // row edge — which is where the separator sits — made a root
-                // guide look like it hung from the separator rather than from
-                // the parent it belongs to.
-                let top = parent.midY + OutlineRow.markRadius
+                // Clear of the parent's mark at the top and the last child's at
+                // the bottom, by the same margin at both ends.
+                //
+                // The web gets its gap the other way round: there `.guide` runs
+                // the full height of every row and the bullet's own disc paints
+                // over it, so the line disappears behind something round. That
+                // does not port. Here the guides are an overlay *above* the
+                // rows, so a masking disc drawn in the same overlay covers the
+                // bullet instead of hiding behind it — tried, and it erased
+                // every mark on screen. Shortening the line is the version that
+                // works when the layer order is inverted.
+                let clearance = OutlineRow.markRadius + 3
+                let top = parent.midY + clearance
                 // The guide at the depth a gap-drop would land on lights up.
                 // The insertion line already sits at that x, but the line is
                 // 3pt of a 40pt row and often under the thumb — the lit guide
@@ -500,14 +505,14 @@ struct OutlineView: View {
                     .fill(lit
                         ? DropPalette.nest.opacity(0.45)
                         : Color.primary.opacity(0.12))
-                    // Down to the last child's own bullet, not to the bottom
-                    // of its row. Stopping short of the row's edge left the
+                    // Down to the last child's own bullet centre, not to the
+                    // bottom of its row. Stopping at the row's edge left the
                     // deepest child hanging below the line that is supposed to
                     // hold it, which is the one place the line most needs to
                     // reach — that child is the end of the run.
                     .frame(
                         width: lit ? 2.5 : 1.5,
-                        height: max(0, last.midY - OutlineRow.markRadius - top))
+                        height: max(0, last.midY - clearance - top))
                     .animation(.easeOut(duration: 0.12), value: lit)
                     .offset(
                         x: left + OutlineRow.guideX0
