@@ -509,8 +509,16 @@ struct OutlineView: View {
                 // bullet instead of hiding behind it — tried, and it erased
                 // every mark on screen. Shortening the line is the version that
                 // works when the layer order is inverted.
-                let clearance = OutlineRow.markRadius + 3
-                let top = parent.midY + clearance
+                // Clearance is per end, because the two ends meet different
+                // marks. A guide always hangs from a parent, whose bullet is an
+                // 18pt ring; it usually ends on a leaf, whose bullet is a 6pt
+                // dot. One constant for both put a ring-sized gap under a dot,
+                // which is the asymmetry — identical numbers reading as
+                // lopsided because the marks they clear are not the same size.
+                let lastIsParent = !TreeOps.isLeaf(tree, rows[guide.last].node.id)
+                let top = parent.midY + OutlineRow.ringRadius + 3
+                let bottom = last.midY
+                    - (lastIsParent ? OutlineRow.ringRadius : OutlineRow.dotRadius) - 3
                 // The guide at the depth a gap-drop would land on lights up.
                 // The insertion line already sits at that x, but the line is
                 // 3pt of a 40pt row and often under the thumb — the lit guide
@@ -527,12 +535,12 @@ struct OutlineView: View {
                     // reach — that child is the end of the run.
                     .frame(
                         width: lit ? 2.5 : 1.5,
-                        height: max(0, last.midY - clearance - top))
+                        height: max(0, bottom - top))
                     .animation(.easeOut(duration: 0.12), value: lit)
                     // Punched out across a row that has been swiped aside, so
                     // the row reads as passing over the line rather than the
                     // line cutting through it.
-                    .mask(swipeMask(top: top, bottom: last.midY - clearance))
+                    .mask(swipeMask(top: top, bottom: bottom))
                     .offset(
                         x: left + OutlineRow.guideX0
                             + CGFloat(guide.depth) * OutlineRow.indent - 0.75,
@@ -916,7 +924,10 @@ private struct OutlineRow: View {
 
     /// Half the bullet ring, so a guide can start clear of the mark it hangs
     /// from rather than through it.
-    static let markRadius: CGFloat = 9
+    /// The parent bullet's ring, and the bare dot a leaf gets. Guides clear
+    /// whichever mark is actually at that end — see `depthGuides`.
+    static let ringRadius: CGFloat = 9
+    static let dotRadius: CGFloat = 3
 
     var body: some View {
         HStack(spacing: 10) {
@@ -1015,29 +1026,26 @@ private struct OutlineRow: View {
             .padding(.trailing, 4)
         }
         .padding(.leading, CGFloat(depth) * Self.indent)
-        // Start the separator at the deepest indent the gap below this row will
-        // accept, and run it to the screen edge.
+        // Start the separator clear of the deepest guide that passes through
+        // this gap, and run it to the screen edge.
         //
         // `List` measures the separator from the row's *content* by default,
         // which is the indent plus both mark columns — so a depth-2 row's line
-        // began 48pt right of everything else in the row. Overridden here, and
-        // the x it is moved to carries meaning: the line's left end is the
-        // deepest legal drop for this gap, so a finger dragging left off that
-        // end can see it has run past the nesting range and into the outdents.
-        // The shallow end is not marked at all — depth 0 is legal at every gap,
-        // so a limit drawn there would be a boundary with nothing on its far
-        // side.
+        // began 48pt right of everything else in the row. Overridden here.
+        //
+        // Landing the left end *on* a bullet centre was the previous rule, and
+        // it put the end of the separator exactly where a vertical guide runs:
+        // under a parent row, that parent's own guide crossed its separator and
+        // drew a `+`. The two line families have to stay off each other, so the
+        // separator starts a ring-radius to the right of the last guide it
+        // would otherwise touch. Its left end still says roughly how deep this
+        // gap goes; it no longer claims to be a precise tick, because a precise
+        // tick cannot share an x with a guide without intersecting it.
         //
         // One deeper than this row only when it already has children, matching
         // `deepestAtGap`: under a leaf, nesting is the `into` drop instead.
-        //
-        // The bullet's centre, not its left edge: the depth guide runs down
-        // that exact x, and starting a mark-radius earlier left the guide
-        // crossing the line and poking out below as a stray tail. The leading
-        // padding is already in `d[.leading]`, so only the extra level has to
-        // be added on top of it.
         .alignmentGuide(.listRowSeparatorLeading) { d in
-            d[.leading] + Self.guideX0
+            d[.leading] + Self.guideX0 + Self.ringRadius
                 + (hasChildren ? Self.indent : 0)
         }
         // Faded to a ghost while it is being carried, so the row under the
