@@ -481,14 +481,16 @@ struct OutlineView: View {
         // list's edge, and `List` spends its own inset before the row begins.
         let left = rowsLeft - listOrigin.x
         ForEach(TreeOps.guides(hitRows), id: \.parent) { guide in
-            if let first = rowFrames[rows[guide.first].node.id],
-               let last = rowFrames[rows[guide.last].node.id],
+            if let last = rowFrames[rows[guide.last].node.id],
                let parent = rowFrames[guide.parent] {
-                // From just below the parent's bullet to the bottom of the last
-                // descendant. Starting at the parent's own centre would run the
-                // line through the mark; starting at the row boundary would
-                // leave a gap where the bullet's lower half is.
-                let top = max(parent.midY + OutlineRow.markRadius, first.minY)
+                // From just below the parent's bullet to just above the last
+                // descendant's. Both ends clear their mark by the same radius,
+                // so the line is symmetric: starting at a centre would run
+                // through the mark, and clamping the top to the first child's
+                // row edge — which is where the separator sits — made a root
+                // guide look like it hung from the separator rather than from
+                // the parent it belongs to.
+                let top = parent.midY + OutlineRow.markRadius
                 // The guide at the depth a gap-drop would land on lights up.
                 // The insertion line already sits at that x, but the line is
                 // 3pt of a 40pt row and often under the thumb — the lit guide
@@ -505,7 +507,7 @@ struct OutlineView: View {
                     // reach — that child is the end of the run.
                     .frame(
                         width: lit ? 2.5 : 1.5,
-                        height: max(0, last.midY - top))
+                        height: max(0, last.midY - OutlineRow.markRadius - top))
                     .animation(.easeOut(duration: 0.12), value: lit)
                     .offset(
                         x: left + OutlineRow.guideX0
