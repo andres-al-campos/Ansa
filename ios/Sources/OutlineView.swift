@@ -221,7 +221,6 @@ struct OutlineView: View {
                     // short at both ends and the seams show at every boundary.
                     .background(alignment: .topLeading) {
                         guideSegments(for: row.node.id)
-                            .padding(.vertical, -OutlineRow.rowPadding / 2)
                     }
                     // Zoom lives on a swipe rather than on the bullet.
                     // It is one Back tap to undo but replaces the whole
@@ -492,19 +491,41 @@ struct OutlineView: View {
         if let i = rows.firstIndex(where: { $0.node.id == id }) {
             let all = TreeOps.guides(hitRows)
             let here = all.filter { $0.first <= i && i <= $0.last }
+            // Drawn taller than the row by `List`'s row padding, and shifted up
+            // half of it, so each segment reaches the cell's true edges and the
+            // segments abut into one unbroken line.
+            //
+            // The height comes from the row's measured frame rather than a
+            // constant: a row whose text wraps is taller, and a fixed height
+            // would leave exactly the gap this is here to close. It falls back
+            // to the single-line height only for a row `List` has not measured
+            // yet, which is corrected on the next layout pass.
+            //
+            // Stretching was tried first and does not work. A shape has no
+            // intrinsic height and takes only what the stack proposes, so
+            // negative padding widened the proposal while the shape kept
+            // drawing the row's 40pt of content — a 22pt hole at every
+            // boundary.
+            //
+            // Rectangle, not Capsule: rounded ends on a segment meant to join
+            // the next one pinch the join into a visible waist.
+            let rowH = rowFrames[id]?.height ?? OutlineRow.rowHeight
+            let h = rowH + OutlineRow.rowPadding
             ZStack(alignment: .topLeading) {
                 ForEach(here, id: \.parent) { guide in
                     let lit = guide.parent == litGuideParent
-                    Capsule()
+                    Rectangle()
                         .fill(lit
                             ? DropPalette.nest.opacity(0.45)
                             : Color.primary.opacity(0.12))
-                        .frame(width: lit ? 2.5 : 1.5)
+                        .frame(width: lit ? 2.5 : 1.5, height: h)
                         .offset(x: OutlineRow.guideX0
-                            + CGFloat(guide.depth) * OutlineRow.indent - 0.75)
+                            + CGFloat(guide.depth) * OutlineRow.indent - 0.75,
+                            y: -OutlineRow.rowPadding / 2)
                         .animation(.easeOut(duration: 0.12), value: lit)
                 }
             }
+            .frame(height: rowH, alignment: .topLeading)
         }
     }
 
@@ -831,6 +852,11 @@ private struct OutlineRow: View {
     /// and the checkbox swapped: a guide through bullet centres is only a
     /// straight line if nothing else shares that column.
     static let guideX0: CGFloat = 16
+
+    /// A single-line row's content height. Only a fallback for a row `List`
+    /// has not measured yet — the guide segments use the real frame, since a
+    /// row whose text wraps is taller than this.
+    static let rowHeight: CGFloat = 40
 
     /// `List`'s vertical padding around a row's content, split evenly above and
     /// below it. Measured, not declared: the row frame reports only the 40pt of
