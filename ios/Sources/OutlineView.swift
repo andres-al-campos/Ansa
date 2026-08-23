@@ -521,8 +521,20 @@ struct OutlineView: View {
                 // also left the last child hanging below the line meant to hold
                 // it, and made the two ends read as unequal because a ring and
                 // a dot are different sizes.
-                let top = firstChild.minY
-                let bottom = last.maxY
+                // Extended by half `List`'s inter-row padding at each end, so
+                // consecutive guides abut instead of leaving a notch at every
+                // row boundary.
+                //
+                // The frame comes from a `GeometryReader` on the row's content,
+                // which sits *inside* the row cell's insets — measured at 40pt
+                // of content on a 62pt pitch, so 22pt of the cell is padding
+                // the frame never reports. Spanning minY...maxY therefore drew
+                // a line 22pt shorter than the row it was supposed to cover,
+                // and the shortfall showed up as a gap between one guide's end
+                // and the next row's start.
+                let pad = OutlineRow.rowPadding / 2
+                let top = firstChild.minY - pad
+                let bottom = last.maxY + pad
                 // The guide at the depth a gap-drop would land on lights up.
                 // The insertion line already sits at that x, but the line is
                 // 3pt of a 40pt row and often under the thumb — the lit guide
@@ -941,6 +953,11 @@ private struct OutlineRow: View {
     /// Half the bullet ring. Keeps the separator's left end off the guide that
     /// runs through the same gap, which would otherwise draw a `+`.
     static let ringRadius: CGFloat = 9
+
+    /// `List`'s vertical padding around a row's content, split evenly above and
+    /// below it. Measured, not declared: the row frame reports only the 40pt of
+    /// content, while the cells sit on a 62pt pitch.
+    static let rowPadding: CGFloat = 22
 
     var body: some View {
         HStack(spacing: 10) {
