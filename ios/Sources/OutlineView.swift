@@ -449,7 +449,14 @@ struct OutlineView: View {
                     .fill(lit
                         ? DropPalette.nest.opacity(0.45)
                         : Color.primary.opacity(0.12))
-                    .frame(width: lit ? 2.5 : 1.5, height: max(0, last.maxY - top - 6))
+                    // Down to the last child's own bullet, not to the bottom
+                    // of its row. Stopping short of the row's edge left the
+                    // deepest child hanging below the line that is supposed to
+                    // hold it, which is the one place the line most needs to
+                    // reach — that child is the end of the run.
+                    .frame(
+                        width: lit ? 2.5 : 1.5,
+                        height: max(0, last.midY - top))
                     .animation(.easeOut(duration: 0.12), value: lit)
                     .offset(
                         x: left + OutlineRow.guideX0
@@ -504,18 +511,27 @@ struct OutlineView: View {
                 let x = left + OutlineRow.guideX0
                     + CGFloat(target.depth ?? 0) * OutlineRow.indent
                 let y = (target.mode == .before ? frame.minY : frame.maxY) - listOrigin.y
+                // Centred on the row boundary, which is exactly where `List`
+                // draws its own separator, so the marker replaces that hairline
+                // instead of floating above or below it. Drawn a row boundary
+                // away from where it belongs, the line reads as "between the
+                // wrong two rows" — off by one row is the whole question a drop
+                // indicator exists to answer.
+                let thickness: CGFloat = 3
+                Capsule()
+                    .fill(DropPalette.insert)
+                    .frame(width: max(0, frame.width - OutlineRow.guideX0
+                        - CGFloat(target.depth ?? 0) * OutlineRow.indent),
+                           height: thickness)
+                    .offset(x: x, y: y - thickness / 2)
                 // The dot marks where the line meets the guide it would hang
                 // from, which is the one thing a thumb covering the line's
-                // left end would otherwise hide.
+                // left end would otherwise hide. Drawn after the line so it
+                // sits on top of it rather than under.
                 Circle()
                     .fill(DropPalette.insert)
                     .frame(width: 7, height: 7)
                     .offset(x: x - 3.5, y: y - 3.5)
-                Capsule()
-                    .fill(DropPalette.insert)
-                    .frame(width: max(0, frame.width - OutlineRow.guideX0
-                        - CGFloat(target.depth ?? 0) * OutlineRow.indent), height: 3)
-                    .offset(x: x, y: y - 1.5)
             case .return:
                 EmptyView()
             }
