@@ -970,27 +970,30 @@ private struct OutlineRow: View {
             .padding(.trailing, 4)
         }
         .padding(.leading, CGFloat(depth) * Self.indent)
-        // Start the separator at depth 0's bullet, so the line spans the range
-        // of depths a drop into this gap can pick.
+        // Start the separator at the deepest indent the gap below this row will
+        // accept, and run it to the screen edge.
         //
-        // Two things had to be fixed here. `List` measures the separator from
-        // the row's *content* by default, which is the indent plus both mark
-        // columns — so a depth-2 row's line began 48pt right of everything else
-        // in the row. And the line answers a question: released in this gap, at
-        // what indent does the row land? Its ends are the answer's limits, so
-        // the left end is the shallowest legal drop and the right end the
-        // deepest. The shallowest is always depth 0 — outdenting has to stay
-        // reachable from any gap — which is why this is one x for every row
-        // rather than a staircase following the row's own depth.
+        // `List` measures the separator from the row's *content* by default,
+        // which is the indent plus both mark columns — so a depth-2 row's line
+        // began 48pt right of everything else in the row. Overridden here, and
+        // the x it is moved to carries meaning: the line's left end is the
+        // deepest legal drop for this gap, so a finger dragging left off that
+        // end can see it has run past the nesting range and into the outdents.
+        // The shallow end is not marked at all — depth 0 is legal at every gap,
+        // so a limit drawn there would be a boundary with nothing on its far
+        // side.
+        //
+        // One deeper than this row only when it already has children, matching
+        // `deepestAtGap`: under a leaf, nesting is the `into` drop instead.
         //
         // The bullet's centre, not its left edge: the depth guide runs down
         // that exact x, and starting a mark-radius earlier left the guide
         // crossing the line and poking out below as a stray tail. The leading
-        // padding above has already moved the row by its depth, so that has to
-        // come back off to land on depth 0.
+        // padding is already in `d[.leading]`, so only the extra level has to
+        // be added on top of it.
         .alignmentGuide(.listRowSeparatorLeading) { d in
-            max(d[.leading], d[.leading] + Self.guideX0
-                - CGFloat(depth) * Self.indent)
+            d[.leading] + Self.guideX0
+                + (hasChildren ? Self.indent : 0)
         }
         // Faded to a ghost while it is being carried, so the row under the
         // finger is visibly the one in flight and not just another row the
