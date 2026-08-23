@@ -533,6 +533,27 @@ struct OutlineView: View {
         return depth == d - 1
     }
 
+    /// The deepest indent the current gap will accept.
+    ///
+    /// The indicator marks the depth the finger picked; this is the far end of
+    /// the range it can pick from. Without it the line's right end is just the
+    /// screen edge and says nothing, so a drag has no way to know it has run
+    /// out of depth short of pushing further right and watching nothing happen.
+    ///
+    /// `.after` anchors to the row above the gap, `.before` to the row below —
+    /// which for `.before` means there is no row above at all, the only case
+    /// that reaches it.
+    private func deepestAtTarget(_ target: TreeOps.DropTarget) -> Int? {
+        guard target.mode == .before || target.mode == .after else { return nil }
+        guard target.mode == .after else { return 0 }
+        guard let above = hitRows.first(where: { $0.id == target.id }) else { return nil }
+        // Same exclusion as the hit-test: the row in flight is leaving, so it
+        // does not make its parent a parent.
+        let hasKids = TreeOps.childrenOf(tree, above.id).contains { $0.id != dragging }
+        return TreeOps.deepestAtGap(
+            aboveDepth: above.depth, belowDepth: nil, aboveHasChildren: hasKids)
+    }
+
     /// The line showing where the row would land, drawn over the list.
     ///
     /// A gap shows a line indented to the depth the finger picked — that indent
@@ -567,6 +588,27 @@ struct OutlineView: View {
                 // wrong two rows" — off by one row is the whole question a drop
                 // indicator exists to answer.
                 let thickness: CGFloat = 3
+                // The range the finger can pick from, drawn faint under the
+                // line itself: left tick at depth 0, right tick at the deepest
+                // this gap allows. The bright line says where the row lands
+                // now; the ticks say how much further either way there is to
+                // go. They matter more since the deep end became conditional —
+                // it is no longer "one past the row above" everywhere, so it
+                // cannot be inferred from the tree's shape at a glance.
+                if let deepest = deepestAtTarget(target) {
+                    let x0 = left + OutlineRow.guideX0
+                    let xN = x0 + CGFloat(deepest) * OutlineRow.indent
+                    Capsule()
+                        .fill(DropPalette.insert.opacity(0.28))
+                        .frame(width: max(thickness, xN - x0), height: thickness)
+                        .offset(x: x0, y: y - thickness / 2)
+                    ForEach([x0, xN], id: \.self) { tick in
+                        Capsule()
+                            .fill(DropPalette.insert.opacity(0.55))
+                            .frame(width: 2, height: 11)
+                            .offset(x: tick - 1, y: y - 5.5)
+                    }
+                }
                 Capsule()
                     .fill(DropPalette.insert)
                     .frame(width: max(0, frame.width - OutlineRow.guideX0
@@ -886,24 +928,27 @@ private struct OutlineRow: View {
             .padding(.trailing, 4)
         }
         .padding(.leading, CGFloat(depth) * Self.indent)
-        // Start the separator under the bullet rather than under the text.
+        // Start the separator at depth 0's bullet, so the line spans the range
+        // of depths a drop into this gap can pick.
         //
-        // `List` measures it from the row's *content* by default, which here
-        // means the indent plus both mark columns — so a depth-2 row's line
-        // began 48pt right of everything else in the row, and the deeper the
-        // row the shorter and more ragged its boundary. Anchoring to the
-        // bullet column puts the separator on the same x as the depth guide
-        // and the drop marker, which is what lets the marker land *on* the
-        // line it means instead of beside it.
+        // Two things had to be fixed here. `List` measures the separator from
+        // the row's *content* by default, which is the indent plus both mark
+        // columns — so a depth-2 row's line began 48pt right of everything else
+        // in the row. And the line answers a question: released in this gap, at
+        // what indent does the row land? Its ends are the answer's limits, so
+        // the left end is the shallowest legal drop and the right end the
+        // deepest. The shallowest is always depth 0 — outdenting has to stay
+        // reachable from any gap — which is why this is one x for every row
+        // rather than a staircase following the row's own depth.
         //
-        // The bullet's centre, not its left edge: the guide runs down that
-        // exact x, and starting the separator a mark-radius earlier left the
-        // guide crossing it and poking out below as a stray tail at every
-        // depth. Measured from the row's leading edge, which the padding above
-        // has already moved by the depth — so this is an offset within the
-        // row, not an absolute position.
+        // The bullet's centre, not its left edge: the depth guide runs down
+        // that exact x, and starting a mark-radius earlier left the guide
+        // crossing the line and poking out below as a stray tail. The leading
+        // padding above has already moved the row by its depth, so that has to
+        // come back off to land on depth 0.
         .alignmentGuide(.listRowSeparatorLeading) { d in
-            d[.leading] + Self.guideX0
+            max(d[.leading], d[.leading] + Self.guideX0
+                - CGFloat(depth) * Self.indent)
         }
         // Faded to a ghost while it is being carried, so the row under the
         // finger is visibly the one in flight and not just another row the
