@@ -577,13 +577,21 @@ struct OutlineView: View {
             case .before, .after:
                 let x = left + OutlineRow.guideX0
                     + CGFloat(target.depth ?? 0) * OutlineRow.indent
-                let y = (target.mode == .before ? frame.minY : frame.maxY) - listOrigin.y
-                // Centred on the row boundary, which is exactly where `List`
-                // draws its own separator, so the marker replaces that hairline
-                // instead of floating above or below it. Drawn a row boundary
-                // away from where it belongs, the line reads as "between the
-                // wrong two rows" — off by one row is the whole question a drop
-                // indicator exists to answer.
+                // Out to the true cell boundary, not the content edge. A row
+                // frame comes from a `GeometryReader` inside `List`'s row
+                // insets, so it reports the 40pt of content on a 62pt pitch —
+                // its minY/maxY sit 11pt inside the gap, which put the line
+                // within one of the two rows instead of between them.
+                let pad = OutlineRow.rowPadding / 2
+                let edge = target.mode == .before
+                    ? frame.minY - pad
+                    : frame.maxY + pad
+                let y = edge - listOrigin.y
+                // Centred on that boundary, so it sits in the whitespace
+                // between the two rows and belongs to neither. Drawn a row
+                // boundary away from where it belongs, the line reads as
+                // "between the wrong two rows" — off by one row is the whole
+                // question a drop indicator exists to answer.
                 let thickness: CGFloat = 3
                 // The range the finger can pick from, drawn faint under the
                 // line itself: left tick at depth 0, right tick at the deepest
