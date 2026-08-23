@@ -886,6 +886,25 @@ private struct OutlineRow: View {
             .padding(.trailing, 4)
         }
         .padding(.leading, CGFloat(depth) * Self.indent)
+        // Start the separator under the bullet rather than under the text.
+        //
+        // `List` measures it from the row's *content* by default, which here
+        // means the indent plus both mark columns — so a depth-2 row's line
+        // began 48pt right of everything else in the row, and the deeper the
+        // row the shorter and more ragged its boundary. Anchoring to the
+        // bullet column puts the separator on the same x as the depth guide
+        // and the drop marker, which is what lets the marker land *on* the
+        // line it means instead of beside it.
+        //
+        // The bullet's centre, not its left edge: the guide runs down that
+        // exact x, and starting the separator a mark-radius earlier left the
+        // guide crossing it and poking out below as a stray tail at every
+        // depth. Measured from the row's leading edge, which the padding above
+        // has already moved by the depth — so this is an offset within the
+        // row, not an absolute position.
+        .alignmentGuide(.listRowSeparatorLeading) { d in
+            d[.leading] + Self.guideX0
+        }
         // Faded to a ghost while it is being carried, so the row under the
         // finger is visibly the one in flight and not just another row the
         // indicator happens to sit near. It stays in place rather than
