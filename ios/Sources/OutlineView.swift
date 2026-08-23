@@ -48,6 +48,14 @@ struct OutlineView: View {
 
     /// Prepared once rather than per tick: a generator built at the moment of
     /// the tap fires late enough to feel unrelated to the move that caused it.
+    ///
+    /// Two of them, because the lift and the ticks say different things. A drag
+    /// arms on a timer with nothing on screen to announce it, so the lift is
+    /// the only signal that the press took — it has to be felt through a
+    /// pocket-sized slab held loosely, at full strength. The per-target ticks
+    /// fire many times a second during a move and stay light; at the lift's
+    /// weight they would turn a drag into a buzz.
+    private let liftHaptic = UIImpactFeedbackGenerator(style: .heavy)
     private let haptic = UIImpactFeedbackGenerator(style: .light)
 
     private var tree: Tree { store.tree }
@@ -224,6 +232,7 @@ struct OutlineView: View {
                 ZStack(alignment: .topLeading) {
                     depthGuides
                     dropIndicator
+                    dragLabel
                 }
                     .onAppear {
                         listOrigin = geo.frame(in: .global).origin
@@ -341,6 +350,11 @@ struct OutlineView: View {
     private func beginDrag(_ id: NodeId) {
         dragging = id
         dropTarget = nil
+        liftHaptic.impactOccurred()
+        // Warmed for the ticks that follow. The first `impactOccurred` on a
+        // cold generator is the one that arrives late, and during a drag that
+        // is the tick telling you the very first target you crossed.
+        haptic.prepare()
     }
 
     /// Re-run the hit-test for the finger's current position.
@@ -414,7 +428,42 @@ struct OutlineView: View {
         }
         guard let dragging, let target = dropTarget,
               let op = TreeOps.dropOp(tree, dragging, target, scope: scope) else { return }
+        // Landed. Distinct from the ticks along the way, so a release that
+        // moved something feels different from one that let go over nothing.
+        liftHaptic.impactOccurred(intensity: 0.7)
         apply(op)
+    }
+
+    /// The name of the row in flight, riding with the finger.
+    ///
+    /// The row itself stays put and fades, so without this the only thing
+    /// naming what is being carried is a gap in the list — and once the drag
+    /// scrolls, the faded row is not even on screen. The chip is the answer to
+    /// "what am I holding" and the indicator answers "where will it go".
+    ///
+    /// Offset above the touch rather than under it: the finger covers roughly a
+    /// row's height of screen, which is exactly the space a label under it
+    /// would occupy.
+    @ViewBuilder private var dragLabel: some View {
+        if let id = dragging, let node = tree.first(where: { $0.id == id }) {
+            Text(node.text.isEmpty ? "Untitled" : node.text)
+                .lineLimit(1)
+                .font(.callout.weight(.medium))
+                .padding(.horizontal, 12)
+                .padding(.vertical, 7)
+                .background(
+                    Capsule().fill(.regularMaterial))
+                .overlay(Capsule().strokeBorder(DropPalette.insert.opacity(0.5), lineWidth: 1))
+                .shadow(radius: 6, y: 2)
+                // Pinned to the left rather than tracking the finger's x: the
+                // chip is an identity label, not a second cursor, and one that
+                // slides sideways competes with the indicator for the answer
+                // to where the drop lands.
+                .frame(maxWidth: 240, alignment: .leading)
+                .offset(x: 16, y: dragPoint.y - listOrigin.y - 46)
+                .allowsHitTesting(false)
+                .transition(.opacity)
+        }
     }
 
     /// The vertical lines connecting a parent to everything under it.
