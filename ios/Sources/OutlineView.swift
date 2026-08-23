@@ -491,7 +491,8 @@ struct OutlineView: View {
             switch target.mode {
             case .into:
                 // The whole row, filled as well as outlined. An outline alone
-                // was easy to miss against a row that already has a depth tint.
+                // reads as a hairline at arm's length, and it has to beat a
+                // guide line running through the same row.
                 RoundedRectangle(cornerRadius: 6)
                     .fill(DropPalette.nest.opacity(0.14))
                     .overlay(
@@ -699,10 +700,9 @@ private struct OutlineRow: View {
 
     /// One indent step, and the spacing between two depth guides.
     ///
-    /// Wider than it needs to be for the tint alone. The guides are what set
-    /// it: at 12pt four levels read as a hatch rather than four rails, and the
-    /// guide is the only thing on screen that says which depth a drag landed
-    /// on. The cost is label width at every level — depth 4 starts 164pt into
+    /// The guides are what set it: at 12pt four levels read as a hatch rather
+    /// than four rails, and the guide is the only thing on screen that says
+    /// which depth a row sits at. The cost is label width at every level — depth 4 starts 164pt into
     /// a 390pt screen — which is a deliberate nudge toward zooming into a
     /// subtree rather than nesting deeply in place.
     ///
@@ -821,33 +821,21 @@ private struct OutlineRow: View {
             .padding(.trailing, 4)
         }
         .padding(.leading, CGFloat(depth) * Self.indent)
-        .listRowBackground(tint)
+        // Faded to a ghost while it is being carried, so the row under the
+        // finger is visibly the one in flight and not just another row the
+        // indicator happens to sit near. It stays in place rather than
+        // following the finger: the tree still has to be readable to aim at,
+        // and a row lifted out of it would take its own gap with it.
+        .opacity(isDragging ? 0.35 : 1)
+        .animation(.easeOut(duration: 0.12), value: isDragging)
+        .listRowBackground(
+            isDragging ? Color.primary.opacity(0.06) : Color.clear)
         // No `.contentShape(Rectangle())` here. It makes the whole row a single
         // hit-test target, which swallows taps before they reach the checkbox
         // and the bullet — separate targets are the point of the row. Add it
         // only alongside a row-level tap action, never on its own.
     }
 
-    /// Depth as a surface, not as a line.
-    ///
-    /// Guides came first, matching the web. They failed here for a reason the
-    /// web does not have: rows wrap to two and three lines on a phone, so the
-    /// text's left edge moves more from wrapping than from nesting, and any cue
-    /// living in the gap beside the text is fighting that. `List` insets also
-    /// broke each ancestor line into per-row segments, which read as noise.
-    ///
-    /// A tint marks the row itself, so wrapping cannot break it. It stops being
-    /// separable past three levels — at which point the boundary between two
-    /// adjacent rows still says which is deeper, which is why this degrades
-    /// rather than failing. Deep trees are zoom's problem, not this one's.
-    private var tint: Color {
-        switch depth {
-        case 0: .clear
-        case 1: Color.primary.opacity(0.05)
-        case 2: Color.primary.opacity(0.033)
-        default: Color.primary.opacity(0.018)
-        }
-    }
 }
 
 /// The done control: a rounded square, filled with a tick once done.
