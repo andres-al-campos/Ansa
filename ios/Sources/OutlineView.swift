@@ -495,40 +495,34 @@ struct OutlineView: View {
             // Scrolling past either end is not a special case. The guide is
             // drawn between the measured rows it does have, so it simply runs
             // off the edge of the screen the way a full-length line would.
-            if let parent = rowFrames[guide.parent] ?? measuredFrame(from: guide.first, to: guide.last),
+            if let firstChild = rowFrames[rows[guide.first].node.id]
+                    ?? measuredFrame(from: guide.first, to: guide.last),
                let last = rowFrames[rows[guide.last].node.id]
                     ?? lastMeasuredFrame(from: guide.first, to: guide.last) {
-                // Clear of the parent's mark at the top and the last child's at
-                // the bottom, by the same margin at both ends.
+                // The guide spans its children's rows: from the top edge
+                // of the first child's row to the bottom edge of the last
+                // child's. No clearance arithmetic — the run of children *is*
+                // the extent of the line, so the endpoints are row edges rather
+                // than a distance measured off a bullet.
                 //
-                // The web gets its gap the other way round: there `.guide` runs
-                // the full height of every row and the bullet's own disc paints
-                // over it, so the line disappears behind something round. That
-                // does not port. Here the guides are an overlay *above* the
-                // rows, so a masking disc drawn in the same overlay covers the
-                // bullet instead of hiding behind it — tried, and it erased
-                // every mark on screen. Shortening the line is the version that
-                // works when the layer order is inverted.
-                // The line stops at each mark's own edge — clearance is the
-                // radius of whatever mark is at that end, with no extra air.
+                // This is the desktop rule. There `.guide` is `top: 0;
+                // bottom: 0` on every child row and the lines abut into one
+                // continuous stroke, with no length calculation anywhere. The
+                // gap at each bullet comes from the fold button's disc painting
+                // over the line, which does not port — here the guides are an
+                // overlay above the rows, because in a row background `List`'s
+                // per-row insets cut every line into segments, and a masking
+                // disc drawn in that same overlay covers the mark instead of
+                // hiding behind it. So the iOS line runs unbroken past the
+                // bullets rather than being notched by them.
                 //
-                // Per end, because the ends meet different marks: a guide
-                // always hangs from a parent, whose bullet is an 18pt ring, and
-                // usually ends on a leaf, whose bullet is a 6pt dot. One
-                // constant for both put a ring-sized gap under a dot, which is
-                // what read as lopsided.
-                //
-                // The web needs none of this: there `.guide` is `top: 0;
-                // bottom: 0` on every row, so the line is simply row height and
-                // the fold button's 15px disc paints over it. That relies on
-                // the guide sitting *behind* the row, which does not port —
-                // here they are an overlay above the rows, because in a row
-                // background `List`'s per-row insets cut every line into
-                // segments. Endpoints exist because the masking trick does not.
-                let lastIsParent = !TreeOps.isLeaf(tree, rows[guide.last].node.id)
-                let top = parent.midY + OutlineRow.ringRadius
-                let bottom = last.midY
-                    - (lastIsParent ? OutlineRow.ringRadius : OutlineRow.dotRadius)
+                // Earlier versions shortened each end by the radius of whatever
+                // mark sat there. That kept the line off the bullets, but it
+                // also left the last child hanging below the line meant to hold
+                // it, and made the two ends read as unequal because a ring and
+                // a dot are different sizes.
+                let top = firstChild.minY
+                let bottom = last.maxY
                 // The guide at the depth a gap-drop would land on lights up.
                 // The insertion line already sits at that x, but the line is
                 // 3pt of a 40pt row and often under the thumb — the lit guide
@@ -538,11 +532,6 @@ struct OutlineView: View {
                     .fill(lit
                         ? DropPalette.nest.opacity(0.45)
                         : Color.primary.opacity(0.12))
-                    // Down to the last child's own bullet centre, not to the
-                    // bottom of its row. Stopping at the row's edge left the
-                    // deepest child hanging below the line that is supposed to
-                    // hold it, which is the one place the line most needs to
-                    // reach — that child is the end of the run.
                     .frame(
                         width: lit ? 2.5 : 1.5,
                         height: max(0, bottom - top))
@@ -949,12 +938,9 @@ private struct OutlineRow: View {
     /// straight line if nothing else shares that column.
     static let guideX0: CGFloat = 16
 
-    /// Half the bullet ring, so a guide can start clear of the mark it hangs
-    /// from rather than through it.
-    /// The parent bullet's ring, and the bare dot a leaf gets. Guides clear
-    /// whichever mark is actually at that end — see `depthGuides`.
+    /// Half the bullet ring. Keeps the separator's left end off the guide that
+    /// runs through the same gap, which would otherwise draw a `+`.
     static let ringRadius: CGFloat = 9
-    static let dotRadius: CGFloat = 3
 
     var body: some View {
         HStack(spacing: 10) {
