@@ -58,4 +58,23 @@ extension TreeOps {
         }
         return out
     }
+
+    /// The depth of the innermost guide that runs through the gap below row
+    /// `i`, or nil when no guide crosses there.
+    ///
+    /// This is what a horizontal separator has to stop at: extending further
+    /// left would cut through a vertical line. The two adjacent rows' depths do
+    /// not answer it. A guide crosses a boundary when it is running on both
+    /// sides of it, and the run below a parent starts at the parent's *first
+    /// child* — so in the gap directly under a parent, that parent's own guide
+    /// has not begun yet, while its ancestors' guides are still going. Taking
+    /// `max(depth, nextDepth)` there names a guide that is not present and
+    /// misses the ones that are.
+    public static func innermostGuideDepth(
+        _ guides: [Guide], below i: Int
+    ) -> Int? {
+        guides.filter { $0.first <= i && i + 1 <= $0.last }
+            .map(\.depth)
+            .max()
+    }
 }

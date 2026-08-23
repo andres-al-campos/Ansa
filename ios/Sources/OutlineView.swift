@@ -180,7 +180,7 @@ struct OutlineView: View {
                 OutlineRow(
                     node: row.node,
                     depth: row.depth,
-                    nextDepth: nextVisibleDepth(after: row.node.id),
+                    separatorX: separatorX(below: row.node.id),
                     hasChildren: !TreeOps.isLeaf(tree, row.node.id),
                     editing: editing == row.node.id,
                     editText: $editText,
@@ -561,11 +561,19 @@ struct OutlineView: View {
         }
     }
 
-    /// The depth of the row shown directly below `id`, or nil when it is last.
-    private func nextVisibleDepth(after id: NodeId) -> Int? {
+    /// Where the separator below `id` starts: on the innermost guide crossing
+    /// that gap, or at the screen edge when none does.
+    ///
+    /// Asked of the guide list rather than of the two adjacent rows. A guide
+    /// runs from a parent's first child, so directly under a parent its own
+    /// line has not started while its ancestors' still run — the adjacent
+    /// depths name a line that is not there and miss the ones that are, which
+    /// drew separators straight through the guides beside them.
+    private func separatorX(below id: NodeId) -> CGFloat {
         guard let i = rows.firstIndex(where: { $0.node.id == id }),
-              i + 1 < rows.count else { return nil }
-        return rows[i + 1].depth
+              let d = TreeOps.innermostGuideDepth(TreeOps.guides(hitRows), below: i)
+        else { return 0 }
+        return OutlineRow.guideX0 + CGFloat(d) * OutlineRow.indent
     }
 
     /// The frames of rows `List` has slid aside to reveal a swipe action.
@@ -869,10 +877,9 @@ private struct SyncBanner: View {
 private struct OutlineRow: View {
     let node: Node
     let depth: Int
-    /// Depth of the next row actually on screen, or nil for the last row. The
-    /// separator below this row has to clear whichever of the two neighbours is
-    /// deeper, so the gap belongs to both of them, not just to this one.
-    let nextDepth: Int?
+    /// Where the separator below this row starts. Resolved by the list, which
+    /// is the only place that can see every guide crossing the gap.
+    let separatorX: CGFloat
     let hasChildren: Bool
     let editing: Bool
     @Binding var editText: String
@@ -1064,21 +1071,14 @@ private struct OutlineRow: View {
             .padding(.trailing, 4)
         }
         .padding(.leading, CGFloat(depth) * Self.indent)
-        // Left end lands on the bullet of the deepest guide running through this
-        // gap, so no separator ever crosses to the left of a vertical guide.
+        // Left end lands on the innermost vertical guide crossing this gap, so
+        // a separator never cuts through one. Where no guide crosses — between
+        // two top-level rows — it runs to the screen edge, which reads as the
+        // heavier break that boundary actually is.
         //
-        // A bullet at depth d sits exactly on the depth-d guide's x, so
-        // "stop at the bullet" and "never cross a guide" are one rule. The line
-        // meets the guide there and stops: a T, not a `+`. An earlier version
-        // cleared the guide by a ring radius to avoid touching it at all, which
-        // kept the two families apart but let shallower guides running through
-        // the same gap get crossed anyway.
-        //
-        // The deeper neighbour, because the gap belongs to both rows. Stopping
-        // at this row's own bullet would cross every deeper guide passing
-        // through the gap below it. `nextDepth` rather than `hasChildren`: a
-        // collapsed parent has children in the tree but shows none, so its
-        // separator would step in for a guide that is not drawn.
+        // A bullet at depth d sits on the depth-d guide's x, so stopping at the
+        // guide and stopping at a bullet are the same point; the line meets it
+        // as a T rather than a `+`.
         //
         // `List` measures the separator from the row's *content* by default,
         // which is the indent plus both mark columns — so a depth-2 row's line
@@ -1086,12 +1086,10 @@ private struct OutlineRow: View {
         .alignmentGuide(.listRowSeparatorLeading) { d in
             // `d[.leading]` is 0 here — measured, not assumed. The alignment
             // guide is resolved before the row's `.padding(.leading, depth *
-            // indent)` applies, so this returns an absolute x and has to carry
-            // the full depth itself. Treating it as relative made every gap
-            // between two equal-depth rows come out at depth 0's x, which put
-            // the separator left of the guide it was supposed to stop at.
-            let deepest = max(depth, nextDepth ?? depth)
-            return Self.guideX0 + CGFloat(deepest) * Self.indent
+            // indent)` applies, so this is an absolute x in the row's own
+            // space, and `separatorX` is computed that way.
+            _ = d
+            return separatorX
         }
         // Faded to a ghost while it is being carried, so the row under the
         // finger is visibly the one in flight and not just another row the
