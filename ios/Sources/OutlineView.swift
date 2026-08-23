@@ -1064,9 +1064,8 @@ private struct OutlineRow: View {
             .padding(.trailing, 4)
         }
         .padding(.leading, CGFloat(depth) * Self.indent)
-        // Left end lands on the bullet of the deeper of the two rows this gap
-        // sits between, so no separator ever crosses to the left of a vertical
-        // guide.
+        // Left end lands on the bullet of the deepest guide running through this
+        // gap, so no separator ever crosses to the left of a vertical guide.
         //
         // A bullet at depth d sits exactly on the depth-d guide's x, so
         // "stop at the bullet" and "never cross a guide" are one rule. The line
@@ -1085,10 +1084,14 @@ private struct OutlineRow: View {
         // which is the indent plus both mark columns — so a depth-2 row's line
         // began 48pt right of everything else in the row. Overridden here.
         .alignmentGuide(.listRowSeparatorLeading) { d in
-            // `d[.leading]` already includes this row's own indent, so a deeper
-            // neighbour is the difference between the two depths.
-            let deeper = max(0, (nextDepth ?? depth) - depth)
-            return d[.leading] + Self.guideX0 + CGFloat(deeper) * Self.indent
+            // `d[.leading]` is 0 here — measured, not assumed. The alignment
+            // guide is resolved before the row's `.padding(.leading, depth *
+            // indent)` applies, so this returns an absolute x and has to carry
+            // the full depth itself. Treating it as relative made every gap
+            // between two equal-depth rows come out at depth 0's x, which put
+            // the separator left of the guide it was supposed to stop at.
+            let deepest = max(depth, nextDepth ?? depth)
+            return Self.guideX0 + CGFloat(deepest) * Self.indent
         }
         // Faded to a ghost while it is being carried, so the row under the
         // finger is visibly the one in flight and not just another row the
