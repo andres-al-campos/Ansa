@@ -551,39 +551,23 @@ struct OutlineView: View {
 
     /// The frames of rows `List` has slid aside to reveal a swipe action.
     ///
-    /// A row is swiped when it has moved left of where *its own depth* puts it.
-    /// Comparing rows to each other was the earlier version and it was wrong: a
-    /// row's frame carries its leading indent, so a depth-2 row legitimately
-    /// sits two indents left of a depth-0 row, and taking the shallowest as
-    /// "resting" marked every indented row as swiped. That is what punched
-    /// holes in guides with nothing swiped at all.
+    /// A row's frame comes from a `GeometryReader` in its background, which
+    /// spans the row before the leading padding applies — so at rest every row
+    /// reports the same `minX` whatever its depth. Only a swipe moves one, and
+    /// it moves left by the width of the revealed action.
     ///
-    /// Depth comes from `rows`, not from the geometry — reading a row's depth
-    /// back out of its x is circular when that x is the thing under test.
+    /// Depth deliberately does not enter this. An earlier version subtracted
+    /// `depth * indent` on the theory that an indented row sits further left;
+    /// it does not, so that subtraction invented differences where there were
+    /// none and marked every indented row as swiped — which punched holes in
+    /// the guides with nothing swiped at all.
     private func swipedRowFrames() -> [CGRect] {
-        var depths: [NodeId: Int] = [:]
-        for row in rows { depths[row.node.id] = row.depth }
-
-        /// Where this row's frame would start if nothing had moved it.
-        func offset(_ id: NodeId, _ f: CGRect) -> CGFloat? {
-            guard let d = depths[id] else { return nil }
-            return f.minX - CGFloat(d) * OutlineRow.indent
-        }
-
-        // The inset the most rows agree on. At most one row is ever swiped, so
-        // the majority is always the resting value, whatever the platform's
-        // own leading inset happens to be.
+        // The x the most rows agree on is the resting one: at most one row is
+        // ever swiped, so it can never be the majority.
         var tally: [CGFloat: Int] = [:]
-        for (id, f) in rowFrames {
-            guard let x = offset(id, f) else { continue }
-            tally[x.rounded(), default: 0] += 1
-        }
-        guard let inset = tally.max(by: { $0.value < $1.value })?.key else { return [] }
-
-        return rowFrames.compactMap { id, f in
-            guard let x = offset(id, f), x < inset - 1 else { return nil }
-            return f
-        }
+        for f in rowFrames.values { tally[f.minX.rounded(), default: 0] += 1 }
+        guard let resting = tally.max(by: { $0.value < $1.value })?.key else { return [] }
+        return rowFrames.values.filter { $0.minX < resting - 1 }
     }
 
     /// A guide, with the band of any swiped-aside row cut out of it.
