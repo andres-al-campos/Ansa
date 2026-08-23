@@ -647,11 +647,33 @@ private struct OutlineRow: View {
     /// True while this row is the one being carried, which dims it in place.
     let isDragging: Bool
 
-    /// Long-press to arm, then drag. Without the press a drag off the bullet
-    /// would fight the List's own scroll, and the bullet's fold tap would be
-    /// impossible to land — a fold is a tap, and every tap starts as a tiny
-    /// drag. The delay is what separates the two, so it is load-bearing rather
-    /// than polish.
+    /// Whether the press completed and the drag took over. See `bulletGesture`.
+    @State private var armed = false
+
+    /// The bullet's gestures: a tap folds, a long press arms a drag.
+    ///
+    /// Two recognizers combined with `.simultaneously`, not one sequenced
+    /// gesture that decides on release. A sequenced gesture whose first stage
+    /// never completes *fails* rather than ending, so its `onEnded` never runs
+    /// and a tap is simply swallowed — which is what broke folding. And a
+    /// Button underneath cannot serve the tap either, because the drag has to
+    /// take the touch with `.highPriorityGesture` to see a drag at all, and
+    /// taking it is precisely what stops the Button firing.
+    ///
+    /// Simultaneous recognition lets the tap end on its own while the press
+    /// runs in parallel. They cannot both fire: a tap that lasted long enough
+    /// to arm the drag is no longer a tap.
+    private var bulletGesture: some Gesture {
+        TapGesture()
+            .onEnded { if !armed && hasChildren { onCollapse() } }
+            .simultaneously(with: dragGesture)
+    }
+
+    /// Long-press to arm, then drag.
+    ///
+    /// The press delay is what keeps a drag from starting on every scroll that
+    /// happens to begin over a bullet; `armed` is what tells the tap above that
+    /// this one won.
     private var dragGesture: some Gesture {
         LongPressGesture(minimumDuration: 0.35)
             .sequenced(before: DragGesture(coordinateSpace: .global))
@@ -661,13 +683,18 @@ private struct OutlineRow: View {
                     break
                 case .second(_, let drag):
                     guard let drag else {
+                        armed = true
                         onDragBegan()
                         return
                     }
                     onDragMoved(drag.location)
                 }
             }
-            .onEnded { _ in onDragEnded() }
+            .onEnded { _ in
+                guard armed else { return }
+                armed = false
+                onDragEnded()
+            }
     }
 
     /// One indent step, and the spacing between two depth guides.
@@ -709,26 +736,19 @@ private struct OutlineRow: View {
             // Zoom moved to a swipe: it is cheap to undo but replaces the whole
             // screen, and this column sits where a thumb brushes while
             // scrolling. What is left here is undone by repeating the tap.
-            Button(action: onCollapse) {
-                Bullet(hasChildren: hasChildren, collapsed: node.collapsed)
-                    // The dot is 6pt; a tap target has to be a finger wide
-                    // regardless, so the frame is padded out rather than the
-                    // mark drawn larger.
-                    .frame(width: 32, height: 40)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            // Only a parent can fold, but every row can be dragged, so the
-            // disable covers the Button alone and the drag gesture is attached
-            // outside it.
-            .disabled(!hasChildren)
-            // High priority, not `.gesture`: a plain gesture loses the touch to
-            // the List's own scroll, so a real finger on the bullet scrolls the
-            // page and the drag never arms. (Injected touches in a simulator
-            // skip that arbitration, which is why this looked like it worked.)
-            // The long-press delay is what keeps this from stealing the fold
-            // tap — the press has to complete before the drag sees anything.
-            .highPriorityGesture(dragGesture)
+            Bullet(hasChildren: hasChildren, collapsed: node.collapsed)
+                // The dot is 6pt; a tap target has to be a finger wide
+                // regardless, so the frame is padded out rather than the
+                // mark drawn larger.
+                .frame(width: 32, height: 40)
+                .contentShape(Rectangle())
+                // High priority, not `.gesture`: a plain gesture loses the
+                // touch to the List's own scroll, so a real finger on the
+                // bullet scrolls the page and the drag never arms. (Injected
+                // touches in a simulator skip that arbitration, which is why
+                // this looked like it worked.) Both the fold and the drag live
+                // in there — see `bulletGesture`.
+                .highPriorityGesture(bulletGesture)
 
             Button(action: onToggleDone) {
                 Checkbox(done: node.done)
