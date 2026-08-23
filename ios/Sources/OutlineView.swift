@@ -509,16 +509,26 @@ struct OutlineView: View {
                 // bullet instead of hiding behind it — tried, and it erased
                 // every mark on screen. Shortening the line is the version that
                 // works when the layer order is inverted.
-                // Clearance is per end, because the two ends meet different
-                // marks. A guide always hangs from a parent, whose bullet is an
-                // 18pt ring; it usually ends on a leaf, whose bullet is a 6pt
-                // dot. One constant for both put a ring-sized gap under a dot,
-                // which is the asymmetry — identical numbers reading as
-                // lopsided because the marks they clear are not the same size.
+                // The line stops at each mark's own edge — clearance is the
+                // radius of whatever mark is at that end, with no extra air.
+                //
+                // Per end, because the ends meet different marks: a guide
+                // always hangs from a parent, whose bullet is an 18pt ring, and
+                // usually ends on a leaf, whose bullet is a 6pt dot. One
+                // constant for both put a ring-sized gap under a dot, which is
+                // what read as lopsided.
+                //
+                // The web needs none of this: there `.guide` is `top: 0;
+                // bottom: 0` on every row, so the line is simply row height and
+                // the fold button's 15px disc paints over it. That relies on
+                // the guide sitting *behind* the row, which does not port —
+                // here they are an overlay above the rows, because in a row
+                // background `List`'s per-row insets cut every line into
+                // segments. Endpoints exist because the masking trick does not.
                 let lastIsParent = !TreeOps.isLeaf(tree, rows[guide.last].node.id)
-                let top = parent.midY + OutlineRow.ringRadius + 3
+                let top = parent.midY + OutlineRow.ringRadius
                 let bottom = last.midY
-                    - (lastIsParent ? OutlineRow.ringRadius : OutlineRow.dotRadius) - 3
+                    - (lastIsParent ? OutlineRow.ringRadius : OutlineRow.dotRadius)
                 // The guide at the depth a gap-drop would land on lights up.
                 // The insertion line already sits at that x, but the line is
                 // 3pt of a 40pt row and often under the thumb — the lit guide
