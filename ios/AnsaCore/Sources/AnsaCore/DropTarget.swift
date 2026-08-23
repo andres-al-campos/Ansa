@@ -90,8 +90,8 @@ extension TreeOps {
     ///
     /// In a gap the finger's X picks the depth, because a gap below a deep row
     /// is genuinely ambiguous — it could mean that row's level, any shallower
-    /// ancestor's level, or (when the row above can take children) one deeper.
-    /// `depthAtGap` works out the legal range and clamps X into it.
+    /// ancestor's level, or (when the row above already has children) one
+    /// deeper. `depthAtGap` works out the legal range and clamps X into it.
     ///
     /// - Parameters:
     ///   - x: touch X in the list's coordinate space, from the rows' left edge.
@@ -140,10 +140,18 @@ extension TreeOps {
             }
             let above = rel < 0.25 ? prev(i - 1) : prev(i)
             let below = rel < 0.25 ? next(i) : next(i + 1)
+            // Whether the row above can already take children decides how deep
+            // this gap goes — see `deepestAtGap`. The lifted row does not
+            // count: it is about to leave, so a parent whose only child is the
+            // one in flight is a leaf for the purpose of this drop.
+            let aboveHasChildren = above.map { a in
+                childrenOf(tree, a.id).contains { $0.id != dragging }
+            } ?? true
             let depth = depthAtGap(
                 clientX: x,
                 aboveDepth: above?.depth,
                 belowDepth: below?.depth,
+                aboveHasChildren: aboveHasChildren,
                 guideX0: guideX0,
                 indent: indent)
 

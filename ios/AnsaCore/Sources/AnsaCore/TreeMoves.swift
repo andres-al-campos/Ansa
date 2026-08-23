@@ -256,19 +256,43 @@ extension TreeOps {
     public enum DropSide: String, Codable, Sendable { case before, after }
 
     /// The indent level a drop lands at, given the pointer's X and the rows
-    /// framing the gap. Clamped so you can nest at most one level deeper than
-    /// the row above, and no shallower than the top of the current scope.
+    /// framing the gap. Clamped to the range `deepestAtGap` allows, and no
+    /// shallower than the top of the current scope.
     ///
     /// There is deliberately no floor at the row *below* the gap. That floor
     /// made an in-place outdent impossible: every gap inside a parent has one of
     /// that parent's own children below it, so a child could never reach depth 0
     /// without being dragged past its parent's entire subtree.
     public static func depthAtGap(
-        clientX: Double, aboveDepth: Int?, belowDepth: Int?, guideX0: Double, indent: Double
+        clientX: Double, aboveDepth: Int?, belowDepth: Int?,
+        aboveHasChildren: Bool = true, guideX0: Double, indent: Double
     ) -> Int {
-        let maxD = aboveDepth.map { $0 + 1 } ?? belowDepth ?? 0
+        let maxD = deepestAtGap(
+            aboveDepth: aboveDepth, belowDepth: belowDepth,
+            aboveHasChildren: aboveHasChildren)
         let raw = Int(((clientX - guideX0) / indent).rounded())
         return max(0, min(maxD, raw))
+    }
+
+    /// The deepest level a gap will accept.
+    ///
+    /// One deeper than the row above only when that row *already* has children.
+    /// Under a leaf, becoming its child is exclusively the `into` drop — drag
+    /// onto the row itself. The reason is that on a phone the X axis is read
+    /// through a thumb: every extra legal depth in a gap is another 20pt band
+    /// to hit, and "child of a leaf" is the one meaning that has an unambiguous
+    /// gesture of its own. Dropping it from the gap costs nothing and makes the
+    /// remaining bands wider.
+    ///
+    /// The shallow end is never restricted — depth 0 is offered at every gap.
+    /// That is what makes an outdent reachable in place, and with this rule it
+    /// is also the *only* way to outdent, so the drop indicator has to show
+    /// where the shallow end is and not just the deep one.
+    public static func deepestAtGap(
+        aboveDepth: Int?, belowDepth: Int?, aboveHasChildren: Bool = true
+    ) -> Int {
+        guard let aboveDepth else { return belowDepth ?? 0 }
+        return aboveHasChildren ? aboveDepth + 1 : aboveDepth
     }
 
     /// Resolve a depth-aware drop into a concrete move. `anchorId` is the

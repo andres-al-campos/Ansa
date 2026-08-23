@@ -79,21 +79,51 @@ struct DropTargetTests {
 
     @Test("the touch x picks the depth in a gap")
     func xPicksDepth() {
-        // The gap below `b` (depth 1) spans depth 0 to depth 2: 0 outdents to
-        // the root list, 1 is a sibling of `b`, and 2 nests under `b` — the
-        // "row above can take children" case. Far left and far right clamp to
-        // those ends, which is what the insertion line's indent shows.
+        // The gap below `b` (depth 1) spans depth 0 to depth 1: 0 outdents to
+        // the root list and 1 is a sibling of `b`. Far left and far right clamp
+        // to those ends, which is what the insertion line's indent shows.
         #expect(at(0, 62)?.depth == 0)
-        #expect(at(500, 62)?.depth == 2)
+        #expect(at(500, 62)?.depth == 1)
     }
 
-    @Test("a gap cannot indent past one level deeper than the row above it")
-    func depthIsClamped() {
-        // The clamp is what stops a drag inventing depth. However far right
-        // the finger goes, the deepest legal drop below `a` (depth 0) is
-        // depth 1 — a child of `a` — never depth 2 under a row that has no
-        // depth-1 ancestor.
+    @Test("a gap under a leaf will not nest into it")
+    func leafGapStopsAtSibling() {
+        // `b` has no children, so its gap tops out at `b`'s own depth. Making
+        // something a child of `b` is the `into` drop — onto the row itself —
+        // and nothing else, which is what keeps the gap's bands wide enough to
+        // hit with a thumb. See `deepestAtGap`.
+        #expect(at(9999, 62)?.depth == 1)
+        #expect(at(9999, 62)?.id == "b")
+    }
+
+    @Test("a gap under a parent does offer one level deeper")
+    func parentGapOffersChildDepth() {
+        // `a` already has `b`, so the gap below `a` can mean "another child of
+        // `a`". This is the half of the rule that survives: the offer is there
+        // when the row above has demonstrated it takes children.
         #expect(at(9999, 34)?.depth == 1)
+        #expect(at(9999, 34)?.id == "a")
+    }
+
+    @Test("a parent whose only child is the row in flight counts as a leaf")
+    func liftedChildDoesNotCount() {
+        // Dragging `b` — `a`'s only child — leaves `a` childless the moment the
+        // drop lands, so the gap under `a` must not still offer "another child
+        // of `a`". It would be a depth the tree cannot hold once `b` leaves.
+        //
+        // Probed from `a`'s own bottom quarter (24–32) rather than `b`'s top
+        // quarter: `b` is the lifted row, and its whole box answers `return`.
+        #expect(at(9999, 30, "b")?.depth == 0)
+        #expect(at(9999, 30, "b")?.id == "a")
+    }
+
+    @Test("the shallow end is never restricted")
+    func outdentAlwaysReachable() {
+        // Depth 0 is offered at every gap regardless of what sits above it.
+        // With the deep end now conditional, dragging left in a gap is the
+        // only way to outdent, so it must always be there.
+        #expect(at(0, 34)?.depth == 0)
+        #expect(at(0, 62)?.depth == 0)
     }
 
     @Test("a touch past the last row hits nothing")
