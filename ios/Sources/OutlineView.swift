@@ -529,12 +529,57 @@ struct OutlineView: View {
                         width: lit ? 2.5 : 1.5,
                         height: max(0, last.midY - clearance - top))
                     .animation(.easeOut(duration: 0.12), value: lit)
+                    // Punched out across a row that has been swiped aside, so
+                    // the row reads as passing over the line rather than the
+                    // line cutting through it.
+                    .mask(swipeMask(top: top, bottom: last.midY - clearance))
                     .offset(
                         x: left + OutlineRow.guideX0
                             + CGFloat(guide.depth) * OutlineRow.indent - 0.75,
                         y: top - listOrigin.y)
             }
         }
+    }
+
+    /// A guide, with the band of any swiped-aside row cut out of it.
+    ///
+    /// The guides are an overlay above the list and the rows cannot paint over
+    /// them — a `.listRowBackground` sits under the overlay no matter how
+    /// opaque it is, which is the obvious fix and does nothing. So the hole is
+    /// cut from this side instead.
+    ///
+    /// A swiped row is found by its own frame: `List` slides the row's content
+    /// left to reveal the action, and the `GeometryReader` recording that frame
+    /// slides with it, so the swiped row's `minX` drops below every other
+    /// row's while the guides stay where the tree says they go. Nothing else
+    /// moves a row sideways, which is what makes the test safe.
+    ///
+    /// Only the swiped row's band is removed, not the whole guide: the run
+    /// continues above and below it, and a line that vanished entirely would
+    /// say the subtree had come apart.
+    private func swipeMask(top: CGFloat, bottom: CGFloat) -> some View {
+        // Measured against the shallowest row rather than a constant: the
+        // resting `minX` is the list's own leading inset, which is a platform
+        // value, not something this file sets.
+        let resting = rowFrames.values.map(\.minX).max() ?? 0
+        let swiped = rowFrames.values.filter { $0.minX < resting - 1 }
+        return Rectangle()
+            .fill(Color.black)
+            .frame(height: max(0, bottom - top))
+            .overlay {
+                // Blend mode rather than a subtracted shape: the bands are
+                // arbitrary rects in the middle of the run, and destination-out
+                // punches each one without having to rebuild the capsule as a
+                // path with holes in it.
+                ForEach(swiped, id: \.minY) { f in
+                    Rectangle()
+                        .fill(Color.black)
+                        .frame(height: f.height)
+                        .offset(y: f.minY - top)
+                        .blendMode(.destinationOut)
+                }
+            }
+            .compositingGroup()
     }
 
     /// The first measured frame in a run of rows, for a guide whose parent has
