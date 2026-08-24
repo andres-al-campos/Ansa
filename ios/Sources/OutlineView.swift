@@ -269,6 +269,7 @@ struct OutlineView: View {
         .overlay(alignment: .topLeading) {
             GeometryReader { geo in
                 ZStack(alignment: .topLeading) {
+                    parentHighlight
                     dropIndicator
                     dragLabel
                 }
@@ -553,17 +554,30 @@ struct OutlineView: View {
     /// the same lineage `insertAtDepth` walks to choose the real parent, so the
     /// lit guide and the landing place cannot disagree.
     ///
+    /// The parent a drop would land under, for every drop that has one.
+    ///
+    /// Both the guide and the parent row light from this, in both modes. They
+    /// are one answer shown twice rather than two answers: the row names the
+    /// parent, and the line traces the run the drop joins — so a drag knows
+    /// where it is landing even when the parent has scrolled off, which is the
+    /// common case in a deep tree.
+    ///
     /// A drop at depth 0 lights nothing, which is correct rather than missing:
     /// a root row has no parent, so there is no guide it could hang from, and
     /// the insertion line's x is the only depth cue at that level.
-    ///
-    /// Only for gap drops. Nesting says the same thing by highlighting the row
-    /// itself, and saying it twice in two places reads as two answers.
     private var litGuideParent: NodeId? {
-        guard let target = dropTarget,
-              target.mode == .before || target.mode == .after,
-              let d = target.depth else { return nil }
-        return TreeOps.parentAtDepth(tree, target.id, d, scope)
+        guard let target = dropTarget else { return nil }
+        switch target.mode {
+        case .return:
+            // The row goes back where it started, so nothing is a target.
+            return nil
+        case .into:
+            // Nesting into a row makes that row the parent.
+            return target.id
+        case .before, .after:
+            guard let d = target.depth else { return nil }
+            return TreeOps.parentAtDepth(tree, target.id, d, scope)
+        }
     }
 
     /// The deepest indent the current gap will accept.
@@ -587,12 +601,34 @@ struct OutlineView: View {
             aboveDepth: above.depth, belowDepth: nil, aboveHasChildren: hasKids)
     }
 
+    /// The parent the drop would land under, filled and outlined.
+    ///
+    /// Drawn for a gap drop as well as a nest, so the parent and its guide
+    /// light together. Skipped when the parent is off screen or is the scope
+    /// itself — the guide still runs down the visible rows and carries the
+    /// answer on its own.
+    ///
+    /// Filled as well as outlined: an outline alone reads as a hairline at
+    /// arm's length, and it has to beat a guide line running through the row.
+    @ViewBuilder private var parentHighlight: some View {
+        if let id = litGuideParent, let frame = rowFrames[id] {
+            let left = rowsLeft - listOrigin.x
+            RoundedRectangle(cornerRadius: 6)
+                .fill(DropPalette.nest.opacity(0.14))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 6)
+                        .strokeBorder(DropPalette.nest, lineWidth: 2))
+                .frame(width: frame.width, height: frame.height)
+                .offset(x: left, y: frame.minY - listOrigin.y)
+        }
+    }
+
     /// The line showing where the row would land, drawn over the list.
     ///
     /// A gap shows a line indented to the depth the finger picked — that indent
     /// is the only thing distinguishing "sibling" from "child" at the same
-    /// gap. Nesting into a row highlights the row instead, because there is no
-    /// gap to draw in.
+    /// gap. Nesting draws no line, having no gap to draw in; `parentHighlight`
+    /// carries that case, and lights the same parent for both.
     @ViewBuilder private var dropIndicator: some View {
         if let target = dropTarget, let frame = rowFrames[target.id] {
             // Same rebase as the guides: row frames are global, the overlay
@@ -600,16 +636,10 @@ struct OutlineView: View {
             let left = rowsLeft - listOrigin.x
             switch target.mode {
             case .into:
-                // The whole row, filled as well as outlined. An outline alone
-                // reads as a hairline at arm's length, and it has to beat a
-                // guide line running through the same row.
-                RoundedRectangle(cornerRadius: 6)
-                    .fill(DropPalette.nest.opacity(0.14))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 6)
-                            .strokeBorder(DropPalette.nest, lineWidth: 2))
-                    .frame(width: frame.width, height: frame.height)
-                    .offset(x: left, y: frame.minY - listOrigin.y)
+                // Nothing here: nesting is drawn by `parentHighlight`, which
+                // lights the same row for a gap drop under the same parent.
+                // Drawing it here too would double the fill on that row.
+                EmptyView()
             case .before, .after:
                 let x = left + OutlineRow.guideX0
                     + CGFloat(target.depth ?? 0) * OutlineRow.indent
