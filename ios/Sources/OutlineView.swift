@@ -10,30 +10,16 @@ import SwiftUI
 struct OutlineView: View {
     @State private var store = OutlineStore()
     @State private var scope: NodeId?
-    @State private var draft = ""
+    /// Renaming and capture, grouped: the capture field files next to the row
+    /// last edited, which only the edit path knows.
+    @State private var edit = EditController()
     @FocusState private var capturing: Bool
     /// One drag's worth of state and the geometry it reads. Grouped into a type
     /// because these pieces are meaningless apart and always changed together.
     @State private var drag = DragController()
     /// The project whose delete is awaiting confirmation.
     @State private var pendingDelete: Node?
-    /// The row being renamed in place, and its live text. Held here rather than
-    /// in the row so the tree can change underneath without resetting the field
-    /// the user is typing into.
-    @State private var editing: NodeId?
 
-    /// The row the capture field drops the next task below, set when an edit
-    /// ends and re-pointed at each task as it is added.
-    ///
-    /// Not read from `editing`: tapping the capture field moves focus, which
-    /// commits the edit and clears `editing` before a single character is
-    /// typed. By the time it matters the live state is already gone, so the
-    /// row is remembered as the edit closes.
-    ///
-    /// Cleared whenever the context it was captured in stops being true — see
-    /// `captureParent`. A field that silently files somewhere other than where
-    /// it says is worse than one that only ever files at the root.
-    @State private var captureParent: NodeId?
 
     /// How far the edge swipe has pulled the view, in points.
     ///
@@ -43,7 +29,6 @@ struct OutlineView: View {
     /// distance itself the feedback — the view comes back if you let go early,
     /// which is how the gesture teaches its own threshold.
     @State private var backPull: CGFloat = 0
-    @State private var editText = ""
     /// Which row's field holds focus, by node id rather than a bare Bool.
     ///
     /// A single shared `Bool` across the ForEach cannot express "focus the row
@@ -148,7 +133,7 @@ struct OutlineView: View {
             // adopting a server tree under it is what makes text vanish as it
             // is being written. Dragging: the row would move out from under the
             // finger mid-gesture.
-            .onChange(of: capturing || drag.isActive || editing != nil) { _, busy in
+            .onChange(of: capturing || drag.isActive || edit.isEditing) { _, busy in
                 store.setBusy(busy)
             }
             // A project takes its whole subtree with it, and unlike ticking a
@@ -225,8 +210,8 @@ struct OutlineView: View {
                     node: row.node,
                     depth: row.depth,
                     hasChildren: !TreeOps.isLeaf(tree, row.node.id),
-                    editing: editing == row.node.id,
-                    editText: $editText,
+                    editing: edit.editing == row.node.id,
+                    editText: $edit.text,
                     focusedRow: $focusedRow,
                     onToggleDone: { apply(.setDone(id: row.node.id, done: !row.node.done)) },
                     onCollapse: { apply(.toggleCollapsed(id: row.node.id)) },
@@ -345,12 +330,12 @@ struct OutlineView: View {
             //
             // The X is the way out, and it is what makes the guess affordable:
             // it only has to be right often enough to be worth one tap to undo.
-            if let parent = captureParent, let node = TreeOps.byId(tree, parent) {
+            if let parent = edit.captureParent, let node = TreeOps.byId(tree, parent) {
                 HStack(spacing: 6) {
                     Image(systemName: "arrow.down")
                     Text("After \(node.text)").lineLimit(1)
                     Button {
-                        captureParent = nil
+                        edit.captureParent = nil
                     } label: {
                         Image(systemName: "xmark.circle.fill")
                     }
@@ -361,12 +346,12 @@ struct OutlineView: View {
             }
 
             HStack {
-                TextField(scope == nil ? "New project" : "Add a task", text: $draft)
+                TextField(scope == nil ? "New project" : "Add a task", text: $edit.draft)
                     .textFieldStyle(.plain)
                     .submitLabel(.done)
                     .focused($capturing)
                     .onSubmit(commitDraft)
-                if !draft.isEmpty {
+                if !edit.draft.isEmpty {
                     Button("Add", action: commitDraft)
                 }
             }
@@ -374,7 +359,7 @@ struct OutlineView: View {
         .padding(.horizontal)
         .padding(.vertical, 10)
         .background(.bar)
-        .animation(.easeOut(duration: 0.15), value: captureParent)
+        .animation(.easeOut(duration: 0.15), value: edit.captureParent)
     }
 
 
@@ -403,7 +388,7 @@ struct OutlineView: View {
     }
 
     private func commitDraft() {
-        let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        let text = edit.draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
         // The id and the timestamp are minted here and carried by the op, so the
         // server applies it to exactly the node this device created.
@@ -412,7 +397,7 @@ struct OutlineView: View {
         // this answers is that captured tasks pile up at the bottom, far from
         // whatever was being worked on — depth is a separate question, and
         // guessing at it would be answering one nobody asked.
-        let anchor = captureParent.flatMap { TreeOps.byId(tree, $0) }
+        let anchor = edit.captureParent.flatMap { TreeOps.byId(tree, $0) }
         apply(.addChild(
             id: id, parentId: anchor?.parentId ?? scope, text: text,
             at: Date().timeIntervalSince1970 * 1000))
@@ -428,8 +413,8 @@ struct OutlineView: View {
         // The new row becomes the anchor, so a run of captures stacks downward
         // in the order typed instead of every one landing in the same slot and
         // reversing itself.
-        captureParent = id
-        draft = ""
+        edit.captureParent = id
+        edit.draft = ""
     }
 
 
@@ -445,7 +430,7 @@ struct OutlineView: View {
     /// Matches `openProject` in `src/Outliner.tsx`.
     private func openProject(_ id: NodeId) {
         // A target from a different project is never the right guess.
-        captureParent = nil
+        edit.captureParent = nil
         scope = id
         let root = TreeOps.lineageOf(tree, id).first?.id ?? id
         apply(.markOpened(id: root, at: Date().timeIntervalSince1970 * 1000))
@@ -842,8 +827,7 @@ struct OutlineView: View {
     /// unfocused, and the focus-loss commit tears the edit down before it
     /// starts.
     private func beginEdit(_ node: Node) {
-        editText = node.text
-        editing = node.id
+        edit.begin(node)
         DispatchQueue.main.async { focusedRow = node.id }
     }
 
@@ -862,18 +846,15 @@ struct OutlineView: View {
     ///   name a different row; committing that one would end an edit the user
     ///   just started.
     private func commitEdit(from: NodeId? = nil) {
-        guard let id = editing else { return }
-        if let from, from != id { return }
-        let op = TreeOps.commitEdit(tree, id, editText)
+        guard edit.shouldCommit(from: from), let id = edit.editing else { return }
+        let op = TreeOps.commitEdit(tree, id, edit.text)
         if let op { apply(op) }
 
         // Remember it only if it still exists: an emptied row is deleted by
         // `commitEdit`, and anchoring to a node that just went away would send
         // the new task back to the bottom with the chip still claiming
         // otherwise.
-        captureParent = TreeOps.byId(tree, id) == nil ? nil : id
-        editing = nil
-        editText = ""
+        edit.endEdit(rememberAnchor: TreeOps.byId(tree, id) == nil ? nil : id)
         focusedRow = nil
     }
 
@@ -1007,7 +988,7 @@ struct OutlineView: View {
 
     private func zoomOut() {
         // Zooming out changes what the field means, so the guess goes with it.
-        captureParent = nil
+        edit.captureParent = nil
         scope = scope.flatMap { TreeOps.byId(tree, $0)?.parentId }
     }
 }
