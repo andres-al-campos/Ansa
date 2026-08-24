@@ -428,30 +428,56 @@ struct OutlineView: View {
     /// reports when the finger *moves* — and holding still at the edge is
     /// exactly how this is used. Driving it from move events would mean the
     /// list scrolled only while the finger jittered.
+    ///
+    /// The tick walks a cursor along the rows rather than re-deriving the edge
+    /// row from the measured frames each time. Two reasons, and either alone
+    /// stalls the scroll:
+    ///
+    /// `boxes` comes from a preference that refreshes on the next layout pass,
+    /// so within a tick it still describes the pre-scroll positions — asking it
+    /// again returns the row just scrolled to, and re-issuing that scroll does
+    /// nothing. And `scrollTo` only moves far enough to bring a row into view,
+    /// so a target one place beyond the edge is already nearly visible and
+    /// yields a few pixels of travel. Together they are a scroll that creeps a
+    /// couple of pixels and then stops dead while the timer keeps running.
     private func startScrolling(_ proxy: ScrollViewProxy) {
         stopScrolling()
+        var cursor: Int? = nil
         // ~7 rows a second at a full hold. Fast enough to cross a long tree
         // without the drag feeling stuck, slow enough to stop on a chosen row.
         scroller = Timer.scheduledTimer(withTimeInterval: 0.14, repeats: true) { _ in
             guard dragging != nil else { return }
+            let order = rows.map(\.node.id)
             let step = TreeOps.dragScroll(
                 y: Double(dragPoint.y),
                 top: Double(listBounds.minY),
                 bottom: Double(listBounds.maxY),
-                order: rows.map(\.node.id),
+                order: order,
                 boxes: boxes)
+
             switch step {
             case .none:
-                break
-            case .up(let id):
-                withAnimation(.linear(duration: 0.14)) { proxy.scrollTo(id, anchor: .top) }
-            case .down(let id):
-                withAnimation(.linear(duration: 0.14)) { proxy.scrollTo(id, anchor: .bottom) }
+                // Out of the edge band: the next entry starts fresh from
+                // wherever the list actually sits.
+                cursor = nil
+            case .up(let id), .down(let id):
+                let goingUp = { if case .up = step { return true } else { return false } }()
+                // First tick of a run seeds from the measured edge; later ticks
+                // carry on from where this one left off, which is the only
+                // reading not invalidated by the scroll it just caused.
+                let from = cursor ?? order.firstIndex(of: id)
+                guard let from else { return }
+                let next = goingUp ? from - 1 : from + 1
+                guard order.indices.contains(next) else { return }
+                cursor = next
+                withAnimation(.linear(duration: 0.14)) {
+                    proxy.scrollTo(order[next], anchor: goingUp ? .top : .bottom)
+                }
+                // The rows moved under a finger that did not, so the target the
+                // indicator is showing is about to be wrong. `dragMoved` only
+                // fires on movement, so nothing else would re-ask.
+                dragMoved(dragPoint)
             }
-            // The rows moved under a finger that did not, so the target the
-            // indicator is showing is about to be wrong. `dragMoved` only fires
-            // on movement, so nothing else would re-ask.
-            if step != .none { dragMoved(dragPoint) }
         }
     }
 
