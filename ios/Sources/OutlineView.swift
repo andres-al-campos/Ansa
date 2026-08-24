@@ -1153,9 +1153,13 @@ struct OutlineView: View {
 /// tall.
 private struct ScopeProgress: View {
     let progress: TreeOps.Progress
-    /// The project's own name, so the strip is something a drop can land *on*
-    /// rather than an unlabelled bar. Without it the highlight lights a
-    /// measurement, and a measurement is not a parent.
+    /// The project's own name. Shown only while a drag is running, so the
+    /// strip is something a drop can land *on* rather than an unlabelled bar —
+    /// without it the highlight lights a measurement, and a measurement is not
+    /// a parent.
+    ///
+    /// The rest of the time it is the navigation title one line above, and
+    /// saying it twice bought nothing. The counts take the space instead.
     let title: String
     /// A drop at depth 0 would land as a top-level task in this project. Not
     /// nesting into the project the way one row nests into another — the
@@ -1167,10 +1171,30 @@ private struct ScopeProgress: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(title)
-                .font(.subheadline.weight(.medium))
-                .lineLimit(1)
-                .foregroundStyle(lit ? AnyShapeStyle(DropPalette.nest) : AnyShapeStyle(.secondary))
+            // Two jobs, one line. Under a drag it names what a drop would land
+            // in; otherwise it says how much is left, which is the one thing
+            // the bar beside it cannot — 70% of three tasks and 70% of three
+            // hundred draw identically and mean nothing alike.
+            HStack(spacing: 6) {
+                Text(lit ? "Drop into \(title)" : "\(progress.done) of \(progress.total) done")
+                    .lineLimit(1)
+                    .foregroundStyle(
+                        lit ? AnyShapeStyle(DropPalette.nest) : AnyShapeStyle(.secondary))
+
+                if !lit {
+                    Spacer(minLength: 0)
+                    // Kept, but moved up beside the counts rather than sitting
+                    // in its own column next to the bar. It is the exact figure
+                    // the bar can only approximate, and it costs no height
+                    // here. Gone under a drag, where the line has a louder job.
+                    Text("\(progress.pct)%")
+                        .foregroundStyle(
+                            complete ? AnyShapeStyle(Color.green) : AnyShapeStyle(.tertiary))
+                }
+            }
+            .font(.subheadline.weight(.medium))
+            .monospacedDigit()
+            .contentTransition(.numericText())
 
         HStack(spacing: 10) {
             GeometryReader { geo in
@@ -1182,13 +1206,6 @@ private struct ScopeProgress: View {
                 }
             }
             .frame(height: 4)
-
-            Text("\(progress.pct)%")
-                .font(.caption2.monospacedDigit())
-                .foregroundStyle(complete ? AnyShapeStyle(Color.green) : AnyShapeStyle(.secondary))
-                // Fixed width so the bar does not resize as the number goes
-                // from one digit to three.
-                .frame(width: 34, alignment: .trailing)
         }
         }
         .padding(.horizontal)
