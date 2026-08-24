@@ -438,6 +438,7 @@ struct OutlineView: View {
                 y: Double(dragPoint.y),
                 top: Double(listBounds.minY),
                 bottom: Double(listBounds.maxY),
+                order: rows.map(\.node.id),
                 boxes: boxes)
             switch step {
             case .none:

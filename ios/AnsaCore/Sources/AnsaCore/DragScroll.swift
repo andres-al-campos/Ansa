@@ -32,25 +32,36 @@ extension TreeOps {
     /// from the finger. Stepping relative to the finger stalls: the row under a
     /// finger parked in the band is already partly off screen, so scrolling to
     /// it moves nothing and the next tick asks for the same row again.
+    ///
+    /// `order` is every visible row, `boxes` only the ones currently measured.
+    /// They are separate arguments because they are different sets: `boxes`
+    /// comes from a SwiftUI preference, which reports only rows `List` has
+    /// rendered, and `List` recycles cells as it scrolls. Stepping within
+    /// `boxes` therefore walks off its own end after a screenful — the next row
+    /// up is precisely the one that has not been rendered yet — and the scroll
+    /// stops dead while the timer keeps ticking. Stepping in `order` always has
+    /// somewhere to go.
     public static func dragScroll(
         y: Double,
         top: Double,
         bottom: Double,
+        order: [NodeId],
         boxes: [RowBox],
         zone: Double = 64
     ) -> ScrollStep {
-        guard !boxes.isEmpty else { return .none }
+        guard !boxes.isEmpty, !order.isEmpty else { return .none }
 
         if y < top + zone {
-            // The first row not clipped by the top edge; the one before it is
-            // what we want on screen next.
-            guard let i = boxes.firstIndex(where: { $0.top >= top }), i > 0 else { return .none }
-            return .up(boxes[i - 1].id)
+            // The topmost row not clipped by the edge, then one place before it
+            // in the full list — which is usually not in `boxes` at all.
+            guard let edge = boxes.filter({ $0.top >= top }).min(by: { $0.top < $1.top }),
+                  let i = order.firstIndex(of: edge.id), i > 0 else { return .none }
+            return .up(order[i - 1])
         }
         if y > bottom - zone {
-            guard let i = boxes.lastIndex(where: { $0.bottom <= bottom }),
-                  i + 1 < boxes.count else { return .none }
-            return .down(boxes[i + 1].id)
+            guard let edge = boxes.filter({ $0.bottom <= bottom }).max(by: { $0.bottom < $1.bottom }),
+                  let i = order.firstIndex(of: edge.id), i + 1 < order.count else { return .none }
+            return .down(order[i + 1])
         }
         return .none
     }
