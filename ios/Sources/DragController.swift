@@ -12,6 +12,12 @@ import SwiftUI
 /// It owns state and geometry only. Anything needing the tree — what a drop
 /// would do, whether a row can accept one — stays in the view, so this type
 /// never has to know what a drag means.
+/// Main-actor because every part of it is: the state feeds a SwiftUI view, the
+/// geometry comes from layout, and the edge-scroll tick drives a
+/// `ScrollViewProxy`. It was already only ever touched from the main thread —
+/// saying so is what lets the timer closure hop back to that actor instead of
+/// capturing view state into a `@Sendable` closure and hoping.
+@MainActor
 @Observable
 final class DragController {
     /// The row in flight, or nil when no drag is armed.
@@ -33,6 +39,8 @@ final class DragController {
     var bounds: CGRect = .zero
 
     private var scroller: Timer?
+    /// How far the edge-scroll has walked, across ticks. See `startScrolling`.
+    private var scrollCursor: Int?
 
     /// Whether a drag is live. Cheaper to read than unwrapping `dragging`, and
     /// it is what the busy flag and the row's fade both actually ask.
@@ -109,11 +117,31 @@ final class DragController {
         onScroll: @escaping () -> Void
     ) {
         stopScrolling()
-        var cursor: Int? = nil
+        // Held on the instance rather than captured: a `var` in scope would be
+        // mutated from inside a `@Sendable` closure, which is a data race the
+        // compiler is right to complain about even when the timer only ever
+        // fires on the main thread.
+        scrollCursor = nil
         // ~7 rows a second at a full hold. Fast enough to cross a long tree
         // without the drag feeling stuck, slow enough to stop on a chosen row.
         scroller = Timer.scheduledTimer(withTimeInterval: 0.14, repeats: true) { [weak self] _ in
-            guard let self, self.isActive else { return }
+            // The timer fires on the main run loop already; `assumeIsolated`
+            // states that rather than bouncing through another hop, which would
+            // put the tick a frame behind the finger it is following.
+            MainActor.assumeIsolated {
+                guard let self, self.isActive else { return }
+                self.tick(proxy, order: order, onScroll: onScroll)
+            }
+        }
+    }
+
+    /// One edge-scroll step: where the finger is, which row is next, scroll to
+    /// it, and re-run the hit-test.
+    private func tick(
+        _ proxy: ScrollViewProxy,
+        order: () -> [NodeId],
+        onScroll: () -> Void
+    ) {
             let order = order()
             let step = TreeOps.dragScroll(
                 y: Double(self.point.y),
@@ -126,22 +154,21 @@ final class DragController {
             case .none:
                 // Out of the edge band: the next entry starts fresh from
                 // wherever the list actually sits.
-                cursor = nil
+                scrollCursor = nil
             case .up(let id), .down(let id):
                 let goingUp = { if case .up = step { return true } else { return false } }()
                 // First tick of a run seeds from the measured edge; later ticks
                 // carry on from where this one left off, which is the only
                 // reading not invalidated by the scroll it just caused.
-                guard let from = cursor ?? order.firstIndex(of: id) else { return }
+                guard let from = scrollCursor ?? order.firstIndex(of: id) else { return }
                 let next = goingUp ? from - 1 : from + 1
                 guard order.indices.contains(next) else { return }
-                cursor = next
+                scrollCursor = next
                 withAnimation(.linear(duration: 0.14)) {
                     proxy.scrollTo(order[next], anchor: goingUp ? .top : .bottom)
                 }
                 onScroll()
             }
-        }
     }
 
     func stopScrolling() {
