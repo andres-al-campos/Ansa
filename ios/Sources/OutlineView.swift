@@ -71,7 +71,7 @@ struct OutlineView: View {
                 // bar, and a single figure across every project at once answers
                 // a question nobody asked.
                 if scope != nil, let progress = TreeOps.scopeProgress(tree, scope) {
-                    ScopeProgress(progress: progress)
+                    ScopeProgress(progress: progress, title: title, lit: litRoot)
                 }
 
                 if !store.live {
@@ -607,6 +607,24 @@ struct OutlineView: View {
         }
     }
 
+    /// Whether the drop would land directly under the project itself.
+    ///
+    /// Depth 0 is the one drop with no parent row to light: the project is the
+    /// parent, and it is not in the list. So it lights the scope strip above
+    /// the list instead — the one element on screen that stands for the root.
+    ///
+    /// Read off the depth rather than off `litGuideParent`, because that
+    /// answers with the scope id, which is `nil` at the top level and so cannot
+    /// be told apart from no drop at all.
+    private var litRoot: Bool {
+        guard let target = dropTarget else { return false }
+        switch target.mode {
+        case .return: return false
+        case .into: return false
+        case .before, .after: return target.depth == 0
+        }
+    }
+
     /// The deepest indent the current gap will accept.
     ///
     /// The indicator marks the depth the finger picked; this is the far end of
@@ -776,10 +794,22 @@ struct OutlineView: View {
 /// tall.
 private struct ScopeProgress: View {
     let progress: TreeOps.Progress
+    /// The project's own name, so the strip is something a drop can land *on*
+    /// rather than an unlabelled bar. Without it the highlight lights a
+    /// measurement, and a measurement is not a parent.
+    let title: String
+    /// A drop at depth 0 would land under this project.
+    let lit: Bool
 
     private var complete: Bool { progress.pct == 100 }
 
     var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title)
+                .font(.subheadline.weight(.medium))
+                .lineLimit(1)
+                .foregroundStyle(lit ? AnyShapeStyle(DropPalette.nest) : AnyShapeStyle(.secondary))
+
         HStack(spacing: 10) {
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
@@ -798,9 +828,25 @@ private struct ScopeProgress: View {
                 // from one digit to three.
                 .frame(width: 34, alignment: .trailing)
         }
+        }
         .padding(.horizontal)
         .padding(.vertical, 8)
+        // Same fill and outline a lit parent row gets, so "this becomes the
+        // parent" looks the same whether the parent is a row or the project.
+        // Drawn as a background rather than an overlay: the strip is a real
+        // element, not something floating over the list.
+        .background {
+            if lit {
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(DropPalette.nest.opacity(0.14))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 6)
+                            .strokeBorder(DropPalette.nest, lineWidth: 2))
+                    .padding(.horizontal, 8)
+            }
+        }
         .animation(.easeOut(duration: 0.35), value: progress.pct)
+        .animation(.easeOut(duration: 0.12), value: lit)
     }
 }
 
