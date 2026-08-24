@@ -61,40 +61,21 @@ struct OutlineView: View {
             // staying put behind.
             ZStack {
             backdrop
-            VStack(spacing: 0) {
-                // Scrolls away with the list rather than pinning: it says where
-                // you are and how far in, which is read on arrival rather than
-                // watched continuously. Pinning both ends squeezed an already
-                // short screen.
-                // Only inside a project. On the grid each card carries its own
-                // bar, and a single figure across every project at once answers
-                // a question nobody asked.
-                if scope != nil, let progress = TreeOps.scopeProgress(tree, scope) {
-                    ScopeProgress(progress: progress, title: title, lit: litRoot)
-                }
-
-                if !store.live {
-                    // Only about receiving. Saying "not saved" here would be a
-                    // lie that pushes people into re-typing work that is
-                    // already queued and will go out on its own.
-                    SyncBanner(
-                        text: "Not receiving changes from other devices. Your edits are still saved.")
-                }
-
-                if scope == nil {
-                    ProjectGrid(tree: tree, onOpen: openProject, onDelete: confirmDeleteProject)
-                } else {
-                    outline
-                }
-
-                // Capture sits at the bottom. It was at the top so an idea
-                // could be caught without scrolling anywhere first, which is
-                // what this app is for — the bottom serves that just as well,
-                // and adds two things the top could not: it is inside the
-                // thumb's arc, and it rises with the keyboard instead of
-                // sitting at the far end of the screen from it.
-                captureField
+            // The screen the swipe is going back to, rendered for real behind
+            // the one being lifted off it. It is the same view as the front
+            // slab — one definition, two scopes — so what is revealed during
+            // the drag is what you land on, not a mock-up of it that could
+            // drift.
+            //
+            // Inert: it takes no gestures, opens no text field, and reports no
+            // row frames, so it cannot compete with the live copy for focus or
+            // overwrite its geometry. Nothing about the swipe is committed
+            // yet, and a screen you might still slide away from should not be
+            // able to act.
+            if backPull > 0 {
+                slab(for: parentScope, interactive: false)
             }
+            slab(for: scope, interactive: true)
             .task { store.start() }
             // A phone backgrounds this app every time the screen locks, so this
             // is the ordinary path rather than an edge case. `.task` fires once
@@ -180,12 +161,6 @@ struct OutlineView: View {
             // one read as the app failing to draw, not as depth. A label is
             // enough — this is glimpsed for a fifth of a second, so it has to
             // be legible at once and cannot repay any more detail than that.
-            // Opaque, so the rows behind cannot show through the slab as it
-            // moves. A `VStack` paints only what its children paint, and the
-            // list's own background does not cover the whole stack.
-            .background(Color(.systemBackground))
-            .shadow(color: .black.opacity(backPull > 0 ? 0.18 : 0), radius: 8, x: -3)
-            .offset(x: backPull)
             }
             .gesture(zoomOutSwipe)
             .navigationTitle(title)
@@ -200,17 +175,82 @@ struct OutlineView: View {
         }
     }
 
+    /// One screen's worth of outline, for a given scope.
+    ///
+    /// Parameterised rather than reading `scope` directly so the back swipe can
+    /// draw two at once: the one being left and the one being returned to.
+    ///
+    /// - Parameter interactive: false for the copy behind the swipe. It gates
+    ///   the three things that would collide with the live copy — focus, row
+    ///   geometry, and gestures — at the source rather than letting a second
+    ///   set of writes land and be sorted out afterwards.
+    @ViewBuilder private func slab(for scope: NodeId?, interactive: Bool) -> some View {
+            VStack(spacing: 0) {
+                // Scrolls away with the list rather than pinning: it says where
+                // you are and how far in, which is read on arrival rather than
+                // watched continuously. Pinning both ends squeezed an already
+                // short screen.
+                // Only inside a project. On the grid each card carries its own
+                // bar, and a single figure across every project at once answers
+                // a question nobody asked.
+                if scope != nil, let progress = TreeOps.scopeProgress(tree, scope) {
+                    ScopeProgress(
+                        progress: progress,
+                        title: title(of: scope),
+                        // Only the live copy can be a drop target; a drag and a
+                        // back swipe cannot both be running.
+                        lit: interactive && litRoot)
+                }
+
+                if !store.live {
+                    // Only about receiving. Saying "not saved" here would be a
+                    // lie that pushes people into re-typing work that is
+                    // already queued and will go out on its own.
+                    SyncBanner(
+                        text: "Not receiving changes from other devices. Your edits are still saved.")
+                }
+
+                if scope == nil {
+                    ProjectGrid(tree: tree, onOpen: openProject, onDelete: confirmDeleteProject)
+                } else {
+                    outline(for: scope, interactive: interactive)
+                }
+
+                // Capture sits at the bottom. It was at the top so an idea
+                // could be caught without scrolling anywhere first, which is
+                // what this app is for — the bottom serves that just as well,
+                // and adds two things the top could not: it is inside the
+                // thumb's arc, and it rises with the keyboard instead of
+                // sitting at the far end of the screen from it.
+                captureField(for: scope, interactive: interactive)
+            }
+        // Opaque, so the rows behind cannot show through the slab as it
+        // moves. A `VStack` paints only what its children paint, and the
+        // list's own background does not cover the whole stack.
+        .background(Color(.systemBackground))
+        // Only the front slab moves and casts. The one behind is the ground
+        // being revealed, so it sits where it will still be once the swipe
+        // finishes — sliding it too would just be the old dark-panel problem
+        // with more steps.
+        .shadow(color: .black.opacity(interactive && backPull > 0 ? 0.18 : 0), radius: 8, x: -3)
+        .offset(x: interactive ? backPull : 0)
+    }
+
     /// The rows themselves. Only drawn inside a project — the root shows the
     /// project grid instead.
-    private var outline: some View {
+    private func outline(for scope: NodeId?, interactive: Bool) -> some View {
         ScrollViewReader { proxy in
         List {
-            ForEach(rows, id: \.node.id) { row in
+            ForEach(rows(of: scope), id: \.node.id) { row in
                 OutlineRow(
                     node: row.node,
                     depth: row.depth,
                     hasChildren: !TreeOps.isLeaf(tree, row.node.id),
-                    editing: edit.editing == row.node.id,
+                    // False on the copy behind the swipe, which is what
+                    // keeps it from building a second `TextField` bound to the
+                    // same focus state as the live one. Gating focus at its
+                    // single source beats gating every place it leaks to.
+                    editing: interactive && edit.editing == row.node.id,
                     editText: $edit.text,
                     focusedRow: $focusedRow,
                     onToggleDone: { apply(.setDone(id: row.node.id, done: !row.node.done)) },
@@ -224,10 +264,14 @@ struct OutlineView: View {
                     // thing — and it cost a keyboard dismiss-and-reopen on every
                     // Return as focus jumped.
                     onSubmit: { commitEdit() },
-                    onDragBegan: { beginDrag(row.node.id) },
-                    onDragMoved: { p in dragMoved(p) },
-                    onDragEnded: endDrag,
-                    isDragging: drag.dragging == row.node.id)
+                    // No-ops behind the swipe. A gesture there could pick
+                    // up a row on a screen the user may be about to slide away
+                    // from, and its coordinates would be measured against a
+                    // list that is not the one being dragged over.
+                    onDragBegan: { if interactive { beginDrag(row.node.id) } },
+                    onDragMoved: { p in if interactive { dragMoved(p) } },
+                    onDragEnded: { if interactive { endDrag() } },
+                    isDragging: interactive && drag.dragging == row.node.id)
                     // One segment per guide, drawn inside the row.
                     //
                     // The segments abut into what reads as a single unbroken
@@ -258,14 +302,22 @@ struct OutlineView: View {
                     // the drop indicator, the drag hit-test — asks the frame
                     // where one row ends and the next begins, and a content
                     // box answers with the padding still outside it.
-                    .background(
-                        GeometryReader { geo in
-                            Color.clear.preference(
-                                key: RowFramesKey.self,
-                                value: [row.node.id: geo.frame(in: .global)])
-                        })
+                    .background {
+                        // Measured only on the live copy. Both lists render the
+                        // same ids, so a second set of frames would not collide
+                        // visibly — it would quietly overwrite the geometry the
+                        // hit-test reads, and a drop would land a row off from
+                        // where it looked.
+                        if interactive {
+                            GeometryReader { geo in
+                                Color.clear.preference(
+                                    key: RowFramesKey.self,
+                                    value: [row.node.id: geo.frame(in: .global)])
+                            }
+                        }
+                    }
                     .background(alignment: .topLeading) {
-                        guideSegments(for: row.node.id)
+                        guideSegments(for: row.node.id, in: rows(of: scope))
                     }
                     // Zoom lives on a swipe rather than on the bullet.
                     // It is one Back tap to undo but replaces the whole
@@ -273,16 +325,18 @@ struct OutlineView: View {
                     // brush the way a button in the row can — it needs
                     // a second tap, or a deliberate push past the
                     // full-swipe threshold.
+                    // Behind the swipe there is nothing to zoom *into*
+                    // yet — the screen has not been landed on.
                     .swipeActions(edge: .trailing) {
                         Button {
-                            scope = row.node.id
+                            if interactive { self.scope = row.node.id }
                         } label: {
                             Label("Zoom in", systemImage: "chevron.right")
                         }
                         .tint(.accentColor)
                     }
             }
-            .onDelete(perform: delete)
+            .onDelete { if interactive { delete(at: $0) } }
         }
         .listStyle(.plain)
         // Rows have to actually touch, or the guide segments cannot join.
@@ -291,11 +345,15 @@ struct OutlineView: View {
         // left showing as a gap at every boundary.
         .environment(\.defaultMinListRowHeight, 0)
         .listRowSpacing(0)
-        .onPreferenceChange(RowFramesKey.self) { drag.frames = $0 }
+        .onPreferenceChange(RowFramesKey.self) { if interactive { drag.frames = $0 } }
         // The indicator is drawn in the list's space while every frame is
         // measured globally, so the overlay records its own origin to convert
         // between the two.
+        // Drawn only over the live list. Every piece of it reads the drag's
+        // own geometry, so on the copy behind a swipe it would be drawing the
+        // other list's answers over this one's rows.
         .overlay(alignment: .topLeading) {
+            if interactive {
             GeometryReader { geo in
                 ZStack(alignment: .topLeading) {
                     parentHighlight
@@ -312,16 +370,22 @@ struct OutlineView: View {
                         drag.bounds = f
                     }
             }
+            }
         }
         // The timer outlives any single gesture callback, so it is armed and
         // disarmed by the drag's existence rather than by a move event.
         .onChange(of: drag.dragging) { _, id in
+            guard interactive else { return }
             if id == nil { drag.stopScrolling() } else { startScrolling(proxy) }
         }
         }
     }
 
-    private var captureField: some View {
+    /// The bottom bar: the chip saying where a task will land, and the field.
+    ///
+    /// Inert behind a swipe for the same reason as a row's field — one focus
+    /// state, so a second live field would fight the real one for it.
+    @ViewBuilder private func captureField(for scope: NodeId?, interactive: Bool) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             // Says where the next task will land whenever that is not the
             // bottom. Without it the field drops a row into the middle of the
@@ -330,7 +394,8 @@ struct OutlineView: View {
             //
             // The X is the way out, and it is what makes the guess affordable:
             // it only has to be right often enough to be worth one tap to undo.
-            if let parent = edit.captureParent, let node = TreeOps.byId(tree, parent) {
+            if interactive, let parent = edit.captureParent,
+               let node = TreeOps.byId(tree, parent) {
                 HStack(spacing: 6) {
                     Image(systemName: "arrow.down")
                     Text("After \(node.text)").lineLimit(1)
@@ -346,12 +411,20 @@ struct OutlineView: View {
             }
 
             HStack {
-                TextField(scope == nil ? "New project" : "Add a task", text: $edit.draft)
-                    .textFieldStyle(.plain)
-                    .submitLabel(.done)
-                    .focused($capturing)
-                    .onSubmit(commitDraft)
-                if !edit.draft.isEmpty {
+                let label = scope == nil ? "New project" : "Add a task"
+                if interactive {
+                    TextField(label, text: $edit.draft)
+                        .textFieldStyle(.plain)
+                        .submitLabel(.done)
+                        .focused($capturing)
+                        .onSubmit(commitDraft)
+                } else {
+                    // A drawn stand-in rather than a disabled field: what is
+                    // wanted behind the swipe is the bar's shape and height, so
+                    // the two screens line up as one slides off the other.
+                    Text(label).foregroundStyle(.tertiary)
+                }
+                if interactive, !edit.draft.isEmpty {
                     Button("Add", action: commitDraft)
                 }
             }
@@ -363,13 +436,21 @@ struct OutlineView: View {
     }
 
 
-    private var title: String {
+    private func title(of scope: NodeId?) -> String {
         scope.flatMap { TreeOps.byId(tree, $0)?.text } ?? "Ansa"
+    }
+
+    /// The scope the live screen is showing, for the navigation bar.
+    private var title: String { title(of: scope) }
+
+    /// The scope a back swipe lands in: one step out, or the project grid.
+    private var parentScope: NodeId? {
+        scope.flatMap { TreeOps.byId(tree, $0)?.parentId }
     }
 
     /// The rows the outline draws, flattened depth-first with a folded subtree
     /// counting as the single line it shows.
-    private var rows: [(node: Node, depth: Int)] {
+    private func rows(of scope: NodeId?) -> [(node: Node, depth: Int)] {
         var out: [(Node, Int)] = []
         func walk(_ parentId: NodeId?, _ depth: Int) {
             for child in TreeOps.childrenOf(tree, parentId) {
@@ -380,6 +461,11 @@ struct OutlineView: View {
         walk(scope, 0)
         return out
     }
+
+    /// The rows of the screen you are actually on. Everything the drag reads —
+    /// order, hit-test, auto-scroll — means this one; the copy behind a back
+    /// swipe draws rows but never asks questions about them.
+    private var rows: [(node: Node, depth: Int)] { rows(of: scope) }
 
     /// Every edit goes through the store, which applies it locally and queues
     /// it for the server. Nothing here mutates the tree directly.
@@ -552,9 +638,15 @@ struct OutlineView: View {
     ///
     /// Highlighted rather than the whole line when a drop would land under that
     /// parent — each row lights its own piece, and together they light the run.
-    @ViewBuilder private func guideSegments(for id: NodeId) -> some View {
+    /// - Parameter rows: the list this row belongs to. Passed rather than read
+    ///   from `rows`, so the copy behind a back swipe draws its own guides
+    ///   instead of the other screen's — the two scopes have different depths,
+    ///   and a guide is a statement about the list it is drawn in.
+    @ViewBuilder private func guideSegments(
+        for id: NodeId, in rows: [(node: Node, depth: Int)]
+    ) -> some View {
         if let i = rows.firstIndex(where: { $0.node.id == id }) {
-            let all = TreeOps.guides(hitRows)
+            let all = TreeOps.guides(rows.map { .init(id: $0.node.id, depth: $0.depth) })
             // A parent normally draws no segment of its own guide — the run
             // starts at its first child. While lit it draws the bottom half of
             // one, so the line leaves the highlighted row instead of starting a
@@ -989,7 +1081,7 @@ struct OutlineView: View {
     private func zoomOut() {
         // Zooming out changes what the field means, so the guess goes with it.
         edit.captureParent = nil
-        scope = scope.flatMap { TreeOps.byId(tree, $0)?.parentId }
+        scope = parentScope
     }
 }
 
