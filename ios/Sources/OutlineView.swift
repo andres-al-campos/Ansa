@@ -489,7 +489,7 @@ struct OutlineView: View {
                 }
             }
         }
-        .padding(.horizontal)
+        .padding(.horizontal, OutlineRow.railInset)
         .padding(.vertical, 10)
         .background(.bar)
         .animation(.easeOut(duration: 0.15), value: edit.captureParent)
@@ -1205,7 +1205,7 @@ private struct ScopeProgress: View {
             .frame(height: 4)
         }
         }
-        .padding(.horizontal)
+        .padding(.horizontal, OutlineRow.railInset)
         .padding(.vertical, 8)
         // Same fill and outline a lit parent row gets, so "this becomes the
         // parent" looks the same whether the parent is a row or the project.
@@ -1242,7 +1242,7 @@ private struct SyncBanner: View {
         }
         .font(.footnote)
         .foregroundStyle(.secondary)
-        .padding(.horizontal)
+        .padding(.horizontal, OutlineRow.railInset)
         .padding(.vertical, 8)
         .background(.quaternary)
     }
@@ -1343,6 +1343,22 @@ private struct OutlineRow: View {
     /// and the checkbox swapped: a guide through bullet centres is only a
     /// straight line if nothing else shares that column.
     static let guideX0: CGFloat = 16
+
+    /// How far the whole row sits in from the screen's leading edge.
+    ///
+    /// `listRowInsets` is zeroed so the row frame is the entire cell — that is
+    /// what lets a guide segment fill its row and meet the ones above and below
+    /// — but it zeroed the leading margin along with everything else, leaving
+    /// the bullet almost against the bezel.
+    ///
+    /// The value is the row's own internal rhythm applied to its outside edge:
+    /// the gap from the bullet's disk to the checkbox is 13pt of empty bullet
+    /// frame, the 10pt stack spacing, and 6.5pt of empty checkbox frame — about
+    /// 30pt. Matching it here means the first mark is as far from the edge as it
+    /// is from its neighbour, so nothing in the row is more crowded than the
+    /// rest of it. The disk sits 13pt into its own frame, so the padding is the
+    /// remainder.
+    static let railInset: CGFloat = 17
 
     /// A single-line row's content height, without the row's own vertical
     /// padding. Only a fallback for a row `List` has not measured yet — the
@@ -1451,7 +1467,7 @@ private struct OutlineRow: View {
             // that wraps takes every point it is given.
             .padding(.trailing, 4)
         }
-        .padding(.leading, CGFloat(depth) * Self.indent)
+        .padding(.leading, Self.railInset + CGFloat(depth) * Self.indent)
         // No row separators. The desktop has none — rows are told apart by
         // whitespace and the hover background, and the vertical guides are the
         // only lines in the outline. `List` draws them by default, so they have
