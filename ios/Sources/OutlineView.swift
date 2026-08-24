@@ -12,24 +12,9 @@ struct OutlineView: View {
     @State private var scope: NodeId?
     @State private var draft = ""
     @FocusState private var capturing: Bool
-    /// The row being dragged, once a long press has armed it, plus where the
-    /// finger is and where the row would land. All three are one gesture's
-    /// worth of state, so they live and die together in `endDrag`.
-    @State private var dragging: NodeId?
-    @State private var dragPoint: CGPoint = .zero
-    @State private var dropTarget: TreeOps.DropTarget?
-    /// The list's own bounds in global space, so a drag can tell how close the
-    /// finger is to an edge. Recorded by the same overlay that draws the guides.
-    @State private var listBounds: CGRect = .zero
-    /// Ticks while a drag sits in an edge band. Held here rather than started
-    /// per move, so a finger that stops moving keeps scrolling — which is the
-    /// whole point, since holding still at the edge is the gesture.
-    @State private var scroller: Timer?
-    /// Row boxes in list space, keyed by id, refreshed as rows lay out.
-    @State private var rowFrames: [NodeId: CGRect] = [:]
-    /// The list's own origin, so a touch in global space can be rebased onto
-    /// the rows without every row having to know where the list starts.
-    @State private var listOrigin: CGPoint = .zero
+    /// One drag's worth of state and the geometry it reads. Grouped into a type
+    /// because these pieces are meaningless apart and always changed together.
+    @State private var drag = DragController()
     /// The project whose delete is awaiting confirmation.
     @State private var pendingDelete: Node?
     /// The row being renamed in place, and its live text. Held here rather than
@@ -84,6 +69,13 @@ struct OutlineView: View {
 
     var body: some View {
         NavigationStack {
+            // The backdrop is a sibling *under* the sliding stack, not its
+            // background. As a background it was attached to the slab, so the
+            // same `.offset` that slid the view slid the thing it was meant to
+            // be revealing — the shade travelled along on top instead of
+            // staying put behind.
+            ZStack {
+            backdrop
             VStack(spacing: 0) {
                 // Scrolls away with the list rather than pinning: it says where
                 // you are and how far in, which is read on arrival rather than
@@ -156,7 +148,7 @@ struct OutlineView: View {
             // adopting a server tree under it is what makes text vanish as it
             // is being written. Dragging: the row would move out from under the
             // finger mid-gesture.
-            .onChange(of: capturing || dragging != nil || editing != nil) { _, busy in
+            .onChange(of: capturing || drag.isActive || editing != nil) { _, busy in
                 store.setBusy(busy)
             }
             // A project takes its whole subtree with it, and unlike ticking a
@@ -203,9 +195,13 @@ struct OutlineView: View {
             // one read as the app failing to draw, not as depth. A label is
             // enough — this is glimpsed for a fifth of a second, so it has to
             // be legible at once and cannot repay any more detail than that.
-            .background(backdrop)
+            // Opaque, so the rows behind cannot show through the slab as it
+            // moves. A `VStack` paints only what its children paint, and the
+            // list's own background does not cover the whole stack.
+            .background(Color(.systemBackground))
             .shadow(color: .black.opacity(backPull > 0 ? 0.18 : 0), radius: 8, x: -3)
             .offset(x: backPull)
+            }
             .gesture(zoomOutSwipe)
             .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
@@ -246,7 +242,7 @@ struct OutlineView: View {
                     onDragBegan: { beginDrag(row.node.id) },
                     onDragMoved: { p in dragMoved(p) },
                     onDragEnded: endDrag,
-                    isDragging: dragging == row.node.id)
+                    isDragging: drag.dragging == row.node.id)
                     // One segment per guide, drawn inside the row.
                     //
                     // The segments abut into what reads as a single unbroken
@@ -310,7 +306,7 @@ struct OutlineView: View {
         // left showing as a gap at every boundary.
         .environment(\.defaultMinListRowHeight, 0)
         .listRowSpacing(0)
-        .onPreferenceChange(RowFramesKey.self) { rowFrames = $0 }
+        .onPreferenceChange(RowFramesKey.self) { drag.frames = $0 }
         // The indicator is drawn in the list's space while every frame is
         // measured globally, so the overlay records its own origin to convert
         // between the two.
@@ -323,19 +319,19 @@ struct OutlineView: View {
                     dragLabel
                 }
                     .onAppear {
-                        listOrigin = geo.frame(in: .global).origin
-                        listBounds = geo.frame(in: .global)
+                        drag.origin = geo.frame(in: .global).origin
+                        drag.bounds = geo.frame(in: .global)
                     }
                     .onChange(of: geo.frame(in: .global)) { _, f in
-                        listOrigin = f.origin
-                        listBounds = f
+                        drag.origin = f.origin
+                        drag.bounds = f
                     }
             }
         }
         // The timer outlives any single gesture callback, so it is armed and
         // disarmed by the drag's existence rather than by a move event.
-        .onChange(of: dragging) { _, id in
-            if id == nil { stopScrolling() } else { startScrolling(proxy) }
+        .onChange(of: drag.dragging) { _, id in
+            if id == nil { drag.stopScrolling() } else { startScrolling(proxy) }
         }
         }
     }
@@ -468,23 +464,17 @@ struct OutlineView: View {
     /// text wraps is taller than one that does not — and the band arithmetic
     /// splits each row into quarters, so a wrong height puts the `into` band in
     /// the wrong place rather than merely off by a little.
-    private var boxes: [TreeOps.RowBox] {
-        rows.compactMap { row in
-            guard let f = rowFrames[row.node.id] else { return nil }
-            return .init(id: row.node.id, top: f.minY, height: f.height)
-        }
-    }
+    private var boxes: [TreeOps.RowBox] { drag.boxes(order: rows.map(\.node.id)) }
 
     /// The rows' shared left edge in global space.
     ///
     /// Any row's will do: the indent is padding *inside* the row, so every
     /// frame starts at the list's own inset whatever its depth. Taking the
     /// minimum avoids depending on which row happens to be first.
-    private var rowsLeft: CGFloat { rowFrames.values.map(\.minX).min() ?? 0 }
+    private var rowsLeft: CGFloat { drag.rowsLeft }
 
     private func beginDrag(_ id: NodeId) {
-        dragging = id
-        dropTarget = nil
+        drag.begin(id)
         liftHaptic.impactOccurred()
         // Warmed for the ticks that follow. The first `impactOccurred` on a
         // cold generator is the one that arrives late, and during a drag that
@@ -499,8 +489,8 @@ struct OutlineView: View {
     /// list begins. Only the X needs rebasing, onto the row's own left edge,
     /// because that is where the indent steps are counted from.
     private func dragMoved(_ point: CGPoint) {
-        guard let dragging else { return }
-        dragPoint = point
+        guard let dragging = drag.dragging else { return }
+        drag.moved(to: point)
         let left = rowsLeft
         let next = TreeOps.dropTargetAt(
             x: Double(point.x - left),
@@ -514,81 +504,25 @@ struct OutlineView: View {
         // Haptic on every change of target, not just of depth: crossing from a
         // nest into a gap is as much a change of meaning as changing level, and
         // the indicator moves for both.
-        if next != dropTarget { haptic.impactOccurred(intensity: 0.6) }
-        dropTarget = next
+        if next != drag.target { haptic.impactOccurred(intensity: 0.6) }
+        drag.target = next
     }
 
-    /// Start the edge-scroll tick for the life of this drag.
-    ///
-    /// A timer rather than work inside `dragMoved`, because the gesture only
-    /// reports when the finger *moves* — and holding still at the edge is
-    /// exactly how this is used. Driving it from move events would mean the
-    /// list scrolled only while the finger jittered.
-    ///
-    /// The tick walks a cursor along the rows rather than re-deriving the edge
-    /// row from the measured frames each time. Two reasons, and either alone
-    /// stalls the scroll:
-    ///
-    /// `boxes` comes from a preference that refreshes on the next layout pass,
-    /// so within a tick it still describes the pre-scroll positions — asking it
-    /// again returns the row just scrolled to, and re-issuing that scroll does
-    /// nothing. And `scrollTo` only moves far enough to bring a row into view,
-    /// so a target one place beyond the edge is already nearly visible and
-    /// yields a few pixels of travel. Together they are a scroll that creeps a
-    /// couple of pixels and then stops dead while the timer keeps running.
+    /// Arm edge scrolling for this drag. The controller owns the tick; the
+    /// view supplies the two things that need the tree: the current row order,
+    /// re-read each tick because the tree can change under a drag, and the
+    /// hit-test to re-run once the rows have moved.
     private func startScrolling(_ proxy: ScrollViewProxy) {
-        stopScrolling()
-        var cursor: Int? = nil
-        // ~7 rows a second at a full hold. Fast enough to cross a long tree
-        // without the drag feeling stuck, slow enough to stop on a chosen row.
-        scroller = Timer.scheduledTimer(withTimeInterval: 0.14, repeats: true) { _ in
-            guard dragging != nil else { return }
-            let order = rows.map(\.node.id)
-            let step = TreeOps.dragScroll(
-                y: Double(dragPoint.y),
-                top: Double(listBounds.minY),
-                bottom: Double(listBounds.maxY),
-                order: order,
-                boxes: boxes)
-
-            switch step {
-            case .none:
-                // Out of the edge band: the next entry starts fresh from
-                // wherever the list actually sits.
-                cursor = nil
-            case .up(let id), .down(let id):
-                let goingUp = { if case .up = step { return true } else { return false } }()
-                // First tick of a run seeds from the measured edge; later ticks
-                // carry on from where this one left off, which is the only
-                // reading not invalidated by the scroll it just caused.
-                let from = cursor ?? order.firstIndex(of: id)
-                guard let from else { return }
-                let next = goingUp ? from - 1 : from + 1
-                guard order.indices.contains(next) else { return }
-                cursor = next
-                withAnimation(.linear(duration: 0.14)) {
-                    proxy.scrollTo(order[next], anchor: goingUp ? .top : .bottom)
-                }
-                // The rows moved under a finger that did not, so the target the
-                // indicator is showing is about to be wrong. `dragMoved` only
-                // fires on movement, so nothing else would re-ask.
-                dragMoved(dragPoint)
-            }
-        }
-    }
-
-    private func stopScrolling() {
-        scroller?.invalidate()
-        scroller = nil
+        drag.startScrolling(
+            proxy,
+            order: { rows.map(\.node.id) },
+            onScroll: { dragMoved(drag.point) })
     }
 
     /// Release: apply the drop, then clear every piece of drag state together.
     private func endDrag() {
-        defer {
-            dragging = nil
-            dropTarget = nil
-        }
-        guard let dragging, let target = dropTarget,
+        defer { drag.end() }
+        guard let dragging = drag.dragging, let target = drag.target,
               let op = TreeOps.dropOp(tree, dragging, target, scope: scope) else { return }
         // Landed. Distinct from the ticks along the way, so a release that
         // moved something feels different from one that let go over nothing.
@@ -607,7 +541,7 @@ struct OutlineView: View {
     /// row's height of screen, which is exactly the space a label under it
     /// would occupy.
     @ViewBuilder private var dragLabel: some View {
-        if let id = dragging, let node = tree.first(where: { $0.id == id }) {
+        if let id = drag.dragging, let node = tree.first(where: { $0.id == id }) {
             Text(node.text.isEmpty ? "Untitled" : node.text)
                 .lineLimit(1)
                 .font(.callout.weight(.medium))
@@ -622,7 +556,7 @@ struct OutlineView: View {
                 // slides sideways competes with the indicator for the answer
                 // to where the drop lands.
                 .frame(maxWidth: 240, alignment: .leading)
-                .offset(x: 16, y: dragPoint.y - listOrigin.y - 46)
+                .offset(x: 16, y: drag.point.y - drag.origin.y - 46)
                 .allowsHitTesting(false)
                 .transition(.opacity)
         }
@@ -654,7 +588,7 @@ struct OutlineView: View {
             //
             // Rectangle, not Capsule: rounded ends on a segment meant to join
             // the next one pinch the join into a visible waist.
-            let h = rowFrames[id]?.height
+            let h = drag.frames[id]?.height
                 ?? (OutlineRow.rowHeight + OutlineRow.rowPadding)
             ZStack(alignment: .topLeading) {
                 ForEach(here, id: \.parent) { guide in
@@ -702,7 +636,7 @@ struct OutlineView: View {
     /// a root row has no parent, so there is no guide it could hang from, and
     /// the insertion line's x is the only depth cue at that level.
     private var litGuideParent: NodeId? {
-        guard let target = dropTarget else { return nil }
+        guard let target = drag.target else { return nil }
         switch target.mode {
         case .return:
             // The row goes back where it started, so nothing is a target.
@@ -726,7 +660,7 @@ struct OutlineView: View {
     /// answers with the scope id, which is `nil` at the top level and so cannot
     /// be told apart from no drop at all.
     private var litRoot: Bool {
-        guard let target = dropTarget else { return false }
+        guard let target = drag.target else { return false }
         switch target.mode {
         case .return: return false
         case .into: return false
@@ -750,7 +684,7 @@ struct OutlineView: View {
         guard let above = hitRows.first(where: { $0.id == target.id }) else { return nil }
         // Same exclusion as the hit-test: the row in flight is leaving, so it
         // does not make its parent a parent.
-        let hasKids = TreeOps.childrenOf(tree, above.id).contains { $0.id != dragging }
+        let hasKids = TreeOps.childrenOf(tree, above.id).contains { $0.id != drag.dragging }
         return TreeOps.deepestAtGap(
             aboveDepth: above.depth, belowDepth: nil, aboveHasChildren: hasKids)
     }
@@ -771,7 +705,7 @@ struct OutlineView: View {
     /// guide — the row has no run yet to truncate — and `parentHighlight`
     /// carries the case on its own.
     private var litUntilRow: Int {
-        guard let target = dropTarget,
+        guard let target = drag.target,
               target.mode == .before || target.mode == .after,
               let i = rows.firstIndex(where: { $0.node.id == target.id })
         else { return .max }
@@ -794,10 +728,10 @@ struct OutlineView: View {
     /// edge and lights at the same moment, so the two abut and read as one run
     /// from the project down to the line.
     @ViewBuilder private var rootGuide: some View {
-        if litRoot, let target = dropTarget, let frame = rowFrames[target.id] {
-            let left = rowsLeft - listOrigin.x
+        if litRoot, let target = drag.target, let frame = drag.frames[target.id] {
+            let left = rowsLeft - drag.origin.x
             let edge = target.mode == .before ? frame.minY : frame.maxY
-            let y = edge - listOrigin.y
+            let y = edge - drag.origin.y
             // Same width and colour a lit guide gets, because it is one.
             Rectangle()
                 .fill(DropPalette.nest.opacity(0.45))
@@ -816,15 +750,15 @@ struct OutlineView: View {
     /// Filled as well as outlined: an outline alone reads as a hairline at
     /// arm's length, and it has to beat a guide line running through the row.
     @ViewBuilder private var parentHighlight: some View {
-        if let id = litGuideParent, let frame = rowFrames[id] {
-            let left = rowsLeft - listOrigin.x
+        if let id = litGuideParent, let frame = drag.frames[id] {
+            let left = rowsLeft - drag.origin.x
             RoundedRectangle(cornerRadius: 6)
                 .fill(DropPalette.nest.opacity(0.14))
                 .overlay(
                     RoundedRectangle(cornerRadius: 6)
                         .strokeBorder(DropPalette.nest, lineWidth: 2))
                 .frame(width: frame.width, height: frame.height)
-                .offset(x: left, y: frame.minY - listOrigin.y)
+                .offset(x: left, y: frame.minY - drag.origin.y)
         }
     }
 
@@ -835,10 +769,10 @@ struct OutlineView: View {
     /// gap. Nesting draws no line, having no gap to draw in; `parentHighlight`
     /// carries that case, and lights the same parent for both.
     @ViewBuilder private var dropIndicator: some View {
-        if let target = dropTarget, let frame = rowFrames[target.id] {
+        if let target = drag.target, let frame = drag.frames[target.id] {
             // Same rebase as the guides: row frames are global, the overlay
             // starts at the list's edge, and `List` insets the rows past it.
-            let left = rowsLeft - listOrigin.x
+            let left = rowsLeft - drag.origin.x
             switch target.mode {
             case .into:
                 // Nothing here: nesting is drawn by `parentHighlight`, which
@@ -852,7 +786,7 @@ struct OutlineView: View {
                 // spacing and `List` adds no insets — so its edges already are
                 // the boundary between two rows, with nothing to add.
                 let edge = target.mode == .before ? frame.minY : frame.maxY
-                let y = edge - listOrigin.y
+                let y = edge - drag.origin.y
                 // Centred on that boundary, so it sits in the whitespace
                 // between the two rows and belongs to neither. Drawn a row
                 // boundary away from where it belongs, the line reads as
@@ -1000,25 +934,30 @@ struct OutlineView: View {
     /// it out of the tree the rest of the time means it can never leak around
     /// the edges of a view that is exactly where it belongs.
     @ViewBuilder private var backdrop: some View {
-        // How far through the useful part of the pull we are, 0...1. Every
-        // other number here is a function of it, so the whole backdrop
-        // brightens as one thing rather than as three that happen to agree.
-        let t = min(1, Double(backPull) / Double(backThreshold))
-        ZStack {
-            Color(.secondarySystemBackground).ignoresSafeArea()
-            // A shade over the ground that lifts as the view slides away, so
-            // the gap opens like a curtain rather than appearing as a hole.
-            //
-            // Darkest at the left edge, where the gap has been open longest and
-            // there is most of it to fill. That gradient is what a revealed
-            // screen would have given for free — the eye reads the lightening
-            // as something arriving, which is the whole job of the reveal, and
-            // it does not need a second live view to do it.
-            LinearGradient(
-                colors: [.black.opacity(0.55 * (1 - t)), .black.opacity(0.15 * (1 - t))],
-                startPoint: .leading, endPoint: .trailing)
-                .ignoresSafeArea()
-            if backPull > 0 {
+        // The whole backdrop is gated on the pull, not just parts of it. The
+        // shade is drawn at `1 - t`, so at rest it is at *full* strength — a
+        // gradient left in the tree unguarded does not sit dormant waiting for
+        // a swipe, it sits there black.
+        if backPull > 0 {
+            // How far through the useful part of the pull we are, 0...1. Every
+            // other number here is a function of it, so the whole backdrop
+            // brightens as one thing rather than as three that happen to agree.
+            let t = min(1, Double(backPull) / Double(backThreshold))
+            ZStack {
+                Color(.secondarySystemBackground)
+                // A shade over the ground that lifts as the view slides away,
+                // so the gap opens like a curtain rather than appearing as a
+                // hole.
+                //
+                // Darkest at the left edge, where the gap has been open longest
+                // and there is most of it to fill. That gradient is what a
+                // revealed screen would have given for free — the eye reads the
+                // lightening as something arriving, which is the whole job of
+                // the reveal, and it does not need a second live view to do it.
+                LinearGradient(
+                    colors: [.black.opacity(0.55 * (1 - t)), .black.opacity(0.15 * (1 - t))],
+                    startPoint: .leading, endPoint: .trailing)
+
                 HStack(spacing: 8) {
                     Image(systemName: "chevron.left")
                     Text(parentTitle)
@@ -1034,6 +973,10 @@ struct OutlineView: View {
                 .frame(maxHeight: .infinity, alignment: .top)
                 .padding(.top, 120)
             }
+            // No `ignoresSafeArea` on the layers themselves: extending them
+            // past the view's own bounds is what made this visible around the
+            // edges of a slab sitting exactly where it belongs.
+            .ignoresSafeArea()
         }
     }
 
