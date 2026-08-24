@@ -418,7 +418,6 @@ struct OutlineView: View {
             GeometryReader { geo in
                 ZStack(alignment: .topLeading) {
                     parentHighlight
-                    rootGuide
                     dropIndicator
                     dragLabel
                 }
@@ -837,7 +836,7 @@ struct OutlineView: View {
     ///
     /// Cutting it at the drop point makes the lit length itself the answer: the
     /// line reaches from the parent to exactly where the row is going, which is
-    /// the same shape a depth-0 drop gets from `rootGuide`.
+    /// the same shape the insertion indicator gives a depth-0 drop.
     ///
     /// `.into` is not cut. Nesting into a row lights that row rather than a
     /// guide — the row has no run yet to truncate — and `parentHighlight`
@@ -851,32 +850,14 @@ struct OutlineView: View {
         return target.mode == .before ? i : i + 1
     }
 
-    /// The guide a depth-0 drop hangs from, drawn down from the top of the list.
-    ///
-    /// Every other depth already has one: a run of vertical line from the
-    /// parent down to the insertion point, which is what makes a drop read as
-    /// landing *under* something rather than merely at some indent. Depth 0 had
-    /// no such line, because its parent is the project and the project is not a
-    /// row — so the deepest, most common drop was the one with the least
-    /// confirmation, and an unanswered drag looks the same as one about to
-    /// fail.
-    ///
-    /// It starts at the list's top edge rather than at the project, since the
-    /// overlay is clipped to the list. The scope strip sits directly above that
-    /// edge and lights at the same moment, so the two abut and read as one run
-    /// from the project down to the line.
-    @ViewBuilder private var rootGuide: some View {
-        if litRoot, let target = drag.target, let frame = drag.frames[target.id] {
-            let left = rowsLeft - drag.origin.x
-            let edge = target.mode == .before ? frame.minY : frame.maxY
-            let y = edge - drag.origin.y
-            // Same width and colour a lit guide gets, because it is one.
-            Rectangle()
-                .fill(DropPalette.nest.opacity(0.45))
-                .frame(width: 2.5, height: max(0, y))
-                .offset(x: left + OutlineRow.guideX0 - 1.25)
-        }
-    }
+    // A depth-0 drop deliberately draws no vertical line. There was one, running
+    // from the top of the list down to the insertion point, on the reasoning
+    // that every other depth gets a line and the shallowest drop should not be
+    // the least confirmed. But it had to sit at `guideX0` — the same x a
+    // depth-0 row's own guide uses — so the one line stood for two different
+    // levels at once, and reading it meant guessing which. The lit scope strip
+    // says the same thing without the ambiguity: it is the project, which is
+    // exactly the parent a depth-0 drop lands under.
 
     /// The parent the drop would land under, filled and outlined.
     ///
