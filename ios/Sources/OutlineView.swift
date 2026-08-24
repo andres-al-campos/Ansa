@@ -37,7 +37,8 @@ struct OutlineView: View {
     /// the user is typing into.
     @State private var editing: NodeId?
 
-    /// The row the capture field files under, set when an edit ends.
+    /// The row the capture field drops the next task below, set when an edit
+    /// ends and re-pointed at each task as it is added.
     ///
     /// Not read from `editing`: tapping the capture field moves focus, which
     /// commits the edit and clears `editing` before a single character is
@@ -307,17 +308,16 @@ struct OutlineView: View {
     private var captureField: some View {
         VStack(alignment: .leading, spacing: 6) {
             // Says where the next task will land whenever that is not the
-            // obvious place. Without it the field files under the last row
-            // edited while looking exactly as it does at the root, and a
-            // capture box you cannot predict is one you stop trusting.
+            // bottom. Without it the field drops a row into the middle of the
+            // list while looking exactly as it does at rest, and a capture box
+            // you cannot predict is one you stop trusting.
             //
-            // The X is the way out, and it is the reason this can file under a
-            // row at all: the guess only has to be right often enough to be
-            // worth one tap to undo.
+            // The X is the way out, and it is what makes the guess affordable:
+            // it only has to be right often enough to be worth one tap to undo.
             if let parent = captureParent, let node = TreeOps.byId(tree, parent) {
                 HStack(spacing: 6) {
-                    Image(systemName: "arrow.turn.down.right")
-                    Text(node.text).lineLimit(1)
+                    Image(systemName: "arrow.down")
+                    Text("After \(node.text)").lineLimit(1)
                     Button {
                         captureParent = nil
                     } label: {
@@ -330,7 +330,7 @@ struct OutlineView: View {
             }
 
             HStack {
-                TextField(capturePrompt, text: $draft)
+                TextField(scope == nil ? "New project" : "Add a task", text: $draft)
                     .textFieldStyle(.plain)
                     .submitLabel(.done)
                     .focused($capturing)
@@ -346,10 +346,6 @@ struct OutlineView: View {
         .animation(.easeOut(duration: 0.15), value: captureParent)
     }
 
-    private var capturePrompt: String {
-        if captureParent != nil { return "Add a subtask" }
-        return scope == nil ? "New project" : "Add a task"
-    }
 
     private var title: String {
         scope.flatMap { TreeOps.byId(tree, $0)?.text } ?? "Ansa"
@@ -380,13 +376,28 @@ struct OutlineView: View {
         guard !text.isEmpty else { return }
         // The id and the timestamp are minted here and carried by the op, so the
         // server applies it to exactly the node this device created.
+        let id = TreeOps.newId()
+        // A sibling of the row just edited, not a child of it. The complaint
+        // this answers is that captured tasks pile up at the bottom, far from
+        // whatever was being worked on — depth is a separate question, and
+        // guessing at it would be answering one nobody asked.
+        let anchor = captureParent.flatMap { TreeOps.byId(tree, $0) }
         apply(.addChild(
-            id: TreeOps.newId(), parentId: captureParent ?? scope, text: text,
+            id: id, parentId: anchor?.parentId ?? scope, text: text,
             at: Date().timeIntervalSince1970 * 1000))
-        // One task per edit. Staying armed would turn a single rename into a
-        // mode that quietly swallows everything typed afterwards, and the
-        // second task is as likely to belong at the root as under the first.
-        captureParent = nil
+        // `addChild` appends, so the row lands at the end of its parent's
+        // children and then moves up into the slot below the anchor. Two ops
+        // rather than one because there is no op that inserts a *new* node at a
+        // position — `insertAtDepth` moves a node that already exists.
+        if let anchor,
+           let i = TreeOps.childrenOf(tree, anchor.parentId)
+            .firstIndex(where: { $0.id == anchor.id }) {
+            apply(.moveNode(id: id, parentId: anchor.parentId, index: i + 1))
+        }
+        // The new row becomes the anchor, so a run of captures stacks downward
+        // in the order typed instead of every one landing in the same slot and
+        // reversing itself.
+        captureParent = id
         draft = ""
     }
 
@@ -888,8 +899,9 @@ struct OutlineView: View {
         if let op { apply(op) }
 
         // Remember it only if it still exists: an emptied row is deleted by
-        // `commitEdit`, and filing a new task under a node that just went away
-        // would strand it.
+        // `commitEdit`, and anchoring to a node that just went away would send
+        // the new task back to the bottom with the chip still claiming
+        // otherwise.
         captureParent = TreeOps.byId(tree, id) == nil ? nil : id
         editing = nil
         editText = ""
