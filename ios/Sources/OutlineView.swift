@@ -270,6 +270,7 @@ struct OutlineView: View {
             GeometryReader { geo in
                 ZStack(alignment: .topLeading) {
                     parentHighlight
+                    rootGuide
                     dropIndicator
                     dragLabel
                 }
@@ -646,6 +647,33 @@ struct OutlineView: View {
             aboveDepth: above.depth, belowDepth: nil, aboveHasChildren: hasKids)
     }
 
+    /// The guide a depth-0 drop hangs from, drawn down from the top of the list.
+    ///
+    /// Every other depth already has one: a run of vertical line from the
+    /// parent down to the insertion point, which is what makes a drop read as
+    /// landing *under* something rather than merely at some indent. Depth 0 had
+    /// no such line, because its parent is the project and the project is not a
+    /// row — so the deepest, most common drop was the one with the least
+    /// confirmation, and an unanswered drag looks the same as one about to
+    /// fail.
+    ///
+    /// It starts at the list's top edge rather than at the project, since the
+    /// overlay is clipped to the list. The scope strip sits directly above that
+    /// edge and lights at the same moment, so the two abut and read as one run
+    /// from the project down to the line.
+    @ViewBuilder private var rootGuide: some View {
+        if litRoot, let target = dropTarget, let frame = rowFrames[target.id] {
+            let left = rowsLeft - listOrigin.x
+            let edge = target.mode == .before ? frame.minY : frame.maxY
+            let y = edge - listOrigin.y
+            // Same width and colour a lit guide gets, because it is one.
+            Rectangle()
+                .fill(DropPalette.nest.opacity(0.45))
+                .frame(width: 2.5, height: max(0, y))
+                .offset(x: left + OutlineRow.guideX0 - 1.25)
+        }
+    }
+
     /// The parent the drop would land under, filled and outlined.
     ///
     /// Drawn for a gap drop as well as a nest, so the parent and its guide
@@ -798,7 +826,10 @@ private struct ScopeProgress: View {
     /// rather than an unlabelled bar. Without it the highlight lights a
     /// measurement, and a measurement is not a parent.
     let title: String
-    /// A drop at depth 0 would land under this project.
+    /// A drop at depth 0 would land as a top-level task in this project. Not
+    /// nesting into the project the way one row nests into another — the
+    /// project is the list, not a task in it — but it is the same question a
+    /// drag is asking, so it gets the same answer.
     let lit: Bool
 
     private var complete: Bool { progress.pct == 100 }
