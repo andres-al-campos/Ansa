@@ -163,7 +163,31 @@ struct OutlineView: View {
             // enough — this is glimpsed for a fifth of a second, so it has to
             // be legible at once and cannot repay any more detail than that.
             }
-            .gesture(zoomOutSwipe)
+            // Attached to the whole screen but recognised *simultaneously*,
+            // not exclusively.
+            //
+            // Attaching it plainly is what broke the row drag on a real phone:
+            // an ancestor `DragGesture` recognises at 20pt of movement and
+            // takes the touch sequence, and `armed` — which runs inside the
+            // handler, after recognition — is far too late to give it back. The
+            // row got nothing, the swipe refused to happen, and the gesture
+            // died mid-screen.
+            //
+            // Simultaneous recognition is what lets both see the same touch, so
+            // the row drag is never starved. Which one *acts* is then settled
+            // by `armed`, and the two are not actually ambiguous: a back swipe
+            // moves immediately from the edge, while a row drag must sit still
+            // for 0.35s before it will accept any movement at all.
+            //
+            // An edge-strip overlay was the other candidate and is wrong here:
+            // a top-level bullet is centred at x=16 and spans the full 32pt, so
+            // any strip wide enough to catch a thumb sits directly on top of
+            // the thing being dragged.
+            //
+            // None of this reproduced on the simulator. A synthesised touch
+            // path arrives as one clean sequence and the recognisers never
+            // contend; a finger is what produces the race.
+            .simultaneousGesture(zoomOutSwipe)
             .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -1043,6 +1067,10 @@ struct OutlineView: View {
     /// Must start within a thumb's width of the edge, so it never races the
     /// `swipeActions` the rows carry, and must be going sideways rather than
     /// down, so a scroll beginning near the edge is left alone.
+    ///
+    /// This decides whether the swipe *acts*, not whether it is recognised —
+    /// see the attachment site. Everything here is deliberately cheap and
+    /// side-effect free, because it runs on every drag anywhere on screen.
     private func armed(_ g: DragGesture.Value) -> Bool {
         scope != nil
             && g.startLocation.x < 32
