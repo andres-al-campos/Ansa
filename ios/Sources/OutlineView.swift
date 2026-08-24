@@ -489,7 +489,8 @@ struct OutlineView: View {
                 }
             }
         }
-        .padding(.horizontal, OutlineRow.railInset)
+        .padding(.leading, OutlineRow.columnLeft)
+        .padding(.trailing, OutlineRow.railInset)
         .padding(.vertical, 10)
         .background(.bar)
         .animation(.easeOut(duration: 0.15), value: edit.captureParent)
@@ -1205,7 +1206,8 @@ private struct ScopeProgress: View {
             .frame(height: 4)
         }
         }
-        .padding(.horizontal, OutlineRow.railInset)
+        .padding(.leading, OutlineRow.columnLeft)
+        .padding(.trailing, OutlineRow.railInset)
         .padding(.vertical, 8)
         // Same fill and outline a lit parent row gets, so "this becomes the
         // parent" looks the same whether the parent is a row or the project.
@@ -1242,7 +1244,8 @@ private struct SyncBanner: View {
         }
         .font(.footnote)
         .foregroundStyle(.secondary)
-        .padding(.horizontal, OutlineRow.railInset)
+        .padding(.leading, OutlineRow.columnLeft)
+        .padding(.trailing, OutlineRow.railInset)
         .padding(.vertical, 8)
         .background(.quaternary)
     }
@@ -1349,6 +1352,17 @@ private struct OutlineRow: View {
     /// across, so it has to be part of this number or every line sits a rail's
     /// width left of the bullets it is supposed to run through.
     static let guideX0: CGFloat = railInset + 16
+
+    /// X of the bullet column's left edge — where the bars above and below the
+    /// outline start, so the column reads as sitting on one vertical line.
+    ///
+    /// The *ring*'s edge, not the dot's. A leaf row shows only the 6pt dot, but
+    /// a parent draws an 18pt ring around it, and a collapsed one fills that
+    /// ring solid. Aligning to the dot at 30 would leave that ring hanging 6pt
+    /// out into the margin — which is the one thing the line is there to stop.
+    /// So the bars sit at the widest mark the column can ever draw, and nothing
+    /// crosses to the left of them.
+    static let columnLeft: CGFloat = railInset + (32 - 18) / 2
 
     /// How far the whole row sits in from the screen's leading edge.
     ///
