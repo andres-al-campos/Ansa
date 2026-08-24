@@ -195,10 +195,15 @@ struct OutlineView: View {
             // — a tree branches, so "forward" is a choice of child rather than
             // a direction — and the bullet tap already covers it.
             // The view is a slab being lifted aside, so it needs a ground to
-            // be lifted *off* and an edge that casts onto it. Without both it
-            // reads as the content sliding into blank space rather than
-            // revealing what is behind it.
-            .background(Color(.systemGroupedBackground).ignoresSafeArea())
+            // be lifted *off* and an edge that casts onto it.
+            //
+            // The ground names where the swipe is going rather than being a
+            // bare colour. Sliding onto an empty dark panel was the problem it
+            // fixes: two near-identical dark surfaces with nothing on the lower
+            // one read as the app failing to draw, not as depth. A label is
+            // enough — this is glimpsed for a fifth of a second, so it has to
+            // be legible at once and cannot repay any more detail than that.
+            .background(backdrop)
             .shadow(color: .black.opacity(backPull > 0 ? 0.18 : 0), radius: 8, x: -3)
             .offset(x: backPull)
             .gesture(zoomOutSwipe)
@@ -987,6 +992,41 @@ struct OutlineView: View {
                     }
                 }
             }
+    }
+
+    /// What sits behind the view while a back swipe lifts it aside.
+    ///
+    /// Drawn only during the swipe: at rest it is covered anyway, and keeping
+    /// it out of the tree the rest of the time means it can never leak around
+    /// the edges of a view that is exactly where it belongs.
+    @ViewBuilder private var backdrop: some View {
+        ZStack {
+            Color(.secondarySystemBackground).ignoresSafeArea()
+            if backPull > 0 {
+                HStack(spacing: 8) {
+                    Image(systemName: "chevron.left")
+                    Text(parentTitle)
+                        .lineLimit(1)
+                    Spacer()
+                }
+                .font(.title3.weight(.medium))
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 28)
+                // Fades in over the first stretch of the pull, so the label
+                // arrives as the gap opens rather than being there already.
+                .opacity(min(1, Double(backPull) / Double(backThreshold)))
+                .frame(maxHeight: .infinity, alignment: .top)
+                .padding(.top, 120)
+            }
+        }
+    }
+
+    /// The name of the scope a back swipe would land in.
+    private var parentTitle: String {
+        guard let scope, let node = TreeOps.byId(tree, scope) else { return "Projects" }
+        guard let parentId = node.parentId,
+              let parent = TreeOps.byId(tree, parentId) else { return "Projects" }
+        return parent.text
     }
 
     /// How far the view must travel before letting go zooms out.
