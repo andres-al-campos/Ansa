@@ -236,7 +236,9 @@ struct OutlineView: View {
                 }
 
                 if scope == nil {
-                    ProjectGrid(tree: tree, onOpen: openProject, onDelete: confirmDeleteProject)
+                    ProjectGrid(
+                        tree: tree, loaded: store.loaded,
+                        onOpen: openProject, onDelete: confirmDeleteProject)
                 } else {
                     outline(for: scope, interactive: interactive)
                 }
@@ -1546,6 +1548,11 @@ private struct Bullet: View {
 /// wrapping.
 private struct ProjectGrid: View {
     let tree: Tree
+    /// Whether the server has answered yet. Without it an empty list is
+    /// ambiguous, and the app resolved the ambiguity the alarming way: a launch
+    /// that had not finished asking announced "No projects yet" over what was
+    /// about to become a full list.
+    let loaded: Bool
     let onOpen: (NodeId) -> Void
     let onDelete: (NodeId) -> Void
 
@@ -1553,10 +1560,17 @@ private struct ProjectGrid: View {
 
     var body: some View {
         if projects.isEmpty {
-            ContentUnavailableView(
-                "No projects yet",
-                systemImage: "tray",
-                description: Text("Start one below."))
+            if loaded {
+                ContentUnavailableView(
+                    "No projects yet",
+                    systemImage: "tray",
+                    description: Text("Start one below."))
+            } else {
+                // Only reachable on a genuine cold start — with a cached tree
+                // there are already projects to draw. Deliberately says nothing
+                // about what is or is not there.
+                ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
         } else {
             List {
                 ForEach(projects) { project in
