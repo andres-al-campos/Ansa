@@ -46,6 +46,13 @@ final class EditController {
     func begin(_ node: Node) {
         text = node.text
         editing = node.id
+        // Now, not on commit. Tapping a row is the user saying which row they
+        // mean, so the chip should answer straight away — waiting until the
+        // edit ended meant tapping B while A was open left the chip claiming A,
+        // and the thing that finally corrected it was tapping the capture
+        // field, which is the one moment the answer is already too late to be
+        // useful.
+        captureParent = node.id
     }
 
     /// Whether a commit from `from` should be honoured.
@@ -60,6 +67,11 @@ final class EditController {
 
     /// Take the rename down. The caller applies the op and decides whether the
     /// row survived — this only clears state.
+    /// - Parameter rememberAnchor: the row to keep as the capture anchor, or
+    ///   nil to clear it. `begin` already set it, so this exists for the case
+    ///   that invalidates it: committing an emptied row deletes it, and an
+    ///   anchor pointing at a node that just went away sends the next capture
+    ///   to the bottom while the chip still claims otherwise.
     func endEdit(rememberAnchor: NodeId?) {
         captureParent = rememberAnchor
         editing = nil
