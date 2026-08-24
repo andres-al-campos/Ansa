@@ -199,12 +199,6 @@ struct OutlineView: View {
                     onDragMoved: { p in dragMoved(p) },
                     onDragEnded: endDrag,
                     isDragging: dragging == row.node.id)
-                    .background(
-                        GeometryReader { geo in
-                            Color.clear.preference(
-                                key: RowFramesKey.self,
-                                value: [row.node.id: geo.frame(in: .global)])
-                        })
                     // One segment per guide, drawn inside the row.
                     //
                     // The segments abut into what reads as a single unbroken
@@ -229,6 +223,18 @@ struct OutlineView: View {
                     // at every boundary.
                     .padding(.vertical, OutlineRow.rowPadding / 2)
                     .listRowInsets(EdgeInsets())
+                    // Measured *after* the padding, so the frame is the whole
+                    // cell rather than just its content. Measuring before it
+                    // was the gap: every consumer here — the guide segments,
+                    // the drop indicator, the drag hit-test — asks the frame
+                    // where one row ends and the next begins, and a content
+                    // box answers with the padding still outside it.
+                    .background(
+                        GeometryReader { geo in
+                            Color.clear.preference(
+                                key: RowFramesKey.self,
+                                value: [row.node.id: geo.frame(in: .global)])
+                        })
                     .background(alignment: .topLeading) {
                         guideSegments(for: row.node.id)
                     }
@@ -765,6 +771,8 @@ private struct SyncBanner: View {
 
 /// One row: checkbox, bullet, text. Progress moved to a single bar for the
 /// whole scope, matching the web app, which never showed a count per row.
+
+
 private struct OutlineRow: View {
     let node: Node
     let depth: Int
