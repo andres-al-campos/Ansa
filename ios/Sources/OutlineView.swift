@@ -541,7 +541,12 @@ struct OutlineView: View {
     @ViewBuilder private func guideSegments(for id: NodeId) -> some View {
         if let i = rows.firstIndex(where: { $0.node.id == id }) {
             let all = TreeOps.guides(hitRows)
+            // A parent normally draws no segment of its own guide — the run
+            // starts at its first child. While lit it draws the bottom half of
+            // one, so the line leaves the highlighted row instead of starting a
+            // row below it with a gap in between.
             let here = all.filter { $0.first <= i && i <= $0.last }
+            let stub = all.first { $0.parent == litGuideParent && $0.first == i + 1 }
             // A segment fills its row's full height, top edge to bottom edge.
             // The row carries its own spacing and `List` adds none, so
             // consecutive rows touch and the segments abut into one unbroken
@@ -558,7 +563,7 @@ struct OutlineView: View {
                 ?? (OutlineRow.rowHeight + OutlineRow.rowPadding)
             ZStack(alignment: .topLeading) {
                 ForEach(here, id: \.parent) { guide in
-                    let lit = guide.parent == litGuideParent
+                    let lit = guide.parent == litGuideParent && i < litUntilRow
                     Rectangle()
                         .fill(lit
                             ? DropPalette.nest.opacity(0.45)
@@ -567,6 +572,14 @@ struct OutlineView: View {
                         .offset(x: OutlineRow.guideX0
                             + CGFloat(guide.depth) * OutlineRow.indent - 0.75)
                         .animation(.easeOut(duration: 0.12), value: lit)
+                }
+                if let stub, i < litUntilRow {
+                    Rectangle()
+                        .fill(DropPalette.nest.opacity(0.45))
+                        .frame(width: 2.5, height: h / 2)
+                        .offset(x: OutlineRow.guideX0
+                            + CGFloat(stub.depth) * OutlineRow.indent - 1.25,
+                            y: h / 2)
                 }
             }
             .frame(height: h, alignment: .topLeading)
@@ -645,6 +658,30 @@ struct OutlineView: View {
         let hasKids = TreeOps.childrenOf(tree, above.id).contains { $0.id != dragging }
         return TreeOps.deepestAtGap(
             aboveDepth: above.depth, belowDepth: nil, aboveHasChildren: hasKids)
+    }
+
+    /// The first row index the lit guide does *not* reach.
+    ///
+    /// A guide's run spans the whole subtree, but only the part from the parent
+    /// down to the insertion point is the path the dropped row would take. The
+    /// rest is subtree that happens to sit on the same line and has nothing to
+    /// do with this drop — lighting it says the row might land anywhere in
+    /// there.
+    ///
+    /// Cutting it at the drop point makes the lit length itself the answer: the
+    /// line reaches from the parent to exactly where the row is going, which is
+    /// the same shape a depth-0 drop gets from `rootGuide`.
+    ///
+    /// `.into` is not cut. Nesting into a row lights that row rather than a
+    /// guide — the row has no run yet to truncate — and `parentHighlight`
+    /// carries the case on its own.
+    private var litUntilRow: Int {
+        guard let target = dropTarget,
+              target.mode == .before || target.mode == .after,
+              let i = rows.firstIndex(where: { $0.node.id == target.id })
+        else { return .max }
+        // `.before` lands above its anchor row, `.after` below it.
+        return target.mode == .before ? i : i + 1
     }
 
     /// The guide a depth-0 drop hangs from, drawn down from the top of the list.
