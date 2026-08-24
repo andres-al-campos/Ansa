@@ -36,6 +36,18 @@ struct OutlineView: View {
     /// in the row so the tree can change underneath without resetting the field
     /// the user is typing into.
     @State private var editing: NodeId?
+
+    /// The row the capture field files under, set when an edit ends.
+    ///
+    /// Not read from `editing`: tapping the capture field moves focus, which
+    /// commits the edit and clears `editing` before a single character is
+    /// typed. By the time it matters the live state is already gone, so the
+    /// row is remembered as the edit closes.
+    ///
+    /// Cleared whenever the context it was captured in stops being true — see
+    /// `captureParent`. A field that silently files somewhere other than where
+    /// it says is worse than one that only ever files at the root.
+    @State private var captureParent: NodeId?
     @State private var editText = ""
     /// Which row's field holds focus, by node id rather than a bare Bool.
     ///
@@ -293,19 +305,50 @@ struct OutlineView: View {
     }
 
     private var captureField: some View {
-        HStack {
-            TextField(scope == nil ? "New project" : "Add a task", text: $draft)
-                .textFieldStyle(.plain)
-                .submitLabel(.done)
-                .focused($capturing)
-                .onSubmit(commitDraft)
-            if !draft.isEmpty {
-                Button("Add", action: commitDraft)
+        VStack(alignment: .leading, spacing: 6) {
+            // Says where the next task will land whenever that is not the
+            // obvious place. Without it the field files under the last row
+            // edited while looking exactly as it does at the root, and a
+            // capture box you cannot predict is one you stop trusting.
+            //
+            // The X is the way out, and it is the reason this can file under a
+            // row at all: the guess only has to be right often enough to be
+            // worth one tap to undo.
+            if let parent = captureParent, let node = TreeOps.byId(tree, parent) {
+                HStack(spacing: 6) {
+                    Image(systemName: "arrow.turn.down.right")
+                    Text(node.text).lineLimit(1)
+                    Button {
+                        captureParent = nil
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                    }
+                    .buttonStyle(.plain)
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
+
+            HStack {
+                TextField(capturePrompt, text: $draft)
+                    .textFieldStyle(.plain)
+                    .submitLabel(.done)
+                    .focused($capturing)
+                    .onSubmit(commitDraft)
+                if !draft.isEmpty {
+                    Button("Add", action: commitDraft)
+                }
             }
         }
         .padding(.horizontal)
         .padding(.vertical, 10)
         .background(.bar)
+        .animation(.easeOut(duration: 0.15), value: captureParent)
+    }
+
+    private var capturePrompt: String {
+        if captureParent != nil { return "Add a subtask" }
+        return scope == nil ? "New project" : "Add a task"
     }
 
     private var title: String {
@@ -338,8 +381,12 @@ struct OutlineView: View {
         // The id and the timestamp are minted here and carried by the op, so the
         // server applies it to exactly the node this device created.
         apply(.addChild(
-            id: TreeOps.newId(), parentId: scope, text: text,
+            id: TreeOps.newId(), parentId: captureParent ?? scope, text: text,
             at: Date().timeIntervalSince1970 * 1000))
+        // One task per edit. Staying armed would turn a single rename into a
+        // mode that quietly swallows everything typed afterwards, and the
+        // second task is as likely to belong at the root as under the first.
+        captureParent = nil
         draft = ""
     }
 
@@ -355,6 +402,8 @@ struct OutlineView: View {
     /// the instant this device opened it rather than whenever the write landed.
     /// Matches `openProject` in `src/Outliner.tsx`.
     private func openProject(_ id: NodeId) {
+        // A target from a different project is never the right guess.
+        captureParent = nil
         scope = id
         let root = TreeOps.lineageOf(tree, id).first?.id ?? id
         apply(.markOpened(id: root, at: Date().timeIntervalSince1970 * 1000))
@@ -838,6 +887,10 @@ struct OutlineView: View {
         let op = TreeOps.commitEdit(tree, id, editText)
         if let op { apply(op) }
 
+        // Remember it only if it still exists: an emptied row is deleted by
+        // `commitEdit`, and filing a new task under a node that just went away
+        // would strand it.
+        captureParent = TreeOps.byId(tree, id) == nil ? nil : id
         editing = nil
         editText = ""
         focusedRow = nil
@@ -848,6 +901,8 @@ struct OutlineView: View {
     }
 
     private func zoomOut() {
+        // Zooming out changes what the field means, so the guess goes with it.
+        captureParent = nil
         scope = scope.flatMap { TreeOps.byId(tree, $0)?.parentId }
     }
 }
