@@ -294,7 +294,14 @@ struct OutlineView: View {
                     // from, and its coordinates would be measured against a
                     // list that is not the one being dragged over.
                     onDragBegan: { if interactive { beginDrag(row.node.id) } },
-                    onDragMoved: { p in if interactive { dragMoved(p) } },
+                    // Frozen while the screen is being swiped aside. The row
+                    // is still held, but its target stops following: the
+                    // coordinates it would be tested against belong to a list
+                    // that is sliding out of place, so the answer would be
+                    // about where the row *was*.
+                    onDragMoved: { p in
+                        if interactive, backPull == 0 { dragMoved(p) }
+                    },
                     onDragEnded: { if interactive { endDrag() } },
                     isDragging: interactive && drag.dragging == row.node.id)
                     // One segment per guide, drawn inside the row.
@@ -1073,8 +1080,32 @@ struct OutlineView: View {
     /// side-effect free, because it runs on every drag anywhere on screen.
     private func armed(_ g: DragGesture.Value) -> Bool {
         scope != nil
+            // Not while a row is in the air. The two gestures are recognised
+            // simultaneously, so without this a swipe can begin under a drag
+            // that is already running and the row would follow a finger that
+            // is busy moving the whole screen out from under it.
+            && !drag.isActive
             && g.startLocation.x < 32
-            && abs(g.translation.height) < abs(g.translation.width)
+            && goingSideways(g)
+    }
+
+    /// Whether the finger is travelling sideways rather than down.
+    ///
+    /// Not `abs(height) < abs(width)`. That was the test, and it is far
+    /// stricter than it looks: it is evaluated on the *first* callback, 20pt
+    /// into the gesture, and a thumb coming off the bezel arcs — the opening
+    /// movement of a perfectly good swipe often carries more vertical than
+    /// horizontal. One early sample then disqualified the whole thing, which is
+    /// why the swipe had to be aimed to work at all.
+    ///
+    /// Two changes. The comparison is against a fraction of the width, so a
+    /// swipe is allowed to drift while still reading as sideways; and once the
+    /// pull is running it stays running, since a gesture that has visibly begun
+    /// should not be revoked by a wobble halfway through.
+    private func goingSideways(_ g: DragGesture.Value) -> Bool {
+        if backPull > 0 { return true }
+        return g.translation.width > 0
+            && abs(g.translation.height) < abs(g.translation.width) * 1.5
     }
 
     private func zoomOut() {

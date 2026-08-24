@@ -79,6 +79,19 @@ extension TreeOps {
         }
     }
 
+    /// Where a row's top band ends and its middle begins, as a fraction of the
+    /// row's height. The bottom band mirrors it.
+    ///
+    /// Three bands: insert above, nest into, insert below. This is the only
+    /// number that sets how wide each one is.
+    ///
+    /// At an even third each the gaps were about 15pt on a phone, which is
+    /// inside the wobble of a thumb that is already moving — the target flipped
+    /// between nesting and inserting without the finger meaning to. The gaps
+    /// are the harder ones to hit deliberately, since nesting has the whole
+    /// middle of the row to aim at, so they get the extra room.
+    static let nestBand = 0.35
+
     /// Resolve a touch point to a drop target: which row, and which of its three
     /// bands — top quarter is the gap above, middle half nests into, bottom
     /// quarter is the gap below.
@@ -115,7 +128,9 @@ extension TreeOps {
             if isAncestor(tree, dragging, id) { return nil }
 
             let rel = box.height > 0 ? (y - box.top) / box.height : 0
-            if rel >= 0.25 && rel <= 0.75 { return DropTarget(id: id, mode: .into) }
+            if rel >= nestBand && rel <= 1 - nestBand {
+                return DropTarget(id: id, mode: .into)
+            }
 
             // An insertion gap. Name the rows bounding it: `above` sits just
             // over the gap, `below` just under. The lifted row still holds a
@@ -138,8 +153,8 @@ extension TreeOps {
                 }
                 return nil
             }
-            let above = rel < 0.25 ? prev(i - 1) : prev(i)
-            let below = rel < 0.25 ? next(i) : next(i + 1)
+            let above = rel < nestBand ? prev(i - 1) : prev(i)
+            let below = rel < nestBand ? next(i) : next(i + 1)
             // Whether the row above can already take children decides how deep
             // this gap goes — see `deepestAtGap`. The lifted row does not
             // count: it is about to leave, so a parent whose only child is the

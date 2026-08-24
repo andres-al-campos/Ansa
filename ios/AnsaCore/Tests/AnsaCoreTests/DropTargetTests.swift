@@ -45,20 +45,35 @@ private func at(_ x: Double, _ y: Double, _ dragging: NodeId = "c") -> TreeOps.D
 @Suite("The drag hit-test")
 struct DropTargetTests {
 
-    @Test("the middle half of a row nests into it")
+    @Test("the middle of a row nests into it")
     func middleNests() {
-        // 0.25–0.75 of the row's height is the `into` band. Row `a` spans
-        // 0–32, so its middle is 8–24.
+        // Row `a` spans 0–32, so its centre is 16.
         #expect(at(100, 16)?.mode == .into)
         #expect(at(100, 16)?.id == "a")
     }
 
-    @Test("the top and bottom quarters are insertion gaps, not nests")
-    func quartersAreGaps() {
+    @Test("the top and bottom of a row are insertion gaps, not nests")
+    func edgesAreGaps() {
         // Above the middle band of `b` (32–64): the gap between `a` and `b`.
         #expect(at(100, 34)?.mode == .after)
         // Below it: the gap between `b` and `c`.
         #expect(at(100, 62)?.mode == .after)
+    }
+
+    @Test("the gap bands are wide enough to hit with a thumb")
+    func gapBandsAreReachable() {
+        // Pins `nestBand`, which the other tests probe well inside of and so
+        // would not notice moving. The number is a feel decision, but the
+        // reason for it is not: a band this is allowed to shrink back to about
+        // a sixth of a row is one a moving thumb cannot hold, and the target
+        // flickers between nesting and inserting.
+        //
+        // Row `b` spans 32–64. At 0.35 its top gap runs 32–43.2, so a third of
+        // the way down the row is still a gap rather than a nest.
+        #expect(at(100, 42)?.mode == .after)
+        #expect(at(100, 54)?.mode == .after)
+        // ...and the middle is still comfortably a nest.
+        #expect(at(100, 48)?.mode == .into)
     }
 
     @Test("the dragged row's own slot offers to put it back")
