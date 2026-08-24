@@ -59,15 +59,25 @@ extension TreeOps {
         return out
     }
 
-    /// The depths of every guide passing through row `i`.
+    /// Every guide passing through row `i`.
     ///
     /// Per row, because the lines are drawn as one segment inside each row
     /// rather than as a single tall overlay. Segments abut into what reads as a
     /// continuous line, and `List` slides one with its row when the row is
     /// swiped aside — which is the whole reason to draw them this way. An
     /// overlay had to punch a hole in itself to fake that.
-    public static func guideDepths(_ guides: [Guide], at i: Int) -> [Int] {
+    ///
+    /// Returns the guides rather than their depths because the view needs more
+    /// than the depth — it asks which guide belongs to the lit parent, to draw
+    /// the half-segment leaving a highlighted row. `guideDepths` had the right
+    /// predicate and the wrong return type, so the view carried its own copy of
+    /// the filter and the tested one went unused.
+    public static func guidesThrough(_ guides: [Guide], at i: Int) -> [Guide] {
         guides.filter { $0.first <= i && i <= $0.last }
-            .map(\.depth)
+    }
+
+    /// The depths of every guide passing through row `i`.
+    public static func guideDepths(_ guides: [Guide], at i: Int) -> [Int] {
+        guidesThrough(guides, at: i).map(\.depth)
     }
 }

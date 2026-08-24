@@ -384,12 +384,16 @@ struct OutlineView: View {
         // platform does not hand you — decided once when the pull begins, and
         // held for the rest of it.
         .scrollDisabled(interactive && backPull > 0)
+        // Both keep rows abutting exactly, which the nesting guides depend on:
+        // each guide is a segment drawn inside its own row, and they read as
+        // one unbroken line only because consecutive rows touch. `List` would
+        // otherwise impose a minimum height and inter-row spacing of its own.
+        .environment(\.defaultMinListRowHeight, 0)
+        .listRowSpacing(0)
         // Rows have to actually touch, or the guide segments cannot join.
         // `listRowInsets` on the row only clears the padding *inside* a cell;
         // `List` still spaces the cells apart, and that spacing is what was
         // left showing as a gap at every boundary.
-        .environment(\.defaultMinListRowHeight, 0)
-        .listRowSpacing(0)
         .onPreferenceChange(RowFramesKey.self) { if interactive { drag.frames = $0 } }
         // The indicator is drawn in the list's space while every frame is
         // measured globally, so the overlay records its own origin to convert
@@ -696,7 +700,7 @@ struct OutlineView: View {
             // starts at its first child. While lit it draws the bottom half of
             // one, so the line leaves the highlighted row instead of starting a
             // row below it with a gap in between.
-            let here = all.filter { $0.first <= i && i <= $0.last }
+            let here = TreeOps.guidesThrough(all, at: i)
             let stub = all.first { $0.parent == litGuideParent && $0.first == i + 1 }
             // A segment fills its row's full height, top edge to bottom edge.
             // The row carries its own spacing and `List` adds none, so

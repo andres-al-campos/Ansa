@@ -83,6 +83,27 @@ struct GuideDepthsTests {
         return { TreeOps.guideDepths(g, at: $0) }
     }
 
+    /// The view draws from `guidesThrough`, not `guideDepths` — it needs each
+    /// guide's parent to draw the stub leaving a lit row. The two must select
+    /// the same guides, or the tested one describes something the screen does
+    /// not do; that drift is what left the view carrying its own copy of the
+    /// filter until now.
+    @Test("guidesThrough selects what guideDepths measures")
+    func throughMatchesDepths() {
+        let g = TreeOps.guides(rows([0, 1, 2, 2, 1]))
+        for i in 0..<5 {
+            #expect(TreeOps.guidesThrough(g, at: i).map(\.depth)
+                == TreeOps.guideDepths(g, at: i))
+        }
+    }
+
+    @Test("a guide through a row knows the parent it belongs to")
+    func throughCarriesParent() {
+        // n0(0) n1(1) n2(2) n3(2) n4(1): row 1 sits inside n0's guide.
+        let g = TreeOps.guides(rows([0, 1, 2, 2, 1]))
+        #expect(TreeOps.guidesThrough(g, at: 1).map(\.parent) == ["n0"])
+    }
+
     @Test("a flat list draws nothing")
     func flat() {
         let d = at([0, 0, 0])
