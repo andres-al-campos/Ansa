@@ -49,6 +49,15 @@ struct OutlineView: View {
     /// `captureParent`. A field that silently files somewhere other than where
     /// it says is worse than one that only ever files at the root.
     @State private var captureParent: NodeId?
+
+    /// How far the edge swipe has pulled the view, in points.
+    ///
+    /// The gesture had no on-screen answer while it was deciding: the view sat
+    /// still and then the scope changed, so a swipe that fell short looked the
+    /// same as one that was never recognised. Tracking the finger makes the
+    /// distance itself the feedback — the view comes back if you let go early,
+    /// which is how the gesture teaches its own threshold.
+    @State private var backPull: CGFloat = 0
     @State private var editText = ""
     /// Which row's field holds focus, by node id rather than a bare Bool.
     ///
@@ -185,6 +194,13 @@ struct OutlineView: View {
             // No swipe-left counterpart. Going *in* has no unambiguous target
             // — a tree branches, so "forward" is a choice of child rather than
             // a direction — and the bullet tap already covers it.
+            // The view is a slab being lifted aside, so it needs a ground to
+            // be lifted *off* and an edge that casts onto it. Without both it
+            // reads as the content sliding into blank space rather than
+            // revealing what is behind it.
+            .background(Color(.systemGroupedBackground).ignoresSafeArea())
+            .shadow(color: .black.opacity(backPull > 0 ? 0.18 : 0), radius: 8, x: -3)
+            .offset(x: backPull)
             .gesture(zoomOutSwipe)
             .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
@@ -937,13 +953,57 @@ struct OutlineView: View {
     /// not read as a back swipe.
     private var zoomOutSwipe: some Gesture {
         DragGesture(minimumDistance: 20, coordinateSpace: .local)
-            .onEnded { g in
-                guard scope != nil else { return }
-                guard g.startLocation.x < 32 else { return }
-                guard g.translation.width > 60 else { return }
-                guard abs(g.translation.height) < g.translation.width else { return }
-                zoomOut()
+            .onChanged { g in
+                guard armed(g) else { return }
+                // Rubber-banded rather than one-to-one past the threshold: the
+                // pull keeps responding so the gesture never feels dead, while
+                // the slowing says the useful part of it is already done.
+                let d = g.translation.width
+                backPull = d <= backThreshold
+                    ? d
+                    : backThreshold + (d - backThreshold) * 0.35
             }
+            .onEnded { g in
+                guard armed(g), g.translation.width > backThreshold else {
+                    // Short of the threshold: back where it came from, which is
+                    // what tells you the gesture was seen and declined.
+                    withAnimation(.easeOut(duration: 0.22)) { backPull = 0 }
+                    return
+                }
+                // Carry it the rest of the way out before swapping, so the view
+                // leaves rather than snapping back while the new scope appears
+                // underneath — that reads as the gesture failing at the moment
+                // it actually succeeded.
+                //
+                // The reset is unanimated and rides with the scope change, so
+                // the incoming view is already in place the frame it appears.
+                withAnimation(.easeOut(duration: 0.18)) { backPull = slideOut }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.18) {
+                    var t = Transaction()
+                    t.disablesAnimations = true
+                    withTransaction(t) {
+                        zoomOut()
+                        backPull = 0
+                    }
+                }
+            }
+    }
+
+    /// How far the view must travel before letting go zooms out.
+    private let backThreshold: CGFloat = 60
+
+    /// Far enough right to be clear of the screen on any phone.
+    private let slideOut: CGFloat = 700
+
+    /// Whether this drag is a back swipe rather than a scroll or a row action.
+    ///
+    /// Must start within a thumb's width of the edge, so it never races the
+    /// `swipeActions` the rows carry, and must be going sideways rather than
+    /// down, so a scroll beginning near the edge is left alone.
+    private func armed(_ g: DragGesture.Value) -> Bool {
+        scope != nil
+            && g.startLocation.x < 32
+            && abs(g.translation.height) < abs(g.translation.width)
     }
 
     private func zoomOut() {
