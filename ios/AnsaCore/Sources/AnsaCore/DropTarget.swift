@@ -6,13 +6,12 @@
 /// mutated. The depth arithmetic is the part of dragging that is easy to get
 /// subtly wrong and hard to see going wrong, so it wants tests of its own.
 ///
-/// The one deliberate divergence from the web is the input. There, `RowHit`
-/// carries measured DOM rects, because rows wrap to different heights and only
-/// the browser knows how tall each one ended up. Here the caller passes the
-/// uniform row height and the list's origin, and the boxes are derived. A
-/// SwiftUI List row can still grow when its text wraps, so a caller that starts
-/// drawing variable-height rows has to measure and pass real boxes instead —
-/// `RowBox` is already the shape for that.
+/// Boxes are passed in, measured, exactly as `RowHit` carries measured rects on
+/// the web — a row whose text wraps is taller than one that does not, and the
+/// band arithmetic splits each row into three, so a wrong height puts the
+/// `into` band somewhere other than the middle of the row. `rowBoxes` derives
+/// them from a uniform height for callers that have one, but the view measures
+/// instead and builds `RowBox` values directly.
 
 import Foundation
 
