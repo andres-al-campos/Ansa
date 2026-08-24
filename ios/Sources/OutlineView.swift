@@ -1342,7 +1342,13 @@ private struct OutlineRow: View {
     /// width of two columns it used to be. That is the whole reason the bullet
     /// and the checkbox swapped: a guide through bullet centres is only a
     /// straight line if nothing else shares that column.
-    static let guideX0: CGFloat = 16
+    ///
+    /// Measured from the list's leading edge, not the row's content box, so it
+    /// carries `railInset`. The guides are drawn in the list's coordinate space
+    /// while the inset is padding *inside* each row — nothing propagates it
+    /// across, so it has to be part of this number or every line sits a rail's
+    /// width left of the bullets it is supposed to run through.
+    static let guideX0: CGFloat = railInset + 16
 
     /// How far the whole row sits in from the screen's leading edge.
     ///
