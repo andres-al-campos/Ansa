@@ -38,3 +38,10 @@ xcuserdata/
 ios/Ansa.xcodeproj/
 ios/Config.xcconfig
 ios/build/
+.scratch/
+
+# Mockups and design explorations. The end result is the code; the process
+# behind it is not something a clone needs. The files stay on disk in designs/
+# — this only keeps new ones out of git. The handful committed before this rule
+# are left alone rather than rewriting history for them.
+designs/
