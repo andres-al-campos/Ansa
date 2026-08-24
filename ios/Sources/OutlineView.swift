@@ -122,14 +122,24 @@ struct OutlineView: View {
             // parent that is not undoable — the ops are one-way. The web arms
             // the trash and confirms in place; a dialog is the same idea in the
             // platform's own idiom, and it can say how much is going.
-            .confirmationDialog(
+            // An alert rather than a confirmation dialog: on a phone the latter
+            // slides up from the bottom edge as an action sheet, which reads as
+            // a menu of things you might do next rather than a question that
+            // has to be answered. Deleting a project takes every task under it,
+            // so it wants the centred, modal version.
+            //
+            // The cancel is explicit. A confirmation dialog gets an implicit
+            // one by tapping outside it — fine for a menu, wrong here, since
+            // the way out of a destructive question should be a labelled button
+            // and not a guess about where it is safe to tap.
+            .alert(
                 pendingDelete.map { "Delete \($0.text.isEmpty ? "Untitled" : $0.text)?" } ?? "",
                 isPresented: Binding(
                     get: { pendingDelete != nil },
                     set: { if !$0 { pendingDelete = nil } }),
-                titleVisibility: .visible,
                 presenting: pendingDelete
             ) { project in
+                Button("Cancel", role: .cancel) { pendingDelete = nil }
                 Button("Delete Project", role: .destructive) {
                     apply(.removeNode(id: project.id))
                     pendingDelete = nil
