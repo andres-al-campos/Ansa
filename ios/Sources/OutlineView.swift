@@ -250,6 +250,12 @@ struct OutlineView: View {
             .onDelete(perform: delete)
         }
         .listStyle(.plain)
+        // Rows have to actually touch, or the guide segments cannot join.
+        // `listRowInsets` on the row only clears the padding *inside* a cell;
+        // `List` still spaces the cells apart, and that spacing is what was
+        // left showing as a gap at every boundary.
+        .environment(\.defaultMinListRowHeight, 0)
+        .listRowSpacing(0)
         .onPreferenceChange(RowFramesKey.self) { rowFrames = $0 }
         // The indicator is drawn in the list's space while every frame is
         // measured globally, so the overlay records its own origin to convert
