@@ -69,6 +69,13 @@ struct OutlineView: View {
 
     var body: some View {
         NavigationStack {
+            // The backdrop is a sibling *under* the sliding stack, not its
+            // background. As a background it was attached to the slab, so the
+            // same `.offset` that slid the view slid the thing it was meant to
+            // be revealing — the shade travelled along on top instead of
+            // staying put behind.
+            ZStack {
+            backdrop
             VStack(spacing: 0) {
                 // Scrolls away with the list rather than pinning: it says where
                 // you are and how far in, which is read on arrival rather than
@@ -188,9 +195,13 @@ struct OutlineView: View {
             // one read as the app failing to draw, not as depth. A label is
             // enough — this is glimpsed for a fifth of a second, so it has to
             // be legible at once and cannot repay any more detail than that.
-            .background(backdrop)
+            // Opaque, so the rows behind cannot show through the slab as it
+            // moves. A `VStack` paints only what its children paint, and the
+            // list's own background does not cover the whole stack.
+            .background(Color(.systemBackground))
             .shadow(color: .black.opacity(backPull > 0 ? 0.18 : 0), radius: 8, x: -3)
             .offset(x: backPull)
+            }
             .gesture(zoomOutSwipe)
             .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
@@ -923,25 +934,30 @@ struct OutlineView: View {
     /// it out of the tree the rest of the time means it can never leak around
     /// the edges of a view that is exactly where it belongs.
     @ViewBuilder private var backdrop: some View {
-        // How far through the useful part of the pull we are, 0...1. Every
-        // other number here is a function of it, so the whole backdrop
-        // brightens as one thing rather than as three that happen to agree.
-        let t = min(1, Double(backPull) / Double(backThreshold))
-        ZStack {
-            Color(.secondarySystemBackground).ignoresSafeArea()
-            // A shade over the ground that lifts as the view slides away, so
-            // the gap opens like a curtain rather than appearing as a hole.
-            //
-            // Darkest at the left edge, where the gap has been open longest and
-            // there is most of it to fill. That gradient is what a revealed
-            // screen would have given for free — the eye reads the lightening
-            // as something arriving, which is the whole job of the reveal, and
-            // it does not need a second live view to do it.
-            LinearGradient(
-                colors: [.black.opacity(0.55 * (1 - t)), .black.opacity(0.15 * (1 - t))],
-                startPoint: .leading, endPoint: .trailing)
-                .ignoresSafeArea()
-            if backPull > 0 {
+        // The whole backdrop is gated on the pull, not just parts of it. The
+        // shade is drawn at `1 - t`, so at rest it is at *full* strength — a
+        // gradient left in the tree unguarded does not sit dormant waiting for
+        // a swipe, it sits there black.
+        if backPull > 0 {
+            // How far through the useful part of the pull we are, 0...1. Every
+            // other number here is a function of it, so the whole backdrop
+            // brightens as one thing rather than as three that happen to agree.
+            let t = min(1, Double(backPull) / Double(backThreshold))
+            ZStack {
+                Color(.secondarySystemBackground)
+                // A shade over the ground that lifts as the view slides away,
+                // so the gap opens like a curtain rather than appearing as a
+                // hole.
+                //
+                // Darkest at the left edge, where the gap has been open longest
+                // and there is most of it to fill. That gradient is what a
+                // revealed screen would have given for free — the eye reads the
+                // lightening as something arriving, which is the whole job of
+                // the reveal, and it does not need a second live view to do it.
+                LinearGradient(
+                    colors: [.black.opacity(0.55 * (1 - t)), .black.opacity(0.15 * (1 - t))],
+                    startPoint: .leading, endPoint: .trailing)
+
                 HStack(spacing: 8) {
                     Image(systemName: "chevron.left")
                     Text(parentTitle)
@@ -957,6 +973,10 @@ struct OutlineView: View {
                 .frame(maxHeight: .infinity, alignment: .top)
                 .padding(.top, 120)
             }
+            // No `ignoresSafeArea` on the layers themselves: extending them
+            // past the view's own bounds is what made this visible around the
+            // edges of a slab sitting exactly where it belongs.
+            .ignoresSafeArea()
         }
     }
 
