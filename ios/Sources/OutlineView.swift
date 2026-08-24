@@ -1464,8 +1464,27 @@ private struct OutlineRow: View {
         // and a row lifted out of it would take its own gap with it.
         .opacity(isDragging ? 0.35 : 1)
         .animation(.easeOut(duration: 0.12), value: isDragging)
+        // Outlined, not just washed. A 6% fill of `Color.primary` was the whole
+        // mark before, and in dark mode that is near-white at 6% over near-black
+        // — a couple of levels off the background, which is nothing. A stroke
+        // reads at far lower contrast than a wash does, so the same faint grey
+        // that vanishes as a fill still draws a legible edge. The fill stays,
+        // raised a little, because an outline alone around 35%-faded content
+        // reads as an empty box rather than a row that is elsewhere.
+        //
+        // `.secondary` rather than a fixed grey: it is the one colour that is
+        // already a muted version of the foreground in both themes, so the
+        // outline sits at the same remove from the text on black and on white.
         .listRowBackground(
-            isDragging ? Color.primary.opacity(0.06) : Color.clear)
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .fill(isDragging ? Color.primary.opacity(0.09) : .clear)
+                .strokeBorder(
+                    isDragging ? Color.secondary.opacity(0.55) : .clear,
+                    lineWidth: 1)
+                // Inset so the border is inside the row rather than butting
+                // against the one above it, and clear of the guides at x=16.
+                .padding(.horizontal, 6)
+                .padding(.vertical, 1))
         // No `.contentShape(Rectangle())` here. It makes the whole row a single
         // hit-test target, which swallows taps before they reach the checkbox
         // and the bullet — separate targets are the point of the row. Add it
