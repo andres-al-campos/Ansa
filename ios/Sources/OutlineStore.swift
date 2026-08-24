@@ -13,7 +13,13 @@ import Observation
 @MainActor
 @Observable
 final class OutlineStore {
-    private(set) var tree: Tree = []
+    private(set) var tree: Tree = [] {
+        didSet { cache.save(tree) }
+    }
+    /// Whether the first server tree has landed. The grid tells "still asking"
+    /// apart from "you have no projects" with this — before, both were an empty
+    /// list and a new user saw the same screen as a slow connection.
+    private(set) var loaded = false
     /// False once the live connection has failed repeatedly — the app has
     /// stopped *receiving*. Writes are unaffected, so the UI should say changes
     /// are still saved.
@@ -22,9 +28,15 @@ final class OutlineStore {
 
     @ObservationIgnored private var sync: SyncClient?
     @ObservationIgnored private let api: AnsaAPI
+    @ObservationIgnored private let cache: TreeCache
 
     init(token: @escaping TokenSource = ClerkToken.current) {
         api = AnsaAPI(base: Config.apiBase, token: token, user: Config.devUser)
+        cache = TreeCache(url: Self.cacheURL)
+        // Straight into the stored property, so the read happens before the
+        // first paint rather than a frame into it. Assigning `tree` here would
+        // also bounce it back to disk through `didSet` for no reason.
+        if let cached = cache.load() { _tree = cached }
     }
 
     func start() {
@@ -47,6 +59,10 @@ final class OutlineStore {
             // fetch, opening the app to an unchanged tree would show nothing
             // until someone edited it.
             if let served = await api.loadTree() { adoptInitial(served) }
+            // Set either way: a fetch that failed has still finished asking, and
+            // leaving this false would hold a spinner up forever on a device
+            // that is simply offline. The cached tree is what it shows then.
+            loaded = true
             await api.seedIfEmpty()
         }
     }
@@ -98,5 +114,13 @@ final class OutlineStore {
     private static var queueURL: URL {
         let dir = URL.applicationSupportDirectory.appending(path: "Ansa")
         return dir.appending(path: "queue.v1.json")
+    }
+
+    /// Beside the queue, and for the same reason — but unlike the queue this
+    /// holds nothing the server does not already have, so losing it costs a
+    /// blank first paint and nothing else.
+    private static var cacheURL: URL {
+        let dir = URL.applicationSupportDirectory.appending(path: "Ansa")
+        return dir.appending(path: "tree.v1.json")
     }
 }
