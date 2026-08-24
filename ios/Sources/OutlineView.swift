@@ -371,6 +371,19 @@ struct OutlineView: View {
             .onDelete { if interactive { delete(at: $0) } }
         }
         .listStyle(.plain)
+        // Frozen while the screen is being swiped aside.
+        //
+        // The swipe is recognised simultaneously with everything else, which
+        // means it never takes the touch away from the list — so a swipe
+        // carrying any vertical drift scrolled the rows while it slid them. The
+        // screen was moving in two directions at once from one finger.
+        //
+        // The list's own recogniser is not something the swipe can outrank, so
+        // the lock has to be this: once the pull has started, the list stops
+        // accepting the gesture at all. This is the directional lock the
+        // platform does not hand you — decided once when the pull begins, and
+        // held for the rest of it.
+        .scrollDisabled(interactive && backPull > 0)
         // Rows have to actually touch, or the guide segments cannot join.
         // `listRowInsets` on the row only clears the padding *inside* a cell;
         // `List` still spaces the cells apart, and that spacing is what was
@@ -1055,8 +1068,23 @@ struct OutlineView: View {
             let t = min(1, Double(backPull) / Double(backThreshold))
             // Darkest at the left edge, where the gap has been open longest.
             // The eye reads the lightening as the screen arriving.
+            //
+            // Deeper than it looks like it needs to be, because of dark mode.
+            // Black over a near-black ground has very little room to work: the
+            // shade that reads clearly on white is close to invisible there,
+            // and the revealed screen came up looking un-shaded. The strength
+            // here is set by what dark mode needs; light mode has plenty of
+            // contrast to spare either way.
+            //
+            // `1 - t` squared rather than linear, so the shade holds its depth
+            // through the early part of the pull and then lifts quickly. Linear
+            // spent most of its range already half-faded — the point of the
+            // shade is to be *there* when the gap first opens.
             LinearGradient(
-                colors: [.black.opacity(0.45 * (1 - t)), .black.opacity(0.12 * (1 - t))],
+                colors: [
+                    .black.opacity(0.72 * pow(1 - t, 1.6)),
+                    .black.opacity(0.28 * pow(1 - t, 1.6)),
+                ],
                 startPoint: .leading, endPoint: .trailing)
                 .ignoresSafeArea()
                 .allowsHitTesting(false)
