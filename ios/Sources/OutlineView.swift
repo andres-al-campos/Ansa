@@ -1080,11 +1080,14 @@ struct OutlineView: View {
             // through the early part of the pull and then lifts quickly. Linear
             // spent most of its range already half-faded — the point of the
             // shade is to be *there* when the gap first opens.
+            // Held rather than faded: `1 - t` cubed keeps the shade near full
+            // strength through the first half of the pull and drops it late.
+            // The earlier curves spent their range too early, so by the time
+            // the gap was wide enough to look into, the thing meant to be
+            // shading it had already mostly gone.
+            let k = pow(1 - t, 3)
             LinearGradient(
-                colors: [
-                    .black.opacity(0.72 * pow(1 - t, 1.6)),
-                    .black.opacity(0.28 * pow(1 - t, 1.6)),
-                ],
+                colors: [.black.opacity(0.78 * k), .black.opacity(0.34 * k)],
                 startPoint: .leading, endPoint: .trailing)
                 .ignoresSafeArea()
                 .allowsHitTesting(false)
