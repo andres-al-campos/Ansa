@@ -1000,8 +1000,24 @@ struct OutlineView: View {
     /// it out of the tree the rest of the time means it can never leak around
     /// the edges of a view that is exactly where it belongs.
     @ViewBuilder private var backdrop: some View {
+        // How far through the useful part of the pull we are, 0...1. Every
+        // other number here is a function of it, so the whole backdrop
+        // brightens as one thing rather than as three that happen to agree.
+        let t = min(1, Double(backPull) / Double(backThreshold))
         ZStack {
             Color(.secondarySystemBackground).ignoresSafeArea()
+            // A shade over the ground that lifts as the view slides away, so
+            // the gap opens like a curtain rather than appearing as a hole.
+            //
+            // Darkest at the left edge, where the gap has been open longest and
+            // there is most of it to fill. That gradient is what a revealed
+            // screen would have given for free — the eye reads the lightening
+            // as something arriving, which is the whole job of the reveal, and
+            // it does not need a second live view to do it.
+            LinearGradient(
+                colors: [.black.opacity(0.55 * (1 - t)), .black.opacity(0.15 * (1 - t))],
+                startPoint: .leading, endPoint: .trailing)
+                .ignoresSafeArea()
             if backPull > 0 {
                 HStack(spacing: 8) {
                     Image(systemName: "chevron.left")
@@ -1014,7 +1030,7 @@ struct OutlineView: View {
                 .padding(.horizontal, 28)
                 // Fades in over the first stretch of the pull, so the label
                 // arrives as the gap opens rather than being there already.
-                .opacity(min(1, Double(backPull) / Double(backThreshold)))
+                .opacity(t)
                 .frame(maxHeight: .infinity, alignment: .top)
                 .padding(.top, 120)
             }
