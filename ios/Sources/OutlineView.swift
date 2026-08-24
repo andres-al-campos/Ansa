@@ -54,13 +54,12 @@ struct OutlineView: View {
 
     var body: some View {
         NavigationStack {
-            // The backdrop is a sibling *under* the sliding stack, not its
-            // background. As a background it was attached to the slab, so the
-            // same `.offset` that slid the view slid the thing it was meant to
-            // be revealing — the shade travelled along on top instead of
-            // staying put behind.
+            // Three layers, and the order is the point: the screen being
+            // returned to, a shade over it, and the screen being lifted away.
+            // Only the top one takes the offset — the shade and the ground
+            // below it stay put, which is what makes the front slab read as
+            // moving rather than the whole stack sliding together.
             ZStack {
-            backdrop
             // The screen the swipe is going back to, rendered for real behind
             // the one being lifted off it. It is the same view as the front
             // slab — one definition, two scopes — so what is revealed during
@@ -74,6 +73,8 @@ struct OutlineView: View {
             // able to act.
             if backPull > 0 {
                 slab(for: parentScope, interactive: false)
+                // Over the revealed screen, under the one being lifted off it.
+                backdrop
             }
             slab(for: scope, interactive: true)
             .task { store.start() }
@@ -1006,59 +1007,29 @@ struct OutlineView: View {
     /// Drawn only during the swipe: at rest it is covered anyway, and keeping
     /// it out of the tree the rest of the time means it can never leak around
     /// the edges of a view that is exactly where it belongs.
+    /// The shade the revealed screen sits under.
+    ///
+    /// Once was the whole backdrop: a coloured panel and a label standing in
+    /// for a screen that was not being drawn. The screen is real now, so the
+    /// stand-in is gone and only the shading is left — a revealed screen at
+    /// full brightness reads as sitting *beside* the one being moved rather
+    /// than behind it, and this is what puts it back underneath.
     @ViewBuilder private var backdrop: some View {
-        // The whole backdrop is gated on the pull, not just parts of it. The
-        // shade is drawn at `1 - t`, so at rest it is at *full* strength — a
-        // gradient left in the tree unguarded does not sit dormant waiting for
-        // a swipe, it sits there black.
+        // Gated on the pull, not just dimmed by it. The shade is drawn at
+        // `1 - t`, so at rest it is at *full* strength — left in the tree
+        // unguarded it does not sit dormant waiting for a swipe, it sits there
+        // black.
         if backPull > 0 {
-            // How far through the useful part of the pull we are, 0...1. Every
-            // other number here is a function of it, so the whole backdrop
-            // brightens as one thing rather than as three that happen to agree.
+            // How far through the useful part of the pull we are, 0...1.
             let t = min(1, Double(backPull) / Double(backThreshold))
-            ZStack {
-                Color(.secondarySystemBackground)
-                // A shade over the ground that lifts as the view slides away,
-                // so the gap opens like a curtain rather than appearing as a
-                // hole.
-                //
-                // Darkest at the left edge, where the gap has been open longest
-                // and there is most of it to fill. That gradient is what a
-                // revealed screen would have given for free — the eye reads the
-                // lightening as something arriving, which is the whole job of
-                // the reveal, and it does not need a second live view to do it.
-                LinearGradient(
-                    colors: [.black.opacity(0.55 * (1 - t)), .black.opacity(0.15 * (1 - t))],
-                    startPoint: .leading, endPoint: .trailing)
-
-                HStack(spacing: 8) {
-                    Image(systemName: "chevron.left")
-                    Text(parentTitle)
-                        .lineLimit(1)
-                    Spacer()
-                }
-                .font(.title3.weight(.medium))
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 28)
-                // Fades in over the first stretch of the pull, so the label
-                // arrives as the gap opens rather than being there already.
-                .opacity(t)
-                .frame(maxHeight: .infinity, alignment: .top)
-                .padding(.top, 120)
-            }
-            // No `ignoresSafeArea` on the layers themselves: extending them
-            // past the view's own bounds is what made this visible around the
-            // edges of a slab sitting exactly where it belongs.
-            .ignoresSafeArea()
+            // Darkest at the left edge, where the gap has been open longest.
+            // The eye reads the lightening as the screen arriving.
+            LinearGradient(
+                colors: [.black.opacity(0.45 * (1 - t)), .black.opacity(0.12 * (1 - t))],
+                startPoint: .leading, endPoint: .trailing)
+                .ignoresSafeArea()
+                .allowsHitTesting(false)
         }
-    }
-
-    /// The name of the scope a back swipe would land in.
-    private var parentTitle: String {
-        guard let scope, let node = TreeOps.byId(tree, scope) else { return "Projects" }
-        guard let parentId = node.parentId,
-              let parent = TreeOps.byId(tree, parentId) else { return "Projects" }
-        return parent.text
     }
 
     /// How far the view must travel before letting go zooms out.
