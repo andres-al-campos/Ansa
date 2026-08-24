@@ -172,6 +172,20 @@ struct OutlineView: View {
                     ? "This cannot be undone."
                     : "This deletes \(count) task\(count == 1 ? "" : "s") under it. This cannot be undone.")
             }
+            // Swipe right from the left edge to zoom out, the way every other
+            // iOS app pops a screen. `NavigationStack` would give this for
+            // free on a pushed view, but zooming is a change of `scope` in
+            // place rather than a push — there is no stack entry to pop, so
+            // the gesture has to be built.
+            //
+            // Edge-only, not the whole width: the rows carry `swipeActions`,
+            // and a full-width recogniser would race them, so a swipe meant to
+            // reveal Delete would sometimes leave the project instead.
+            //
+            // No swipe-left counterpart. Going *in* has no unambiguous target
+            // — a tree branches, so "forward" is a choice of child rather than
+            // a direction — and the bullet tap already covers it.
+            .gesture(zoomOutSwipe)
             .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -910,6 +924,26 @@ struct OutlineView: View {
 
     private func confirmDeleteProject(_ id: NodeId) {
         pendingDelete = TreeOps.byId(tree, id)
+    }
+
+    /// Edge-swipe right to leave the current scope.
+    ///
+    /// The thresholds are deliberately loose in one direction and tight in the
+    /// other: it must start within a thumb's width of the edge, but once it
+    /// does, a short pull is enough. A gesture that demands a long drag from a
+    /// precise spot is one people stop trying after it fails twice.
+    ///
+    /// Vertical distance is checked so a scroll that begins near the edge is
+    /// not read as a back swipe.
+    private var zoomOutSwipe: some Gesture {
+        DragGesture(minimumDistance: 20, coordinateSpace: .local)
+            .onEnded { g in
+                guard scope != nil else { return }
+                guard g.startLocation.x < 32 else { return }
+                guard g.translation.width > 60 else { return }
+                guard abs(g.translation.height) < g.translation.width else { return }
+                zoomOut()
+            }
     }
 
     private func zoomOut() {
