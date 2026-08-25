@@ -1303,6 +1303,39 @@ private struct OutlineRow: View {
             .simultaneously(with: dragGesture)
     }
 
+    /// The row-wide version of the drag, minus the tap half.
+    ///
+    /// `maximumDistance` is what makes this safe to put under the whole row: a
+    /// press that drifts before the 0.35s is up fails outright, so a scroll or
+    /// a swipe that happens to start on a row never arms a drag. Only a finger
+    /// that stays put does.
+    ///
+    /// The bullet keeps its own gesture — it also has to handle the fold tap,
+    /// and it stays a high-priority recognizer so the press wins there even
+    /// against a scroll starting in that column.
+    private var rowDragGesture: some Gesture {
+        LongPressGesture(minimumDuration: 0.35, maximumDistance: 10)
+            .sequenced(before: DragGesture(coordinateSpace: .global))
+            .onChanged { value in
+                switch value {
+                case .first:
+                    break
+                case .second(_, let drag):
+                    guard let drag else {
+                        armed = true
+                        onDragBegan()
+                        return
+                    }
+                    onDragMoved(drag.location)
+                }
+            }
+            .onEnded { _ in
+                guard armed else { return }
+                armed = false
+                onDragEnded()
+            }
+    }
+
     /// Long-press to arm, then drag.
     ///
     /// The press delay is what keeps a drag from starting on every scroll that
@@ -1495,6 +1528,23 @@ private struct OutlineRow: View {
             .padding(.trailing, 4)
         }
         .padding(.leading, Self.railInset + CGFloat(depth) * Self.indent)
+        // The whole row arms a drag, not just the bullet. Reaching across the
+        // screen for a 32pt column with the other hand was the cost of putting
+        // the handle in one place, and the 0.35s hold already separates a drag
+        // from everything else the row does.
+        //
+        // `.simultaneousGesture`, never `.highPriorityGesture`: the label is a
+        // Button covering most of the row, and taking the touch is exactly what
+        // stops a Button firing — the same reason the bullet's own gesture
+        // cannot be a plain one. Simultaneous recognition lets the tap reach
+        // the Button while the press runs alongside it.
+        //
+        // Scroll and `swipeActions` are unaffected by construction: a
+        // `LongPressGesture` with a `maximumDistance` fails the moment the
+        // finger travels, so any movement inside the hold window leaves the
+        // gesture out of the running and the List keeps the touch.
+        .contentShape(Rectangle())
+        .simultaneousGesture(rowDragGesture)
         // No row separators. The desktop has none — rows are told apart by
         // whitespace and the hover background, and the vertical guides are the
         // only lines in the outline. `List` draws them by default, so they have
