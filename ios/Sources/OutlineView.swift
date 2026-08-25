@@ -1324,13 +1324,11 @@ struct OutlineView: View {
 /// tall.
 private struct ScopeProgress: View {
     let progress: TreeOps.Progress
-    /// The project's own name. Shown only while a drag is running, so the
-    /// strip is something a drop can land *on* rather than an unlabelled bar —
-    /// without it the highlight lights a measurement, and a measurement is not
-    /// a parent.
+    /// The scope's own name, and the header's title.
     ///
-    /// The rest of the time it is the navigation title one line above, and
-    /// saying it twice bought nothing. The counts take the space instead.
+    /// Always shown: it is what a drop lands *on*, so the strip reads as a
+    /// parent rather than an unlabelled measurement, and it is the one place
+    /// the current scope is named now that the nav bar holds the path there.
     let title: String
     /// A drop at depth 0 would land as a top-level task in this project. Not
     /// nesting into the project the way one row nests into another — the
@@ -1353,7 +1351,14 @@ private struct ScopeProgress: View {
                 // nav bar above — chrome names the route, the body names the
                 // thing, which is how a file browser splits the same two facts.
                 // Flush left with the rows and the bar, sharing their edge.
-                Text(lit ? "Drop into " + title : title)
+                //
+                // The name stays put under a drag — only the colour changes.
+                // It used to read "Drop into X", which the strip needed when it
+                // was one line tall and could be mistaken for a measurement.
+                // At this size the highlight is unambiguous on its own, and
+                // swapping the text moved the header out from under the finger
+                // aiming at it.
+                Text(title)
                     .font(.title3.weight(.semibold))
                     .lineLimit(1)
                     .foregroundStyle(
