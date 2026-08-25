@@ -15,16 +15,21 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod'
 import { byId, childrenOf, progressOf, type Node, type NodeId, type Tree } from '../../shared/tree.ts'
 
-const BASE = process.env.ANSA_API ?? 'http://127.0.0.1:4000'
+const BASE = process.env.ANSA_API ?? 'https://ansa.id3arium.workers.dev'
 
 /**
  * Whose tree this MCP server edits.
  *
  * A stdio MCP server is launched by one person's client, so it acts as that one
- * user — there's no session to derive it from. While auth is the dev stub this
- * is just a header; with a real provider it becomes an API key or token issued
- * to that account, but the shape doesn't change: one process, one user.
+ * user — there's no session to derive it from.
+ *
+ * Two ways to say who that is. `ANSA_TOKEN` is the real one: a long-lived
+ * bearer token the worker maps to a Clerk user id, which is what reaches the
+ * same tree the browser and the phone see. `ANSA_USER` is the dev stub's
+ * header, which only a local server with ANSA_DEV_AUTH=1 will honour — a
+ * deployed worker ignores it, by design.
  */
+const TOKEN = process.env.ANSA_TOKEN ?? ''
 const USER = process.env.ANSA_USER ?? 'legacy'
 
 /** Call the server; throw a readable error the model can act on. */
@@ -40,13 +45,30 @@ async function api(path: string, init?: RequestInit): Promise<{ tree: Tree } & R
         // route ever runs.
         ...(init?.body === undefined ? {} : { 'content-type': 'application/json' }),
         'x-ansa-origin': 'mcp',
-        'x-ansa-user': USER,
+        // The token when there is one, the stub header otherwise. Never both:
+        // sending a header the deployed worker ignores alongside a token that
+        // works is how a broken token reads as a working one locally.
+        ...(TOKEN ? { authorization: `Bearer ${TOKEN}` } : { 'x-ansa-user': USER }),
         ...init?.headers,
       },
     })
   } catch {
     throw new Error(
-      `Can't reach the Ansa server at ${BASE}. Start it with \`npm run server\` in the Ansa repo, then retry.`,
+      `Can't reach the Ansa server at ${BASE}. If that's a local server, start ` +
+        'it with `npm run server` in the Ansa repo. If it should be the deployed ' +
+        'one, unset ANSA_API to use the default. Then retry.',
+    )
+  }
+  if (res.status === 401) {
+    throw new Error(
+      TOKEN
+        ? 'Ansa rejected the token in ANSA_TOKEN. Check it matches the hash the ' +
+          'worker holds: `printf %s "$ANSA_TOKEN" | shasum -a 256` should equal ' +
+          'ANSA_MCP_TOKEN_SHA256 there. Re-set it with `wrangler secret put ' +
+          'ANSA_MCP_TOKEN_SHA256` if not.'
+        : `Not signed in to Ansa at ${BASE}. Set ANSA_TOKEN to the MCP token ` +
+          'for your account — see the MCP section of the repo README. (ANSA_USER ' +
+          'only works against a local server started with ANSA_DEV_AUTH=1.)',
     )
   }
   if (!res.ok) {

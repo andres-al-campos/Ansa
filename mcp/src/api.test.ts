@@ -27,6 +27,21 @@ test('content-type is only sent when there is a body', () => {
   expect(source).toMatch(/init\?\.body === undefined[\s\S]{0,80}'content-type'/)
 })
 
+test('the token is sent as a header, never in the URL', () => {
+  // A long-lived credential in a query string ends up in access logs, proxy
+  // logs and Referer headers. The worker refuses one there for the same reason;
+  // this is the client half of that agreement.
+  expect(source).toMatch(/authorization: `Bearer \$\{TOKEN\}`/)
+  expect(source).not.toMatch(/[?&]token=/)
+})
+
+test('the stub header is not sent alongside a real token', () => {
+  // Sending both means a broken token still "works" against a local dev server
+  // via the header, so the token is never exercised until it fails in the one
+  // place it matters.
+  expect(source).toMatch(/TOKEN \?[\s\S]{0,120}: \{ 'x-ansa-user': USER \}/)
+})
+
 test('only view_tree echoes the whole outline', () => {
   // The server returns the entire tree on every write — right for the browser,
   // which replaces its state wholesale over SSE. For a model it means every
