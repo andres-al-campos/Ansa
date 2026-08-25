@@ -133,9 +133,10 @@ Point an MCP client at it with a stdio command:
 }
 ```
 
-An API must be running — the MCP talks to it over HTTP, set with `ANSA_API`
-(default `http://127.0.0.1:4000`). That default matches `./build.sh fastify`;
-under the default `./build.sh` set `ANSA_API=http://127.0.0.1:8787`. Tools: `view_tree`,
+The MCP talks to an API over HTTP, set with `ANSA_API`. It defaults to the
+deployed worker, so with a token set (below) it edits your real tree with no
+further configuration. Point it at `http://127.0.0.1:8787` for `./build.sh`, or
+`http://127.0.0.1:4000` for `./build.sh fastify`. Tools: `view_tree`,
 `add_subtree`, `rename_task`, `set_done`, `move_task`, `toggle_collapsed`,
 `remove_task`, `progress`.
 
@@ -144,3 +145,49 @@ outline and it creates the whole thing — parents, children, grandchildren — 
 a single call. A single task is just one node with no children. Pass a
 `parentId` to graft under an existing task; omit it to start a new project (one
 top-level node, the rest under its children).
+
+### Giving it access to your real tree
+
+A stdio MCP server has no browser, so it cannot sign in to Clerk. Instead the
+worker holds the hash of one long-lived bearer token and the user id it stands
+for, and accepts that token as a third credential alongside a Clerk session.
+
+Generate a token and register its hash — the token itself never leaves your
+machine, and the worker only ever sees the digest:
+
+```bash
+export ANSA_TOKEN="$(openssl rand -hex 32)"
+printf %s "$ANSA_TOKEN" | shasum -a 256 | cut -d' ' -f1 | npx wrangler secret put ANSA_MCP_TOKEN_SHA256
+```
+
+Then tell the worker which account it acts as. This is your Clerk user id — the
+`user_xxx` string on your account in the Clerk dashboard under Users — and it is
+the same id a browser session resolves to, which is what makes the MCP server
+reach the tree you already have rather than an empty one of its own. It goes in
+the `vars` block of `wrangler.jsonc`, not the secret store: a user id
+authenticates nothing on its own, and having it visible is what makes a
+misconfigured deployment obvious rather than mysterious.
+
+```jsonc
+"vars": {
+  "ANSA_MCP_USER": "user_xxxxxxxxxxxxxxxxxxxxxxxxx"
+}
+```
+
+Keep `ANSA_TOKEN` where your MCP client can read it: either an `env` block in
+the client config above, or the macOS Keychain alongside the Clerk publishable
+key. Not a `.env` file, matching how this repo treats every other secret.
+
+Three properties worth knowing, each with a test in `worker/src/auth.test.ts`:
+
+- **Header only.** The token is never read from a query string, unlike the
+  short-lived Clerk token a WebSocket handshake passes there. A lasting
+  credential in a URL ends up in access logs and history.
+- **Both halves or nothing.** A hash without a user id, or a user id without a
+  hash, authenticates no one.
+- **Clerk must be configured.** The token cannot be what makes an otherwise
+  unauthenticated worker answer, so a deployment that loses its Clerk key fails
+  loudly for every client instead of quietly serving only this one.
+
+To rotate, re-run the `openssl rand` command above. The old token stops working
+the moment the new hash lands.
