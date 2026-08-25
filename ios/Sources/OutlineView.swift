@@ -10,6 +10,13 @@ import SwiftUI
 struct OutlineView: View {
     @State private var store = OutlineStore()
     @State private var scope: NodeId?
+    /// True until the user navigates themselves.
+    ///
+    /// The tree arrives after the view does, so the scope to resume into is not
+    /// knowable at launch — it is adopted when the first real tree lands. This
+    /// is what stops that adoption from yanking you out of a project you had
+    /// already opened by hand in the meantime.
+    @State private var autoScope = true
     /// Renaming and capture, grouped: the capture field files next to the row
     /// last edited, which only the edit path knows.
     @State private var edit = EditController()
@@ -106,6 +113,28 @@ struct OutlineView: View {
             // one can answer.
             .onChange(of: tree) { was, now in
                 scope = TreeOps.survivingScope(scope, was: was, now: now)
+                // Land where you left off. `lastOpenedAt` lives in the tree, so
+                // the answer follows the account rather than this device —
+                // close the app at the desk, open it on the phone, same
+                // project. Only while the user has not navigated already, and
+                // only from an empty scope, so it never moves the view out from
+                // under someone who is looking at something.
+                //
+                // On `tree` rather than at launch because the tree is not there
+                // yet when the view is built. Project-level by design, not the
+                // exact sub-scope — see `resumeScope` in `shared/tree.ts`.
+                if autoScope, scope == nil, !now.isEmpty {
+                    scope = TreeOps.resumeScope(now)
+                }
+            }
+            // The cached tree is already loaded when the store is built, so it
+            // never arrives as a *change* and `onChange` above never sees it.
+            // This is the one that fires on a cold open; the other one is for
+            // the server's tree landing afterwards and correcting the guess.
+            .onAppear {
+                if autoScope, scope == nil, !tree.isEmpty {
+                    scope = TreeOps.resumeScope(tree)
+                }
             }
             // Two mid-edit states, and the store takes one flag, so they are
             // combined here rather than each calling setBusy on its own — the
@@ -373,7 +402,7 @@ struct OutlineView: View {
                     // yet — the screen has not been landed on.
                     .swipeActions(edge: .trailing) {
                         Button {
-                            if interactive { self.scope = row.node.id }
+                            if interactive { self.setScope(row.node.id) }
                         } label: {
                             Label("Zoom in", systemImage: "chevron.right")
                         }
@@ -585,6 +614,17 @@ struct OutlineView: View {
         for index in offsets { apply(.removeNode(id: rows[index].node.id)) }
     }
 
+    /// Navigate. Every user-initiated scope change goes through here rather
+    /// than assigning `scope`, so "the user has chosen where they are" is
+    /// recorded in one place instead of at each call site. The resume path
+    /// deliberately does not use this.
+    ///
+    /// Matches `setScope` in `src/Outliner.tsx`.
+    private func setScope(_ id: NodeId?) {
+        autoScope = false
+        scope = id
+    }
+
     /// Open a project: zoom in, and record that it was opened.
     ///
     /// The timestamp is minted here and carried by the op, so the server stores
@@ -593,7 +633,7 @@ struct OutlineView: View {
     private func openProject(_ id: NodeId) {
         // A target from a different project is never the right guess.
         edit.captureParent = nil
-        scope = id
+        setScope(id)
         let root = TreeOps.lineageOf(tree, id).first?.id ?? id
         apply(.markOpened(id: root, at: Date().timeIntervalSince1970 * 1000))
     }
@@ -1192,7 +1232,7 @@ struct OutlineView: View {
     private func zoomOut() {
         // Zooming out changes what the field means, so the guess goes with it.
         edit.captureParent = nil
-        scope = parentScope
+        setScope(parentScope)
     }
 }
 
