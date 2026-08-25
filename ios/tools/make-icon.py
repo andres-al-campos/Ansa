@@ -9,7 +9,8 @@ size.
 
 The ring carries a soft bloom. It peaks *at* the ring's radius and falls off
 both inward and outward, which reads as the ring emitting light rather than the
-dot being watched — a glow centred on the dot turns the mark into an eye.
+dot being watched — a glow centred on the dot turns the mark into an eye. The
+two falloffs are tuned separately; see OUT_SP.
 
 Run with no arguments to regenerate Sources/Assets.xcassets. Requires rsvg or
 qlmanage for rasterizing; both ship differently, so we shell out to whichever
@@ -23,10 +24,25 @@ DOT    = '#F7F5F1'
 
 GAP    = 2.5   # dot-edge to ring-inner, in dot radii
 THICK  = 1.0   # ring stroke width, in dot radii
-TARGET = .315  # ring's outer edge as a fraction of the tile
-BLOOM  = 0.8
-SPREAD = 2.6   # bloom reach, in stroke widths. Past ~4 the glow reaches the
-               # tile edge and the ground stops reading as dark.
+TARGET = .360  # ring's outer edge as a fraction of the tile. Past ~.38 the
+               # glow starts touching the corner mask.
+BLOOM  = 0.7
+
+# Both reaches are distances to *invisible*, measured from the edge of the
+# stroke rather than its middle. Measuring from the middle is the trap: the
+# stroke is opaque and painted over the gradient, so half the reach is spent
+# under the ring and only the dim tail escapes.
+#
+# Both are in stroke widths, so the glow dies one ring thickness out from each
+# edge. Equal numbers do not paint equal amounts of light — the stops sit at
+# fixed radii, so the outer band covers a larger annulus than the inner one at
+# the same opacity — but the falloff *distance* is what the eye reads as the
+# glow's size, and that is now the same on both sides.
+#
+# Inward the reach is also bounded by the gap: past about 2.5 it lands on the
+# dot and the whole inside floods with light.
+OUT_SP = 1.0   # outward from the ring's outer edge, in stroke widths
+IN_SP  = 1.0   # inward from the ring's inner edge, in stroke widths
 
 # Solve for the dot so the ring's outer edge lands on TARGET:
 #   outer = r(1 + GAP) + THICK*r
@@ -40,14 +56,17 @@ def svg(size):
     sw = THICK * r
     ring_c = inner + sw / 2          # stroke is centred, so this is mid-radius
 
-    sp = sw * SPREAD
-    outer = ring_c + sp
+    # Both measured from the stroke's edges, then re-expressed relative to the
+    # gradient's centre, which is where the stop offsets are reckoned from.
+    so = sw / 2 + sw * OUT_SP
+    si = sw / 2 + min(sw * IN_SP, (inner - r) * 0.95)   # stop short of the dot
+    outer = ring_c + so                   # the gradient's own extent
     peak = ring_c / outer
-    hw = sp / outer
-    s0 = max(0.0, peak - hw)
-    s1 = max(0.0, peak - hw * .45)
-    s2 = min(1.0, peak + hw * .45)
-    s3 = min(1.0, peak + hw)
+    hwo, hwi = so / outer, si / outer
+    s0 = max(0.0, peak - hwi)
+    s1 = max(0.0, peak - hwi * .45)
+    s2 = min(1.0, peak + hwo * .45)
+    s3 = min(1.0, peak + hwo)
 
     return (
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{size}" height="{size}" '
