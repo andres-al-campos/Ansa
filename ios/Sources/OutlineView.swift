@@ -311,10 +311,6 @@ struct OutlineView: View {
                     // coordinates it would be tested against belong to a list
                     // that is sliding out of place, so the answer would be
                     // about where the row *was*.
-                    onDragMoved: { p in
-                        if interactive, backPull == 0 { dragMoved(p) }
-                    },
-                    onDragEnded: { if interactive { endDrag() } },
                     isDragging: interactive && drag.dragging == row.node.id,
                     // The same row `parentHighlight` outlines — the bullet is
                     // the thing being dropped into, so it lights with the row
@@ -399,7 +395,22 @@ struct OutlineView: View {
         // accepting the gesture at all. This is the directional lock the
         // platform does not hand you — decided once when the pull begins, and
         // held for the rest of it.
-        .scrollDisabled(interactive && backPull > 0)
+        // Also while a row is in the air: the drag reads the row frames it
+        // measured, so a list that scrolls under it would move the answer out
+        // from under the finger. Edge-scrolling during a drag is driven by the
+        // controller's own tick instead.
+        .scrollDisabled(interactive && (backPull > 0 || drag.isActive))
+        // The carry, for every row at once.
+        //
+        // One recogniser on the list rather than one per row. Per-row was what
+        // starved scrolling: every row a finger touched added a `DragGesture`
+        // contending for the same touch, and `List`'s pan lost to the crowd
+        // even when each one was inert. There is only ever one row in the air,
+        // so one recogniser is all the drag ever needed.
+        //
+        // Inert until a row's press has armed it, so an ordinary scroll passes
+        // through untouched.
+        .simultaneousGesture(carryGesture, isEnabled: interactive)
         // Both keep rows abutting exactly, which the nesting guides depend on:
         // each guide is a segment drawn inside its own row, and they read as
         // one unbroken line only because consecutive rows touch. `List` would
@@ -1010,6 +1021,21 @@ struct OutlineView: View {
     ///
     /// Vertical distance is checked so a scroll that begins near the edge is
     /// not read as a back swipe.
+    /// Moves whichever row is currently in the air.
+    ///
+    /// Global coordinates, matching the measured row frames — see `dragMoved`.
+    private var carryGesture: some Gesture {
+        DragGesture(minimumDistance: 0, coordinateSpace: .global)
+            .onChanged { g in
+                guard drag.isActive, backPull == 0 else { return }
+                dragMoved(g.location)
+            }
+            .onEnded { _ in
+                guard drag.isActive else { return }
+                endDrag()
+            }
+    }
+
     private var zoomOutSwipe: some Gesture {
         DragGesture(minimumDistance: 20, coordinateSpace: .local)
             .onChanged { g in
@@ -1274,95 +1300,47 @@ private struct OutlineRow: View {
     /// Drag, reported in global coordinates. The row does not know where the
     /// list starts, so the view that owns the hit-test rebases these.
     let onDragBegan: () -> Void
-    let onDragMoved: (CGPoint) -> Void
-    let onDragEnded: () -> Void
     /// True while this row is the one being carried, which dims it in place.
     let isDragging: Bool
     /// True while a drop would land inside this row, which lights its bullet.
     let isDropTarget: Bool
 
-    /// Whether the press completed and the drag took over. See `bulletGesture`.
-    @State private var armed = false
+    /// True from the moment this row's press arms a drag until the carry ends.
+    ///
+    /// Derived from `isDragging` rather than held as state: the list owns the
+    /// drag now, so a local flag would need clearing from a gesture this view
+    /// no longer has — and a stale one silently eats the next fold-tap.
+    private var armed: Bool { isDragging }
 
-    /// The bullet's gestures: a tap folds, a long press arms a drag.
+    /// The bullet's gesture: a tap folds.
     ///
-    /// Two recognizers combined with `.simultaneously`, not one sequenced
-    /// gesture that decides on release. A sequenced gesture whose first stage
-    /// never completes *fails* rather than ending, so its `onEnded` never runs
-    /// and a tap is simply swallowed — which is what broke folding. And a
-    /// Button underneath cannot serve the tap either, because the drag has to
-    /// take the touch with `.highPriorityGesture` to see a drag at all, and
-    /// taking it is precisely what stops the Button firing.
+    /// The drag used to live here too, as a second recognizer combined with
+    /// `.simultaneously`. It moved to the row — so this is now just a tap, and
+    /// `armed` is what keeps it from firing on the way out of a drag that
+    /// started over the bullet.
     ///
-    /// Simultaneous recognition lets the tap end on its own while the press
-    /// runs in parallel. They cannot both fire: a tap that lasted long enough
-    /// to arm the drag is no longer a tap.
+    /// Still a gesture rather than a Button: the row's press has to be able to
+    /// run alongside it, and a Button consumes the touch outright.
     private var bulletGesture: some Gesture {
         TapGesture()
             .onEnded { if !armed && hasChildren { onCollapse() } }
-            .simultaneously(with: dragGesture)
     }
 
-    /// The row-wide version of the drag, minus the tap half.
+    /// The press that picks this row up.
     ///
-    /// `maximumDistance` is what makes this safe to put under the whole row: a
-    /// press that drifts before the 0.35s is up fails outright, so a scroll or
-    /// a swipe that happens to start on a row never arms a drag. Only a finger
-    /// that stays put does.
+    /// Only the press lives on the row — the carry is one recogniser on the
+    /// list, because the row needs to say *which* row while movement is the
+    /// same question for all of them. Per-row drags were what starved
+    /// scrolling: every row a finger touched added one contending for the
+    /// touch, and `List`'s pan lost to the crowd.
     ///
-    /// The bullet keeps its own gesture — it also has to handle the fold tap,
-    /// and it stays a high-priority recognizer so the press wins there even
-    /// against a scroll starting in that column.
-    private var rowDragGesture: some Gesture {
+    /// `maximumDistance` lets a finger that is really scrolling abandon the
+    /// press before it fires.
+    private var armGesture: some Gesture {
         LongPressGesture(minimumDuration: 0.35, maximumDistance: 10)
-            .sequenced(before: DragGesture(coordinateSpace: .global))
-            .onChanged { value in
-                switch value {
-                case .first:
-                    break
-                case .second(_, let drag):
-                    guard let drag else {
-                        armed = true
-                        onDragBegan()
-                        return
-                    }
-                    onDragMoved(drag.location)
-                }
-            }
-            .onEnded { _ in
-                guard armed else { return }
-                armed = false
-                onDragEnded()
-            }
+            .onEnded { _ in onDragBegan() }
     }
 
-    /// Long-press to arm, then drag.
-    ///
-    /// The press delay is what keeps a drag from starting on every scroll that
-    /// happens to begin over a bullet; `armed` is what tells the tap above that
-    /// this one won.
-    private var dragGesture: some Gesture {
-        LongPressGesture(minimumDuration: 0.35)
-            .sequenced(before: DragGesture(coordinateSpace: .global))
-            .onChanged { value in
-                switch value {
-                case .first:
-                    break
-                case .second(_, let drag):
-                    guard let drag else {
-                        armed = true
-                        onDragBegan()
-                        return
-                    }
-                    onDragMoved(drag.location)
-                }
-            }
-            .onEnded { _ in
-                guard armed else { return }
-                armed = false
-                onDragEnded()
-            }
-    }
 
     /// One indent step, and the spacing between two depth guides.
     ///
@@ -1539,12 +1517,19 @@ private struct OutlineRow: View {
         // cannot be a plain one. Simultaneous recognition lets the tap reach
         // the Button while the press runs alongside it.
         //
-        // Scroll and `swipeActions` are unaffected by construction: a
-        // `LongPressGesture` with a `maximumDistance` fails the moment the
-        // finger travels, so any movement inside the hold window leaves the
-        // gesture out of the running and the List keeps the touch.
-        .contentShape(Rectangle())
-        .simultaneousGesture(rowDragGesture)
+        // The whole row arms the drag. One gesture, not one per column: two
+        // sequenced presses recognizing at once over the bullet both wrote
+        // `armed` and both called `onDragBegan`, which armed the drag and
+        // immediately lost its tracking.
+        //
+        // No `.contentShape` here. It looks like it belongs — the gesture
+        // wants the whole row — but a shape on the cell makes the row an
+        // opaque hit-test surface *ahead of* `List`, and that is what
+        // swallows the scroll and the `swipeActions` swipe.
+        //
+        // Simultaneous, never high-priority: the label is a Button covering
+        // most of the row, and taking the touch is what stops a Button firing.
+        .simultaneousGesture(armGesture)
         // No row separators. The desktop has none — rows are told apart by
         // whitespace and the hover background, and the vertical guides are the
         // only lines in the outline. `List` draws them by default, so they have
