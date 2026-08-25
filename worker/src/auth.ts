@@ -23,6 +23,15 @@
  *  - An invalid, expired, or forged token is simply "not signed in" — the
  *    reason is not reported, since that would leak whether a token was ever
  *    valid.
+ *
+ * ## The MCP token
+ *
+ * A third credential, for a headless client that has no browser to sign in
+ * with: a long-lived bearer token mapped to one Clerk user id. It is checked
+ * only when Clerk is configured, so it can never be what makes an otherwise
+ * unauthenticated deployment answer — a worker that has lost its Clerk key
+ * rejects everything, rather than quietly serving the one client that still
+ * works while every browser fails.
  */
 
 import { verifyToken } from '@clerk/backend'
@@ -36,6 +45,24 @@ export interface AuthEnv {
    */
   ANSA_DEV_AUTH?: string
   ANSA_DEV_USER?: string
+  /**
+   * SHA-256 of the MCP server's bearer token, hex-encoded.
+   *
+   * The hash rather than the token, so the value sitting in the worker's
+   * configuration is not itself a working credential. A secret:
+   * `wrangler secret put ANSA_MCP_TOKEN_SHA256`.
+   */
+  ANSA_MCP_TOKEN_SHA256?: string
+  /**
+   * The Clerk user id that token acts as — the same `user_xxx` a browser
+   * session resolves to, which is what makes the MCP server reach the real
+   * tree rather than one of its own.
+   *
+   * A var rather than a secret, in wrangler.jsonc. It authenticates nothing by
+   * itself — without the token's hash it is just a string naming an account —
+   * and keeping it visible is what makes a half-configured worker diagnosable.
+   */
+  ANSA_MCP_USER?: string
 }
 
 /**
@@ -57,6 +84,23 @@ export function misconfiguredAuth(env: AuthEnv, isLocalDev: boolean): string | n
     'from the worker (wrangler secret delete ANSA_DEV_AUTH, and check the vars ' +
     'block in wrangler.jsonc) and redeploy.'
   )
+}
+
+/**
+ * The bearer token from the Authorization header only.
+ *
+ * Separate from `tokenOf` because the query-string fallback there is an
+ * accommodation for WebSocket handshakes, which cannot set headers. That is
+ * acceptable for a Clerk session token, which lives about a minute. It is not
+ * acceptable for the MCP token, which is long-lived: a URL ends up in access
+ * logs, proxy logs, browser history and Referer headers, none of which are
+ * places a lasting credential should come to rest.
+ */
+function headerTokenOf(req: Request): string | null {
+  const auth = req.headers.get('authorization')
+  if (!auth?.startsWith('Bearer ')) return null
+  const token = auth.slice('Bearer '.length).trim()
+  return token.length > 0 ? token : null
 }
 
 /** The bearer token on a request, from the header or the query string. */
@@ -87,6 +131,54 @@ function stubOwner(req: Request, env: AuthEnv): string {
 }
 
 /**
+ * SHA-256 of `input`, hex-encoded, matching `sha256sum` and `shasum -a 256`.
+ *
+ * WebCrypto rather than node:crypto: it is the one hashing API present in both
+ * the Workers runtime and the test environment without `nodejs_compat`.
+ */
+async function sha256Hex(input: string): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(input))
+  return Array.from(new Uint8Array(digest))
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('')
+}
+
+/**
+ * Compare two strings without leaking where they diverge.
+ *
+ * A plain `===` returns as soon as it finds a differing byte, so the time it
+ * takes reveals how many leading bytes were right — enough to walk a secret out
+ * one byte at a time given enough attempts. This always reads both strings
+ * fully and accumulates the difference.
+ *
+ * Both inputs here are hex digests of fixed length, so comparing lengths first
+ * gives nothing away.
+ */
+function constantTimeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false
+  let diff = 0
+  for (let i = 0; i < a.length; i++) {
+    diff |= a.charCodeAt(i) ^ b.charCodeAt(i)
+  }
+  return diff === 0
+}
+
+/**
+ * The user the MCP token stands for, or null if this isn't that token.
+ *
+ * Both halves must be configured. A hash without a user id, or a user id
+ * without a hash, is a half-finished setup rather than a working credential,
+ * and answering to either alone would be a way to get the wrong answer quietly.
+ */
+async function mcpOwner(token: string, env: AuthEnv): Promise<string | null> {
+  const expected = env.ANSA_MCP_TOKEN_SHA256 ?? ''
+  const user = env.ANSA_MCP_USER ?? ''
+  if (expected.length === 0 || user.length === 0) return null
+  const actual = await sha256Hex(token)
+  return constantTimeEqual(actual, expected) ? user : null
+}
+
+/**
  * The signed-in user's id, or null if the request isn't authenticated.
  *
  * This id becomes the Durable Object name, so it decides which database the
@@ -99,6 +191,14 @@ export async function ownerOf(req: Request, env: AuthEnv): Promise<string | null
   if (secret.length > 0) {
     const token = tokenOf(req)
     if (!token) return null
+    // Before Clerk, because the MCP token is not a JWT: letting verifyToken
+    // reject it first would log a scary parse error for a perfectly valid
+    // credential on every headless request. Header-only — see headerTokenOf.
+    const headerToken = headerTokenOf(req)
+    if (headerToken) {
+      const mcp = await mcpOwner(headerToken, env)
+      if (mcp) return mcp
+    }
     try {
       const claims = await verifyToken(token, { secretKey: secret })
       // `sub` is Clerk's stable user id. It never changes for an account, which

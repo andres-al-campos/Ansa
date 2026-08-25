@@ -34,6 +34,16 @@
     // working would mean allowing *.pages.dev — which is every Pages site on
     // Cloudflare, not just this one. Test against the production URL.
     "ANSA_ALLOWED_ORIGIN": "https://ansaflow.pages.dev"
+
+    // The Clerk user id the MCP server's token acts as. Uncomment and set it to
+    // your own `user_xxx` to give a headless client access to your tree — see
+    // "Giving it access to your real tree" in the README.
+    //
+    // Not a secret: on its own it authenticates nobody, since the token's hash
+    // in ANSA_MCP_TOKEN_SHA256 is the half that grants anything. Visible here so
+    // a worker that answers as the wrong account can be diagnosed by reading the
+    // config rather than by guessing.
+    // "ANSA_MCP_USER": "user_xxxxxxxxxxxxxxxxxxxxxxxxx"
   }
 
   // CLERK_SECRET_KEY is a secret, not a var: `wrangler secret put
