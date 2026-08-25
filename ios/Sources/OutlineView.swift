@@ -236,9 +236,16 @@ struct OutlineView: View {
             // path arrives as one clean sequence and the recognisers never
             // contend; a finger is what produces the race.
             .simultaneousGesture(zoomOutSwipe)
-            .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                ToolbarItem(placement: .principal) {
+                    // The route, not the destination: the last crumb is the
+                    // body's title one line down, and saying it twice was what
+                    // made the header feel like it was repeating itself.
+                    Crumbs(
+                        path: scope.map { Array(TreeOps.lineageOf(tree, $0).dropLast()) } ?? [],
+                        onTap: setScope)
+                }
                 if scope != nil {
                     ToolbarItem(placement: .topBarLeading) {
                         Button("Back", systemImage: "chevron.left", action: zoomOut)
@@ -248,9 +255,16 @@ struct OutlineView: View {
                     // project meant swiping out as many times as you had gone
                     // in. This is the one move that is always one tap.
                     ToolbarItem(placement: .topBarTrailing) {
-                        Button("Projects", systemImage: "square.grid.2x2") {
+                        Button("Projects", systemImage: "house") {
                             setScope(nil)
                         }
+                        // A shade under the toolbar default: the glyph is
+                        // solider than the chevron opposite it and drew heavier
+                        // than the thing it sits beside.
+                        // Outline `house`, not `house.fill`: the solid glyph
+                        // drew heavier than the chevron opposite it, and this
+                        // is the quieter of the two controls.
+                        .font(.system(size: 14, weight: .regular))
                     }
                 }
             }
@@ -1323,48 +1337,56 @@ private struct ScopeProgress: View {
     /// project is the list, not a task in it — but it is the same question a
     /// drag is asking, so it gets the same answer.
     let lit: Bool
-
     private var complete: Bool { progress.pct == 100 }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            // Two jobs, one line. Under a drag it names what a drop would land
-            // in; otherwise it says how much is left, which is the one thing
-            // the bar beside it cannot — 70% of three tasks and 70% of three
-            // hundred draw identically and mean nothing alike.
-            HStack(spacing: 6) {
-                Text(lit ? "Drop into \(title)" : "\(progress.done) of \(progress.total) done")
+        // Two rows: the path, then the bar. They answer different questions —
+        // where am I, and how far in — and stacking them keeps each legible
+        // where cramming all of it onto one line did not.
+        //
+        // Height is the other reason. This strip is what a drop lands on to
+        // make a task a child of the project, and beside full-height task rows
+        // a one-line strip was too slim a target to aim at.
+        VStack(alignment: .leading, spacing: 7) {
+            HStack(spacing: 8) {
+                // The scope's own name. The trail that leads here is in the
+                // nav bar above — chrome names the route, the body names the
+                // thing, which is how a file browser splits the same two facts.
+                // Flush left with the rows and the bar, sharing their edge.
+                Text(lit ? "Drop into " + title : title)
+                    .font(.title3.weight(.semibold))
                     .lineLimit(1)
                     .foregroundStyle(
-                        lit ? AnyShapeStyle(DropPalette.nest) : AnyShapeStyle(.secondary))
-
-                if !lit {
-                    Spacer(minLength: 0)
-                    // Kept, but moved up beside the counts rather than sitting
-                    // in its own column next to the bar. It is the exact figure
-                    // the bar can only approximate, and it costs no height
-                    // here. Gone under a drag, where the line has a louder job.
-                    Text("\(progress.pct)%")
-                        .foregroundStyle(
-                            complete ? AnyShapeStyle(Color.green) : AnyShapeStyle(.tertiary))
-                }
+                        lit ? AnyShapeStyle(DropPalette.nest) : AnyShapeStyle(.primary))
+                Spacer(minLength: 0)
             }
-            .font(.subheadline.weight(.medium))
-            .monospacedDigit()
-            .contentTransition(.numericText())
 
-        HStack(spacing: 10) {
-            GeometryReader { geo in
+            // `n of m done` used to sit here. Dropped rather than shrunk: it is
+            // on every card in the project grid, which is where the question it
+            // answers — is this one worth opening — actually gets asked. Inside
+            // a project the tasks themselves say it, and the width buys a
+            // couple more crumbs before the path has to elide.
+            HStack(spacing: 8) {
                 ZStack(alignment: .leading) {
-                    Capsule().fill(.quaternary)
-                    Capsule()
-                        .fill(complete ? Color.green : Color.accentColor)
-                        .frame(width: geo.size.width * CGFloat(progress.pct) / 100)
+                    GeometryReader { geo in
+                        ZStack(alignment: .leading) {
+                            Capsule().fill(.quaternary)
+                            Capsule()
+                                .fill(complete ? Color.green : Color.accentColor)
+                                .frame(width: geo.size.width * CGFloat(progress.pct) / 100)
+                        }
+                    }
                 }
+                .frame(height: 4)
+
+                Text("\(progress.pct)%")
+                    .foregroundStyle(
+                        complete ? AnyShapeStyle(Color.green) : AnyShapeStyle(.tertiary))
+                    .monospacedDigit()
+                    .contentTransition(.numericText())
             }
-            .frame(height: 4)
         }
-        }
+        .font(.subheadline.weight(.medium))
         .padding(.leading, OutlineRow.columnLeft)
         .padding(.trailing, OutlineRow.railInset)
         .padding(.vertical, 8)
@@ -1892,5 +1914,79 @@ private struct RowFramesKey: PreferenceKey {
     static var defaultValue: [NodeId: CGRect] { [:] }
     static func reduce(value: inout [NodeId: CGRect], nextValue: () -> [NodeId: CGRect]) {
         value.merge(nextValue()) { _, new in new }
+    }
+}
+
+/// The path to the current scope, as tappable crumbs.
+///
+/// This replaces a plain title because the title only ever said where you are,
+/// and the question that costs you taps is how to get somewhere else. Every
+/// crumb is a jump, so leaving a deep scope is one tap rather than one swipe
+/// per level.
+private struct Crumbs: View {
+    /// Root-first, current scope last. Empty on the project grid.
+    let path: [Node]
+    let onTap: (NodeId?) -> Void
+
+    /// How many crumbs to show before eliding the middle.
+    ///
+    /// The two that matter are the ends: the root says which project, the last
+    /// says where in it. Anything between is context you can already see by
+    /// looking at the screen, so it is the first thing to go.
+    private let visible = 3
+
+    var body: some View {
+        HStack(spacing: 4) {
+            crumb("Projects", id: nil, current: path.isEmpty)
+            ForEach(Array(shown.enumerated()), id: \.offset) { index, entry in
+                separator
+                switch entry {
+                case .elision:
+                    // Not tappable: it stands for several scopes at once, so
+                    // there is no single place a tap could mean.
+                    Text("…").foregroundStyle(.secondary)
+                case .node(let node):
+                    crumb(node.text.isEmpty ? "Untitled" : node.text,
+                          id: node.id,
+                          current: node.id == path.last?.id)
+                }
+            }
+        }
+        .font(.subheadline)
+        // The last crumb is the one being read, so it is the one that keeps its
+        // full width when the bar runs out of room.
+        .lineLimit(1)
+        .truncationMode(.tail)
+    }
+
+    private enum Entry {
+        case node(Node)
+        case elision
+    }
+
+    /// The path with its middle collapsed once it outgrows the bar.
+    ///
+    /// Elides rather than scrolls: a marquee only reads while it is moving, so
+    /// you have to wait for the crumb you want before you can tap it.
+    private var shown: [Entry] {
+        guard path.count > visible else { return path.map(Entry.node) }
+        guard let first = path.first, let last = path.last else { return [] }
+        return [.node(first), .elision, .node(last)]
+    }
+
+    private var separator: some View {
+        Text("›").foregroundStyle(.tertiary)
+    }
+
+    @ViewBuilder private func crumb(_ text: String, id: NodeId?, current: Bool) -> some View {
+        if current {
+            // The scope you are already in: shown, not offered, since tapping
+            // it would do nothing and looking tappable promises otherwise.
+            Text(text).fontWeight(.semibold)
+        } else {
+            Button(text) { onTap(id) }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+        }
     }
 }
