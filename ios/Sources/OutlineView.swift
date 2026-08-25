@@ -293,7 +293,7 @@ struct OutlineView: View {
                     onToggleDone: { apply(.setDone(id: row.node.id, done: !row.node.done)) },
                     onCollapse: { apply(.toggleCollapsed(id: row.node.id)) },
                     onBeginEdit: { beginEdit(row.node) },
-                    onBlur: { id in commitEdit(from: id) },
+                    onBlur: { id in commitEdit(from: id, releasingFocus: false) },
                     // Return commits and stops, rather than opening a fresh row
                     // below. The web auto-advances because typing is how you add
                     // there; the phone has a permanent "New task" field at the
@@ -977,8 +977,24 @@ struct OutlineView: View {
     /// unfocused, and the focus-loss commit tears the edit down before it
     /// starts.
     private func beginEdit(_ node: Node) {
+        let wasEditing = edit.isEditing
         edit.begin(node)
-        DispatchQueue.main.async { focusedRow = node.id }
+        // Still a turn late, and it has to be: `editing` is what builds the
+        // field, so focusing in the same pass targets one that does not exist.
+        //
+        // The keyboard survives the gap anyway, because the *old* field is
+        // still focused across it — the blur no longer clears `focusedRow`,
+        // so focus passes from one row to the next without ever being nil.
+        // Focus is set in the same runloop turn when a field is already up.
+        // The deferral exists because `editing` is what builds the field, but
+        // SwiftUI has already applied `edit.begin` by the time this runs inside
+        // a transaction — and going through `async` there is precisely the gap
+        // where no field is focused and iOS takes the keyboard down.
+        if wasEditing {
+            focusedRow = node.id
+        } else {
+            DispatchQueue.main.async { focusedRow = node.id }
+        }
     }
 
     /// Finish renaming. `AnsaCore.commitEdit` decides whether that is a rename,
@@ -995,7 +1011,13 @@ struct OutlineView: View {
     ///   arrives after the field has gone, so by then `editing` may already
     ///   name a different row; committing that one would end an edit the user
     ///   just started.
-    private func commitEdit(from: NodeId? = nil) {
+    /// - Parameter releasingFocus: false when the blur came from focus moving
+    ///   to another row. Clearing focus there is what made the keyboard slide
+    ///   away and back between every two rows: iOS dismisses it the moment
+    ///   nothing is focused, and the next field cannot claim focus until it has
+    ///   been built. Leaving focus alone hands it straight across, and the
+    ///   keyboard never learns the edit ended.
+    private func commitEdit(from: NodeId? = nil, releasingFocus: Bool = true) {
         guard edit.shouldCommit(from: from), let id = edit.editing else { return }
         let op = TreeOps.commitEdit(tree, id, edit.text)
         if let op { apply(op) }
@@ -1005,7 +1027,7 @@ struct OutlineView: View {
         // the new task back to the bottom with the chip still claiming
         // otherwise.
         edit.endEdit(rememberAnchor: TreeOps.byId(tree, id) == nil ? nil : id)
-        focusedRow = nil
+        if releasingFocus { focusedRow = nil }
     }
 
     private func confirmDeleteProject(_ id: NodeId) {
