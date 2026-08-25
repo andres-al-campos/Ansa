@@ -315,7 +315,11 @@ struct OutlineView: View {
                         if interactive, backPull == 0 { dragMoved(p) }
                     },
                     onDragEnded: { if interactive { endDrag() } },
-                    isDragging: interactive && drag.dragging == row.node.id)
+                    isDragging: interactive && drag.dragging == row.node.id,
+                    // The same row `parentHighlight` outlines — the bullet is
+                    // the thing being dropped into, so it lights with the row
+                    // rather than leaving the highlight to the frame alone.
+                    isDropTarget: interactive && litGuideParent == row.node.id)
                     // One segment per guide, drawn inside the row.
                     //
                     // The segments abut into what reads as a single unbroken
@@ -1274,6 +1278,8 @@ private struct OutlineRow: View {
     let onDragEnded: () -> Void
     /// True while this row is the one being carried, which dims it in place.
     let isDragging: Bool
+    /// True while a drop would land inside this row, which lights its bullet.
+    let isDropTarget: Bool
 
     /// Whether the press completed and the drag took over. See `bulletGesture`.
     @State private var armed = false
@@ -1403,7 +1409,8 @@ private struct OutlineRow: View {
             // Zoom moved to a swipe: it is cheap to undo but replaces the whole
             // screen, and this column sits where a thumb brushes while
             // scrolling. What is left here is undone by repeating the tap.
-            Bullet(hasChildren: hasChildren, collapsed: node.collapsed)
+            Bullet(hasChildren: hasChildren, collapsed: node.collapsed,
+                   lit: isDropTarget)
                 // The dot is 6pt; a tap target has to be a finger wide
                 // regardless, so the frame is padded out rather than the
                 // mark drawn larger.
@@ -1559,6 +1566,8 @@ private struct Checkbox: View {
 private struct Bullet: View {
     let hasChildren: Bool
     let collapsed: Bool
+    /// True while a drop would land inside this row, which lights the mark.
+    var lit: Bool = false
 
     var body: some View {
         ZStack {
@@ -1567,19 +1576,32 @@ private struct Bullet: View {
                     // The disc is now the only thing saying children are hidden
                     // here — both the chevron and the count came off the row.
                     Circle()
-                        .fill(.secondary)
+                        .fill(lit ? AnyShapeStyle(DropPalette.nest)
+                                  : AnyShapeStyle(.secondary))
                         .frame(width: 18, height: 18)
                 } else {
                     Circle()
-                        .strokeBorder(.secondary, lineWidth: 2)
+                        .strokeBorder(lit ? AnyShapeStyle(DropPalette.nest)
+                                          : AnyShapeStyle(.secondary),
+                                      lineWidth: 2)
                         .frame(width: 18, height: 18)
                 }
+            } else if lit {
+                // A leaf has no surround to light, so it grows the ring the
+                // expanded state already has. Same shape, so the row about to
+                // become a parent previews what it is about to look like.
+                Circle()
+                    .strokeBorder(DropPalette.nest, lineWidth: 2)
+                    .frame(width: 18, height: 18)
             }
+            // Never lit. The dot is the one part that means the same thing in
+            // every state, and a brass dot on a brass disc would erase it.
             Circle()
                 .fill(.primary)
                 .frame(width: 6, height: 6)
         }
         .frame(width: 18, height: 18)
+        .animation(.easeOut(duration: 0.12), value: lit)
     }
 }
 
