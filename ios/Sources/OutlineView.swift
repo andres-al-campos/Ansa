@@ -1513,13 +1513,19 @@ private struct OutlineRow: View {
     /// A single-line row's content height, without the row's own vertical
     /// padding. Only a fallback for a row `List` has not measured yet — the
     /// guide segments use the real frame, since a wrapped row is taller.
-    static let rowHeight: CGFloat = 40
+    static let rowHeight: CGFloat = 28
 
     /// The row's own vertical spacing, split evenly above and below its
     /// content. Declared here rather than left to `List`: with the row insets
     /// zeroed, the row frame is the whole cell, which is what lets a guide
     /// segment fill its row and still meet the segments above and below.
-    static let rowPadding: CGFloat = 22
+    ///
+    /// Together with `rowHeight` this is 42pt a row, down from 62. The floor is
+    /// the 44pt touch target the bullet and checkbox need, which they still
+    /// clear on their own frames — the row is shorter than its controls, not
+    /// the other way round. Going to the 22pt a line of text strictly needs
+    /// would make both marks genuinely hard to hit.
+    static let rowPadding: CGFloat = 14
 
     var body: some View {
         HStack(spacing: 10) {
