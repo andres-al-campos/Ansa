@@ -776,6 +776,18 @@ button { font: inherit; color: inherit; }
 /* Vertical nesting guides, one per ancestor level, aligned under each parent
  * bullet. Calm but readable at rest; the segments on the hovered row's lineage
  * brighten into a trace running back up to its parents. */
+
+/* Not done: the phone lights the *parent row* and its guide brass during a
+ * drag, and this does not. The colours already match — DropPalette.nest is
+ * --brass in both themes — and the guides here are per-row spans like the
+ * phone's, so the shape is right. What is missing is the logic: which guide the
+ * drop hangs from, where to stop the lit run (the phone cuts it at the drop
+ * point rather than lighting the parent's whole subtree), and the half-segment
+ * that leaves the highlighted row so the line does not start a row below it
+ * with a gap. All three exist in Swift with tests — see litGuideParent and
+ * litUntilRow in ios/Sources/OutlineView.swift. Needs a parentAtDepth port too.
+ * Check it against the hover trace above before building: both brighten the
+ * same lines and may fight. */
 .guide {
   position: absolute;
   top: 0;
