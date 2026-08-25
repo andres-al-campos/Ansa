@@ -73,6 +73,10 @@ targets:
           NSAllowsLocalNetworking: true
     settings:
       base:
+        # The catalog holds one 1024 tile; iOS 17 derives every other size from
+        # it. Regenerate it with `python3 tools/make-icon.py` — the artwork is
+        # drawn from a spec in that script rather than hand-edited.
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         # Bundle ids are unique across every Apple developer account, not just
         # ours — com.ansa.app is taken by someone else, and signing fails with
         # "cannot be registered to your development team". Hence the personal
