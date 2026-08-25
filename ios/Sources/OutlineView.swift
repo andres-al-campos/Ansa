@@ -338,7 +338,7 @@ struct OutlineView: View {
                     editText: $edit.text,
                     focusedRow: $focusedRow,
                     onToggleDone: { apply(.setDone(id: row.node.id, done: !row.node.done)) },
-                    onCollapse: { apply(.toggleCollapsed(id: row.node.id)) },
+                    onCollapse: { toggleFold(row.node.id) },
                     onBeginEdit: { beginEdit(row.node) },
                     onBlur: { id in commitEdit(from: id, releasingFocus: false) },
                     // Return commits and stops, rather than opening a fresh row
@@ -594,6 +594,22 @@ struct OutlineView: View {
     /// it for the server. Nothing here mutates the tree directly.
     private func apply(_ op: Op) {
         store.apply(op)
+    }
+
+    /// Fold or unfold a row, with the rows below moving rather than jumping.
+    ///
+    /// Animated here rather than inside `apply`, which every op goes through:
+    /// a sync landing from another device would otherwise animate rows the user
+    /// never touched, turning a background update into motion that reads as
+    /// something happening on this screen.
+    ///
+    /// The point is not the polish — a fold near the bottom of the screen moves
+    /// the row you were reading, and without the tween there is nothing to
+    /// follow, so it reads as the row teleporting and has to be hunted for.
+    private func toggleFold(_ id: NodeId) {
+        withAnimation(.easeOut(duration: 0.2)) {
+            apply(.toggleCollapsed(id: id))
+        }
     }
 
     private func commitDraft() {
