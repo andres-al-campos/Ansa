@@ -243,6 +243,15 @@ struct OutlineView: View {
                     ToolbarItem(placement: .topBarLeading) {
                         Button("Back", systemImage: "chevron.left", action: zoomOut)
                     }
+                    // Back walks the trail a step at a time, which is right for
+                    // retracing and wrong for leaving: crossing to another
+                    // project meant swiping out as many times as you had gone
+                    // in. This is the one move that is always one tap.
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button("Projects", systemImage: "square.grid.2x2") {
+                            setScope(nil)
+                        }
+                    }
                 }
             }
         }
