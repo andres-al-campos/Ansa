@@ -206,7 +206,17 @@ case "${1:-run}" in
       -destination 'generic/platform=iOS' \
       -derivedDataPath build \
       -allowProvisioningUpdates \
-      build | grep -E "error:|warning:|BUILD" || true
+      build | grep -E "error:|warning:|BUILD"
+    # `grep`'s status is not xcodebuild's, and it is the one the shell keeps —
+    # so the build's own result has to be read out of PIPESTATUS before
+    # anything else runs. Without this a compile error is printed and then
+    # installed straight over, and the script reports success while the device
+    # keeps the previous binary: indistinguishable from a fix that did not
+    # work. No `|| true`, which would make the pipeline's status its own and
+    # put xcodebuild's out of reach. `set -o pipefail` is not used here because
+    # grep legitimately exits 1 on a build with no matching lines at all.
+    build_status=${PIPESTATUS[0]}
+    [ "$build_status" -eq 0 ] || die "Build failed. The errors are above."
 
     # Unlocking is a separate requirement from connecting, and the phone can
     # satisfy the first without the second: the tunnel comes up while it is
@@ -289,7 +299,17 @@ print(hit[0]["udid"] if hit else "")')
       -configuration Debug \
       -destination "id=$udid" \
       -derivedDataPath build \
-      build | grep -E "error:|warning:|BUILD" || true
+      build | grep -E "error:|warning:|BUILD"
+    # `grep`'s status is not xcodebuild's, and it is the one the shell keeps —
+    # so the build's own result has to be read out of PIPESTATUS before
+    # anything else runs. Without this a compile error is printed and then
+    # installed straight over, and the script reports success while the device
+    # keeps the previous binary: indistinguishable from a fix that did not
+    # work. No `|| true`, which would make the pipeline's status its own and
+    # put xcodebuild's out of reach. `set -o pipefail` is not used here because
+    # grep legitimately exits 1 on a build with no matching lines at all.
+    build_status=${PIPESTATUS[0]}
+    [ "$build_status" -eq 0 ] || die "Build failed. The errors are above."
 
     app=$(built_app Debug-iphonesimulator)
 
