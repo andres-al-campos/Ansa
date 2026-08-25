@@ -152,7 +152,7 @@ Re-run without the output filter to see the full log:
 device_udid() {
   local udid
   udid=$(xcrun devicectl list devices 2>/dev/null \
-    | grep -i available \
+    | grep -iE 'available|connected' \
     | grep -oiE '[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}' \
     | head -1) || udid=""
 
