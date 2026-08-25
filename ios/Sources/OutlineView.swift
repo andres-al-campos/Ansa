@@ -10,6 +10,15 @@ import SwiftUI
 struct OutlineView: View {
     @State private var store = OutlineStore()
     @State private var scope: NodeId?
+    /// Where the back gesture came from, most recent last.
+    ///
+    /// The tree parent is the wrong answer on its own: jump from a task deep in
+    /// one project straight into another and "out" means the second project's
+    /// parent, which is nowhere you have been. This records the trail instead,
+    /// and `parentScope` falls back to the tree when it is empty — a resumed
+    /// session has no trail but still has somewhere sensible to go.
+    @State private var backTrail: [NodeId?] = []
+
     /// True until the user navigates themselves.
     ///
     /// The tree arrives after the view does, so the scope to resume into is not
@@ -622,6 +631,22 @@ struct OutlineView: View {
     /// Matches `setScope` in `src/Outliner.tsx`.
     private func setScope(_ id: NodeId?) {
         autoScope = false
+        // Not when it changes nothing, so back never spends a step standing
+        // still.
+        //
+        // The cap counts visits rather than depth, and visits accumulate much
+        // faster: bouncing between two projects a hundred times fills it
+        // without ever leaving depth 1. It is generous for that reason — the
+        // entries are ids, so the whole trail costs less than one row of text.
+        //
+        // Overflow drops the oldest, so the most recent steps always survive.
+        // Back still works past the end: `popBack` hands off to the tree parent
+        // once the trail runs out, which is where it walked before there was a
+        // trail at all.
+        if id != scope {
+            backTrail.append(scope)
+            if backTrail.count > 200 { backTrail.removeFirst() }
+        }
         scope = id
     }
 
@@ -1232,7 +1257,24 @@ struct OutlineView: View {
     private func zoomOut() {
         // Zooming out changes what the field means, so the guess goes with it.
         edit.captureParent = nil
-        setScope(parentScope)
+        // Pop rather than `setScope`, which would push the step being undone
+        // and leave back bouncing between two scopes.
+        autoScope = false
+        scope = popBack()
+    }
+
+    /// The next scope back: the last one visited that still exists, or the tree
+    /// parent once the trail runs out.
+    ///
+    /// Deleted scopes are skipped rather than landed on — a trail outlives the
+    /// nodes in it, and stepping back into something that is gone shows an
+    /// empty screen that reads as the app failing.
+    private func popBack() -> NodeId? {
+        while let previous = backTrail.popLast() {
+            guard let previous else { return nil }
+            if TreeOps.byId(tree, previous) != nil { return previous }
+        }
+        return parentScope
     }
 }
 
