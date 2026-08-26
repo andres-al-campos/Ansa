@@ -222,12 +222,12 @@ test('the in-place editor adds no box and no height', () => {
  * derivation rather than the taste.
  */
 test('the bullet and checkbox centre on the first text line', () => {
-  const line = 21.75 // 14.5px text at line-height 1.5, the row's line box
+  const line = 22 // the row's line box, a whole number so gaps divide evenly
   const offset = (box: number) => `${(line - box) / 2}px`
   // (21.75 - 18) / 2 — the bullet's box is 18px.
   expect(declarations('.bullet', 'margin-top')).toEqual([offset(18)])
-  // (21.75 - 15) / 2 — and the checkbox's is an odd 15px, so this keeps the
-  // fraction: rounding to 3px is a visible half-pixel on a square that small.
+  // (22 - 15) / 2 — a half-pixel, kept rather than rounded: on a 15px square
+  // that is visible.
   expect(declarations('.check', 'margin-top')).toEqual([offset(15)])
 })
 
@@ -280,4 +280,22 @@ test('the zoom button is square and does not drive the row height', () => {
   expect(declarations('.zoom', 'margin-right')).toEqual([
     `${rowPad[0] - rowPad[1]}px`,
   ])
+})
+
+/**
+ * The line box is a whole number of pixels. `line-height: 1.5` on a 14.5px font
+ * gives 21.75, and that quarter pixel has to land on one side or the other —
+ * it fell into the bottom of the editor's box, which sat 2px from the row's top
+ * and 2.25px from its bottom. Everything vertical in a row divides from this
+ * number, so a fraction here reappears as an off-centre bullet or checkbox.
+ */
+test('the row line box divides evenly', () => {
+  for (const rule of ['.label', '.label-input']) {
+    const [lh] = declarations(rule, 'line-height')
+    expect(lh, `${rule} should set a whole-pixel line-height`).toMatch(/^\d+px$/)
+  }
+  // Both must agree, or the text moves when a row enters edit mode.
+  expect(declarations('.label', 'line-height')).toEqual(
+    declarations('.label-input', 'line-height'),
+  )
 })

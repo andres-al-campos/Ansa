@@ -752,12 +752,10 @@ button { font: inherit; color: inherit; }
   /* Sits on the first text line, not on the row's middle: a row can wrap to two
    * lines and the bullet belongs beside the first one, which is why this is a
    * nudge from the top rather than `align-items: center` on the row. From the
-   * 21.75px line box: (21.75 - 18) / 2. Kept as the exact fraction, like the
-   * checkbox below — rounding the two differently is what leaves them a
-   * half-pixel apart from each other. It used to be 4px, tuned by eye back when
+   * 22px line box: (22 - 18) / 2. It used to be 4px, tuned by eye back when
    * nothing drew an edge to measure it against; the editor's brass box made it
    * visible as sitting low. */
-  margin-top: 1.875px;
+  margin-top: 2px;
   /* Hold-to-drag must not scroll the page under the finger on touch. */
   touch-action: none;
 }
@@ -875,10 +873,9 @@ body:has(.row.gap-slot) .proj:is(:active, :hover, .proj) { cursor: default; }
   width: 15px;
   height: 15px;
   flex: none;
-  /* Centred on the same first line as the bullet: (21.75 - 15) / 2 = 3.375.
-   * Not rounded to 3px — the box is an odd 15px, so half a pixel is visible on
-   * a square this small. Was 5px, which put it ~1.6px below the text. */
-  margin-top: 3.375px;
+  /* Centred on the same first line as the bullet: (22 - 15) / 2 = 3.5. Was 5px,
+   * which put it ~1.6px below the text. */
+  margin-top: 3.5px;
   /* --mark, not the text-ink token it used to borrow: the checkbox is one of
    * the row's structural marks, so it moves with the bullet and the guide. */
   border: 1.5px solid var(--mark);
@@ -913,7 +910,13 @@ body:has(.row.gap-slot) .proj:is(:active, :hover, .proj) { cursor: default; }
 .label {
   display: flex;
   align-items: baseline;
-  line-height: 1.5;
+  /* 22px, not 1.5 — the ratio gives 21.75 on a 14.5px font, and that quarter
+   * pixel has to land somewhere: it fell into the bottom of the editor's box,
+   * which then sat 2px from the row's top and 2.25px from its bottom. A whole
+   * number divides evenly, so the gaps match and every vertical offset derived
+   * from this line box comes out whole. .label-input must carry the same value
+   * or the text moves when you click into a row. */
+  line-height: 22px;
   font-size: 14.5px;
   cursor: text;
 }
@@ -954,7 +957,8 @@ body:has(.row.gap-slot) .proj:is(:active, :hover, .proj) { cursor: default; }
   display: block;
   font: inherit;
   font-size: 14.5px;
-  line-height: 1.5;
+  /* Matches .label exactly — see the note there on why it is a whole number. */
+  line-height: 22px;
   background: none;
   color: var(--ink);
   border: none;
