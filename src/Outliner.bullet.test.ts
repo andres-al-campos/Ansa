@@ -118,35 +118,43 @@ test('no drop rule fills a bullet or touches its dot', () => {
   expect(css).not.toMatch(/^\.row\.drop-into \.bullet[^{]*::after/m)
 })
 
-test('the fold disc reads as a well the moment the triangle shows', () => {
-  // The disc started life as a pure mask, filled with --sunk — exactly what a
-  // hovered row paints. That is a 1.00:1 circle: it hid the guide and was
-  // otherwise invisible. Once it also had to advertise a target wider than the
-  // glyph, invisible stopped being acceptable.
+test('zoom is revealed by hover but stays the quietest thing in the row', () => {
+  // The point of moving zoom to the right edge was that it stops competing:
+  // it used to be a triangle in the gutter that landed on a nesting guide and
+  // needed a painted disc to break the line under it. At the edge it needs
+  // none of that, but it does need to stay dimmer than the label it sits
+  // beside, or it becomes the loudest thing on every hovered row.
   //
-  // The disc sits on a guide as often as not, and the row's own --sunk hover
-  // background paints in the same band. --edge was so close to both that on a
-  // line the glyph looked stuck to the wire. The disc is filled with --edge-lit
-  // the instant the row is hovered — the same tone it holds under the pointer —
-  // so it's a clear well from the first frame, not a faint tint the guide shows
-  // through. Assert the value it *has*, not merely that it isn't --sunk: a
-  // negative assertion also passes when the property is missing entirely.
-  expect(declarations('.row:hover .fold::before', 'background')).toEqual(['var(--edge-lit)'])
+  // --ink-ghost is the dimmest ink token; the label is --ink. Assert the value,
+  // not merely that it isn't --ink: a negative assertion also passes when the
+  // property is missing and the button inherits body text.
+  expect(declarations('.zoom', 'color')).toEqual(['var(--ink-ghost)'])
+  expect(declarations('.zoom', 'opacity')).toEqual(['0'])
+  expect(declarations('.row:hover .zoom', 'opacity')).toEqual(['1'])
 
-  // Pointing at the control lifts the glyph, not the disc — so there is no
-  // second disc value to reach for, and no `.fold:hover::before` rule.
-  expect(css).not.toMatch(/\.fold:hover::before/)
+  // Pointing at it lifts it one step, to --ink-mid — visible as a target
+  // without reaching body-text weight.
+  expect(declarations('.row:hover .zoom:hover', 'color')).toEqual(['var(--ink-mid)'])
+})
 
-  // The well has to survive the row's hover background. The disc is z-index 1
-  // and the row isolates a stacking context, so `1` is read against the row —
-  // above the guide and the --sunk band, below the glyph. Without the isolation
-  // the disc dropped to the list level and the hover background painted over it.
-  // (`.fold::before` is a grouped selector, so match its block by hand rather
-  // than through `body`, which anchors on a single selector before the brace.)
-  const disc = css.match(/\.fold::before,\s*\n\s*\.zoom::before\s*\{([^}]*)\}/)
-  const discBody = disc?.[1].replace(/\/\*[\s\S]*?\*\//g, ';') ?? ''
-  expect(discBody).toMatch(/(?:^|;)\s*z-index\s*:\s*1\b/)
-  expect(declarations('.row', 'isolation')).toEqual(['isolate'])
+test('zoom is reachable by keyboard, not only by hover', () => {
+  // A control revealed only on `:hover` is invisible to anyone tabbing to it —
+  // it takes focus while painted at opacity 0, so the focus ring lands on
+  // nothing and the row looks unresponsive. Focus has to do what hover does,
+  // and then some: there is no cursor to corroborate it, so it also fills.
+  expect(declarations('.zoom:focus-visible', 'opacity')).toEqual(['1'])
+  expect(declarations('.zoom:focus-visible', 'background')).toEqual(['var(--edge-lit)'])
+})
+
+test('zoom is pushed to the row edge by auto margin, not by a fixed width', () => {
+  // The row is flex and the label takes the slack, so `margin-left: auto` is
+  // what puts the arrow at the edge. A fixed width or a right offset instead
+  // would put it a different distance in on every row, since labels differ —
+  // and the whole reason it works as the quiet control is that it is in the
+  // same place every time.
+  const margin = declarations('.zoom', 'margin')
+  expect(margin).toHaveLength(1)
+  expect(margin[0].split(/\s+/).at(-1)).toBe('auto')
 })
 
 test('the collapsed drop rule outranks the expanded ring it overrides', () => {

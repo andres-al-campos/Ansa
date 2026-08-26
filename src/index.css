@@ -640,170 +640,54 @@ button { font: inherit; color: inherit; }
   text-overflow: ellipsis;
 }
 
-/* The gutter column, left of the bullet, where the twisty used to sit. Two
- * buttons share it: `.fold` in the normal tree view, and `.zoom.trailing`'s
- * sibling `.zoom` in the flattened one. Both are hover-only — the bullet's ring
- * or disc already carries the folded state at rest, so nothing here has to
- * persist.
+/* Zoom, at the row's right edge. It replaced a triangle in a gutter column left
+ * of the bullet, which had to sit exactly on an ancestor's nesting guide — the
+ * gutter was one indent-step left of the bullet, which is where that line runs —
+ * and needed a painted disc behind it to break the line it landed on. Moving it
+ * to the right edge removes the collision instead of masking it, and the gutter
+ * column went with it.
  *
- * The width is fixed rather than padded out to fit the glyph, because this slot
- * is what GUIDE_X0 measures from: letting it size to its content would move
- * every nesting guide. 15px is odd to match the 1px guide, so button and line
- * share a centre. The 13px triangle inside is centred by the flexbox, so its
- * own size is free to differ. */
-.fold,
+ * `margin-left: auto` is what pins it: the row is flex, so this pushes the
+ * button to the far edge and the label takes the space between. The outline is
+ * capped at --col-w, so that edge is a fixed column and the arrow is in the same
+ * place on every row regardless of label length.
+ *
+ * Hidden until the row is hovered, and drawn in --ink-ghost even then. It is the
+ * quietest thing in the row on purpose: it is reachable, not advertised. */
 .zoom {
   flex: none;
-  /* The button is 23px square but occupies only GUTTER (15px) of layout: the
-   * negative margins pull 4px back on each side, so the column keeps the width
-   * GUIDE_X0 is measured against while the target grows past it.
-   *
-   * 15px was under every pointer-target minimum, and the bullet sits one gap
-   * away — a near-miss zoomed the row instead of folding it. 23px overlaps the
-   * row's padding and the gap, both dead space, so nothing else loses area.
-   *
-   * The vertical margins do the same job for height: without them the 23px box
-   * becomes the tallest thing in the row and pushes every row 4px further
-   * apart, which is the whole list's rhythm changing to enlarge one target. */
-  width: 23px;
-  height: 23px;
-  margin: -4px;
+  margin: 0 0 0 auto;
+  padding: 2px 5px;
+  border-radius: 5px;
   align-self: center;
   display: flex;
   align-items: center;
   justify-content: center;
-  /* The disc below is absolute; this is what it centres against. */
-  position: relative;
   background: none;
   border: none;
-  padding: 0;
   cursor: pointer;
   color: var(--ink-ghost);
   font-size: 14px;
   line-height: 1;
   opacity: 0;
-  transition: opacity 0.12s ease, color 0.12s ease;
+  transition: opacity 0.12s ease, color 0.12s ease, background 0.12s ease;
 }
 
-/* The disc, drawn at 15px inside the 23px target. Two jobs: it masks the guide
- * running behind the glyph, and it shows how much of the area around that glyph
- * is clickable — the target is nearly twice the triangle's width, and nothing
- * else says so.
- *
- * The second job is why it is painted rather than merely filled with the row's
- * own colour. Masking only needs --sunk, which is exactly what a hovered row
- * paints: a 1.00:1 disc, invisible by construction. It has to sit above the row
- * to read as a well the glyph rests in.
- *
- * Circle on a square box, not a rounded rectangle — a rectangle reads as a
- * notch cut out of the guide rather than the line passing behind something
- * round. */
-.fold::before,
-.zoom::before {
-  content: '';
-  position: absolute;
-  width: 15px;
-  height: 15px;
-  border-radius: 50%;
-  background: none;
-  transition: background 0.12s ease;
-  /* Above the row's hover background and the guide it masks, below the glyph.
-   * The glyph is lifted a step further so it stays on top of its own well. */
-  z-index: 1;
-}
-.fold svg {
-  position: relative;
-  z-index: 2;
-}
-
-/* The flattened leaf view's fallback: no gutter column there, so it sits at the
- * right edge and can size to its own content. */
-.zoom.trailing {
-  width: auto;
-  height: auto;
-  margin: 0 0 0 auto;
-  padding: 2px 5px;
-  border-radius: 5px;
-}
-/* No guide runs under this one, so it has nothing to mask and no reason for a
- * fixed-size disc behind a variable-width button. It paints its own pill. */
-.zoom.trailing::before { content: none; }
-
-/* A leaf's fold button exists only to hold the gutter open — dropping it would
- * slide the row's contents a column left. It has no glyph, so a disc under it
- * would advertise a control that isn't there. Harmless while the disc was
- * invisible; a visible empty circle on every leaf row once it wasn't. */
-/* `.leaf`, not `.empty`: `.empty` is already the empty-list placeholder, and it
- * carries `padding: 18px 6px`. That padding beat this button's 23px height and
- * grew every leaf row to 38px — the rows got taller, and only the ones with no
- * children did. A marker class on a shared element needs a name nothing else in
- * the sheet claims. */
-.fold.leaf::before { content: none; }
-.fold.leaf { cursor: default; }
-.row:hover .zoom.trailing { background: var(--edge); }
-.zoom.trailing:hover { background: var(--edge-lit); }
-.zoom.trailing:focus-visible { background: var(--edge-lit); }
-
-/* On every row below depth 0 this slot sits exactly on an ancestor's guide —
- * the gutter is one indent-step left of the bullet, which is where that line
- * runs. So when the chevron appears it takes the row's own background with it
- * and breaks the line behind itself, the way a label breaks a rule it sits on.
- * At rest it's transparent and the guide runs unbroken. */
-.row:hover .zoom,
-.row:hover .fold { opacity: 1; }
-.row:hover .zoom::before,
-.row:hover .fold::before {
-  /* The disc is on a guide as often as not — the gutter sits exactly on an
-   * ancestor's line — so as soon as the triangle appears the disc has to read
-   * as a filled well the line runs behind, not a faint tint the line shows
-   * through. --edge was a step above the surface but still close to the guide;
-   * on a line it looked like the glyph sat on the wire. --edge-lit is the same
-   * tone the disc takes under the pointer, so it's clearly a well the moment the
-   * control is visible, and pointing at it lifts the glyph rather than the disc. */
+/* Hovering the row reveals it; hovering the button itself lifts the glyph and
+ * fills the pill, so pointing at it reads as a target rather than as decoration
+ * that happens to be under the cursor. */
+.row:hover .zoom { opacity: 1; }
+.row:hover .zoom:hover {
+  color: var(--ink-mid);
   background: var(--edge-lit);
 }
-.zoom:hover { color: var(--ink); }
-/* --mark-hover, the same lift the bullet takes. --mark-lift was half a step —
- * 4.17:1 to 5.07:1 against the ground — which is a real change by measurement
- * and no change at all to look at. This is 4.17 to 6.47, and it stays on the
- * mark ramp rather than going to body-text white. */
-.fold:hover { color: var(--mark-hover); }
-/* Pointing at the control lifts the glyph, not the disc: the disc is already at
- * --edge-lit the moment the row is hovered, so the well is a constant and the
- * pointer response is the triangle darkening. Keyboard focus needs the disc
- * too, since tabbing to it doesn't hover the row. */
-.zoom:focus-visible,
-.fold:focus-visible { opacity: 1; }
-/* Tabbing to it has to look at least as present as pointing at it, since there
- * is no cursor to corroborate. Same lit disc as hover. */
-.zoom:focus-visible::before,
-.fold:focus-visible::before { background: var(--edge-lit); }
 
-/* The triangle rides the row's structural ramp rather than the text ink, like
- * the bullet and the checkbox it sits beside. */
-.fold { color: var(--mark); }
-
-/* Align the triangle with the bullet on the first line, not with the row's
- * centre. `align-self: center` (from the shared rule above) tracks the row's
- * full height, so on a wrapped row the triangle drifts a line below the dot it
- * belongs to; anchoring to the top like the bullet keeps them level. `top` then
- * slides the disc's centre onto the bullet's — a paint offset, so it leaves the
- * row rhythm the negative margins protect untouched. Scoped to `.fold`: the
- * flat view's `.zoom` is a right-edge pill with no bullet to line up against. */
-.fold {
-  align-self: flex-start;
-  top: 5.5px;
-}
-
-/* Right when folded, down when open. Rotation is a supporting cue only — the
- * bullet's ring-vs-disc is what says "folded" at rest, and this button isn't
- * even on screen then. That is the fix for the old twisty, which encoded the
- * whole state in a 90° turn of a 9px glyph and was unreadable at a glance. */
-.fold svg {
-  transition: transform 0.15s ease;
-}
-.fold.open svg {
-  transform: rotate(90deg);
+/* Keyboard focus has no cursor to corroborate it, so it has to look at least as
+ * present as hover: revealed and filled, not merely revealed. */
+.zoom:focus-visible {
+  opacity: 1;
+  color: var(--ink-mid);
+  background: var(--edge-lit);
 }
 
 /* Vertical nesting guides, one per ancestor level, aligned under each parent
@@ -841,6 +725,7 @@ button { font: inherit; color: inherit; }
   background: none;
   border: none;
   padding: 0;
+  /* Refined below: only a bullet that actually folds keeps the pointer. */
   cursor: pointer;
   position: relative;
   margin-top: 4px;
@@ -919,10 +804,22 @@ body:has(.row.gap-slot) { cursor: default; }
  * --ink is the body text, so the dot stays ahead as the surround brightens. */
 .bullet:hover::after { background: var(--ink); }
 
-/* Every bullet zooms now, leaf included — a leaf is a perfectly good place to
- * zoom into, and it is a drag handle besides. The exception is the flattened
- * view, which has no structure to zoom into or drag within. */
-.bullet.inert { cursor: default; }
+/* The bullet folds, so its cursor says what a click will do. A parent's click
+ * folds — pointer. A leaf has nothing to fold and is only a drag handle, so it
+ * gets the grab cursor rather than a pointer promising a click that does
+ * nothing. The flattened view has neither: no structure to fold and nothing to
+ * drag within, so the bullet there is decoration.
+ *
+ * `.folds` rather than `.parent`: `.parent` is the ring-drawing class, and a
+ * top-level childless row draws a ring while folding nothing. The TSX sets
+ * `.folds` from the same condition its click handler tests, so the cursor can't
+ * promise a fold the click won't perform.
+ *
+ * No grab cursor on the leaves that are only drag handles — hold-to-drag is a
+ * power-user gesture and the sheet deliberately doesn't advertise it at rest
+ * (see the `.row.gap-slot` rule above). So a leaf reads as inert, which is what
+ * a click on it does. */
+.bullet:not(.folds) { cursor: default; }
 
 .check {
   width: 15px;

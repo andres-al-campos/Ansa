@@ -48,11 +48,6 @@ import {
 // d*INDENT — directly under that ancestor's bullet.
 const ROW_PAD = 6
 const INDENT = 24
-// The zoom control's column, left of the bullet — matching .gutter and the
-// row's flex gap in CSS. Odd on purpose: the guide is an odd 1px, so an odd
-// slot puts the button's centre on the same half-pixel the line already sits
-// on, and the two stay visually stacked.
-const GUTTER = 15
 const ROW_GAP = 7
 // The bullet's own size, matching .bullet in CSS. Kept here because GUIDE_X0
 // depends on it: the guides are aimed at bullet *centres*, so resizing the
@@ -63,10 +58,13 @@ const BULLET = 18
 // with the bullet's. Left at `left: GUIDE_X0` a 1px line spans 33→34 and sits
 // half a pixel right of the bullet it belongs to, which is visible at 2x.
 const GUIDE_W = 1
-const GUIDE_X0 = ROW_PAD + GUTTER + ROW_GAP + BULLET / 2
+// The bullet starts the row, so its centre is one padding plus half a bullet
+// from the left edge. There used to be a 15px gutter here holding the fold
+// triangle; folding moved onto the bullet itself and the column went with it.
+const GUIDE_X0 = ROW_PAD + BULLET / 2
 
 /** The same numbers, exported so a test can check them against index.css. */
-export const GEOMETRY = { ROW_PAD, INDENT, GUTTER, ROW_GAP, BULLET, GUIDE_W, GUIDE_X0 }
+export const GEOMETRY = { ROW_PAD, INDENT, ROW_GAP, BULLET, GUIDE_W, GUIDE_X0 }
 
 // Telling a click on a bullet apart from a drag of it. DRAG_SLOP is how far the
 // pointer may wander and still count as a click; past it, a mouse is dragging.
@@ -132,21 +130,6 @@ function TrashIcon() {
         strokeLinecap="round"
         strokeLinejoin="round"
       />
-    </svg>
-  )
-}
-
-// The fold triangle, pointing right. Rotated 90° by CSS when the row is open.
-//
-// 13px on an odd 13-unit viewBox, so the shape has a true centre pixel to
-// rotate about; an even box would put the pivot on a boundary and shimmer the
-// glyph a half-pixel as it turns. It reads at about the weight of the 15px
-// outlined checkbox despite being smaller, because it is solid and that box is
-// hollow.
-function FoldIcon() {
-  return (
-    <svg viewBox="0 0 13 13" width="13" height="13" aria-hidden focusable="false">
-      <path d="M4.5 2.6 10 6.5l-5.5 3.9z" fill="currentColor" />
     </svg>
   )
 }
@@ -1330,66 +1313,52 @@ export default function Outliner({ initial }: { initial: Tree }) {
                     />
                   ))}
 
-                {/* Fold, in the twisty's old slot. Left of the bullet is where a
-                    row's structural controls belong, and it lines up down the
-                    column instead of drifting with the label's width. Revealed
-                    on row hover, because the bullet already carries the folded
-                    state at rest — this is only the control for changing it.
-                    The slot is also what GUIDE_X0 measures from, so it keeps
-                    its width whether or not the button is showing. */}
-                {!flat && (
-                  <button
-                    className={
-                      'fold' +
-                      (parent && !node.collapsed ? ' open' : '') +
-                      // A leaf's button is a spacer holding the column open. It
-                      // has no glyph, so it must not paint a disc either.
-                      // Named `leaf` rather than `empty` because `.empty` is
-                      // the empty-list placeholder, whose padding grew this
-                      // button and every leaf row with it.
-                      (parent ? '' : ' leaf')
-                    }
-                    onClick={() =>
-                      parent && setPresent(toggleCollapsed(tree, id), { op: 'toggleCollapsed', id })
-                    }
-                    aria-expanded={parent ? !node.collapsed : undefined}
-                    aria-label={parent ? (node.collapsed ? 'Expand' : 'Collapse') : undefined}
-                    tabIndex={parent ? 0 : -1}
-                    title={parent ? (node.collapsed ? 'Expand' : 'Collapse') : undefined}
-                  >
-                    {/* A leaf keeps the empty slot — dropping the button would
-                        let the row's contents slide one column left. */}
-                    {parent && <FoldIcon />}
-                  </button>
-                )}
-
-                {/* Clicking the bullet zooms into the row, the arrangement every
-                    other outliner uses. The bullet still *shows* whether the row
-                    is folded, as a ring or a disc — the state and the control
-                    that changes it are simply different objects, since the
-                    triangle in the gutter now owns folding. Holding it drags. */}
+                {/* Clicking the bullet folds the row, matching the phone, where
+                    tapping the bullet is the whole interaction. The bullet
+                    already *shows* the folded state as a ring or a disc, so the
+                    state and the control that changes it are now one object —
+                    which is what the gutter triangle failed at: it sat on top of
+                    the nesting guides and read as clutter. Zoom moved to the
+                    arrow at the row's right edge. Holding the bullet drags. */}
                 <button
                   className={
                     'bullet ' +
                     (bulletParent ? 'parent' : 'leaf') +
                     (node.collapsed && bulletParent && !flat ? ' collapsed' : '') +
-                    // The flattened view has no structure to zoom into or drag
+                    // Whether a *click* does anything, which is not the same as
+                    // whether the bullet draws a ring: a top-level childless row
+                    // is `parent` for the ring and folds nothing. CSS needs the
+                    // distinction for the cursor, and only the TSX knows it.
+                    (!flat && parent ? ' folds' : '') +
+                    // The flattened view has no structure to fold or drag
                     // within, so there the bullet is decoration and says so.
                     (flat ? ' inert' : '')
                   }
                   onPointerDown={flat ? undefined : (e) => onBulletPointerDown(e, id)}
                   onClick={() => {
-                    // A press that became a drag must not also zoom.
+                    // A press that became a drag must not also fold.
                     if (justDragged.current) {
                       justDragged.current = false
                       return
                     }
-                    if (flat) return
-                    setScope(id)
+                    if (flat || !parent) return
+                    setPresent(toggleCollapsed(tree, id), { op: 'toggleCollapsed', id })
                   }}
-                  aria-label={flat ? undefined : `Zoom into ${node.text}`}
-                  tabIndex={flat ? -1 : 0}
-                  title={flat ? undefined : 'Zoom in — or hold to drag'}
+                  aria-expanded={!flat && parent ? !node.collapsed : undefined}
+                  aria-label={
+                    !flat && parent ? (node.collapsed ? 'Expand' : 'Collapse') : undefined
+                  }
+                  // A leaf's bullet is still a drag handle, but it has no fold
+                  // to reach by keyboard and nothing to announce, so it stays
+                  // out of the tab order the way the old leaf spacer did.
+                  tabIndex={!flat && parent ? 0 : -1}
+                  title={
+                    !flat && parent
+                      ? (node.collapsed ? 'Expand' : 'Collapse') + ' — or hold to drag'
+                      : !flat
+                        ? 'Hold to drag'
+                        : undefined
+                  }
                 />
 
                 <button
@@ -1472,19 +1441,21 @@ export default function Outliner({ initial }: { initial: Tree }) {
                   )}
                 </div>
 
-                {/* The flattened leaf view has no gutter, and its bullets are
-                    inert — no structure to zoom into or fold — so zoom falls
-                    back to an explicit control at the right edge. */}
-                {flat && (
-                  <button
-                    className="zoom trailing"
-                    onClick={() => setScope(id)}
-                    aria-label={`Zoom into ${node.text}`}
-                    title="Zoom in"
-                  >
-                    ›
-                  </button>
-                )}
+                {/* Zoom, at the row's right edge and revealed on hover. It sits
+                    here rather than beside the bullet because the bullet now
+                    folds, and because a control in the gutter lands on top of
+                    the nesting guides. The right edge is a fixed column — the
+                    outline is capped at --col-w — so the arrow is always in the
+                    same place no matter how short the label is, while being the
+                    quietest thing in the row until you look for it. */}
+                <button
+                  className="zoom trailing"
+                  onClick={() => setScope(id)}
+                  aria-label={`Zoom into ${node.text}`}
+                  title="Zoom in"
+                >
+                  ›
+                </button>
               </div>
             )
           })}

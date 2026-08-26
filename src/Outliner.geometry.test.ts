@@ -59,33 +59,21 @@ test('the bullet is drawn at the size GUIDE_X0 was measured against', () => {
   expect(px('.bullet', 'height')).toBe(GEOMETRY.BULLET)
 })
 
-test('the gutter slot and row gap match what the guide offset assumes', () => {
-  // The gutter button *is* the column — it holds the space open left of the
-  // bullet, so its width is a term in GUIDE_X0. Sizing it to its glyph instead
-  // of fixing it here would drag every nesting guide sideways. `.zoom` and
-  // `.fold` share the rule; either name landing on a different width breaks it.
-  // The button is deliberately bigger than its column — 15px was too small a
-  // pointer target next to a bullet that does something else — so what has to
-  // equal GUTTER is the space it *occupies*: width plus both margins.
-  //
-  // Read the two axes separately. `0 -4px` and `-4px` differ only in the
-  // vertical value, and reading one number for both made a missing vertical
-  // pull — which spreads every row apart — look like a passing test.
-  const margin = declaration('.fold', 'margin').split(/\s+/).map(parseFloat)
-  const [insetY, insetX] = margin.length === 1 ? [margin[0], margin[0]] : margin
-  expect(px('.fold', 'width') + 2 * insetX).toBe(GEOMETRY.GUTTER)
+test('the row gap is the one the guide offset assumes', () => {
   expect(px('.row', 'gap')).toBe(GEOMETRY.ROW_GAP)
+})
 
-  // Square, so `border-radius: 50%` on the disc is a circle rather than an
-  // oval — it masks a guide, and an oval reads as a smear across the line.
-  expect(px('.fold', 'height')).toBe(px('.fold', 'width'))
-  expect(px('.fold::before', 'width')).toBe(px('.fold::before', 'height'))
-
-  // The same pull vertically, and for the same kind of reason: an unmargined
-  // 23px button is the tallest thing in the row and spreads the whole list out
-  // by 4px a row. The bullet is what sets row height, so the button has to
-  // occupy no more than it does.
-  expect(px('.fold', 'height') + 2 * insetY).toBeLessThanOrEqual(GEOMETRY.BULLET)
+test('no gutter rule survives to sit left of the bullet again', () => {
+  // GUIDE_X0 used to carry a 15px gutter column plus a row gap, for the fold
+  // triangle that lived left of the bullet. The triangle moved onto the bullet
+  // and both terms went. GUIDE_X0 is a number, though, and it would go on
+  // looking valid if a control were put back into that column without adding its
+  // width back in — every nesting guide would then run one column left of the
+  // bullets it belongs to, which renders fine and reads as a drawing bug.
+  //
+  // The stylesheet is where such a column would have to be declared, so pin its
+  // absence there.
+  expect(css).not.toMatch(/^\.fold\s*[,{]/m)
 })
 
 test('a mask item occupies the same box as the row it stands in for', () => {
@@ -133,22 +121,26 @@ test('the mask and the slide share one clock', () => {
   expect(fold).toMatch(new RegExp(`transform \\$\\{${slideRun[1]}\\}ms ${slideRun[2]}\``))
 })
 
-test("the leaf fold's marker class is not styled by anything else", () => {
-  // The marker started life as `empty`, which the sheet already used for the
-  // empty-list placeholder — `padding: 18px 6px`. That padding won against the
-  // button's own height and grew every *leaf* row to 38px against a parent
-  // row's 32px, so the list's rhythm broke on exactly the rows with no
+test("the bullet's marker classes are not claimed by anything else", () => {
+  // The fold spacer's marker started life as `empty`, which the sheet already
+  // used for the empty-list placeholder — `padding: 18px 6px`. That padding won
+  // against the button's own height and grew every *leaf* row to 38px against a
+  // parent row's 32px, so the list's rhythm broke on exactly the rows with no
   // children. jsdom does no layout and every test still passed.
   //
-  // Find the marker the way the DOM does, then assert no bare rule claims it.
-  const marker = source.match(/\(parent \? '' : ' (\w+)'\)/)
-  if (!marker) throw new Error('Could not find the leaf fold marker class in Outliner.tsx')
+  // The spacer is gone, but the bullet now carries its own markers — `folds`
+  // among them — and a bare rule on any of those names would reach the bullet
+  // regardless of what it was written for. Find them the way the DOM does, then
+  // assert nothing claims them unqualified.
+  const markers = [...source.matchAll(/\?\s*' (\w+)'\s*:\s*''/g)].map((m) => m[1])
+  expect(markers, 'expected to find the bullet marker classes in Outliner.tsx').toContain('folds')
 
-  // A rule on the bare class — `.leaf {` — applies to the button regardless of
-  // what it was meant for. Qualified rules (`.fold.leaf`, `.bullet.leaf`) are
-  // deliberate and fine.
-  const bare = new RegExp(`(?:^|[,}])\\s*\\.${marker[1]}\\s*(?:,|\\{)`, 'm')
-  expect(css).not.toMatch(bare)
+  for (const marker of markers) {
+    // A rule on the bare class — `.folds {` — applies to the bullet regardless
+    // of intent. Qualified rules (`.bullet.folds`) are deliberate and fine.
+    const bare = new RegExp(`(?:^|[,}])\\s*\\.${marker}\\s*(?:,|\\{)`, 'm')
+    expect(css, `".${marker}" should only be styled qualified`).not.toMatch(bare)
+  }
 })
 
 test('the guide is centred on the bullet, not hung off its left edge', () => {
@@ -158,11 +150,7 @@ test('the guide is centred on the bullet, not hung off its left edge', () => {
   expect(px('.guide', 'width')).toBe(GEOMETRY.GUIDE_W)
 })
 
-test('the zoom slot is odd, so it shares a centre with the 1px guide', () => {
-  // An even slot would centre the button on a whole pixel while the odd guide
-  // centres on a half — a half-pixel stagger between two things drawn as one
-  // column, visible on a 2x display.
-  expect(GEOMETRY.GUTTER % 2).toBe(1)
+test('the guide is an odd width, so it centres on a half-pixel like the bullet', () => {
   expect(GEOMETRY.GUIDE_W % 2).toBe(1)
 })
 
@@ -175,8 +163,7 @@ test("the row's horizontal padding is ROW_PAD", () => {
 test('a depth-0 guide lands on the centre of a depth-0 bullet', () => {
   // The whole point of the constant, stated as the property it has to satisfy
   // rather than as the number it currently happens to be.
-  const bulletCentre =
-    GEOMETRY.ROW_PAD + GEOMETRY.GUTTER + GEOMETRY.ROW_GAP + GEOMETRY.BULLET / 2
+  const bulletCentre = GEOMETRY.ROW_PAD + GEOMETRY.BULLET / 2
   expect(GEOMETRY.GUIDE_X0).toBe(bulletCentre)
 })
 

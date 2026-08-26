@@ -64,8 +64,9 @@ const animating = (c: HTMLElement) =>
     (r) => r.style.transform || r.style.transition || r.style.animation || r.style.clipPath,
   )
 
+/** Fold a row. The bullet is the fold control; the arrow at the edge zooms. */
 const fold = (c: HTMLElement, text: RegExp) =>
-  row(c, text).querySelector('.fold') as HTMLElement
+  row(c, text).querySelector('.bullet') as HTMLElement
 
 /** Long enough for the slide, the staggered fade, and the cleanup after both. */
 const settle = () => act(() => void vi.advanceTimersByTime(2000))

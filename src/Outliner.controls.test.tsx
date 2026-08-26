@@ -1,12 +1,13 @@
 /**
- * The two row controls: the bullet zooms, the gutter triangle folds. That is
- * the arrangement Workflowy, Roam and Logseq all use.
+ * The two row controls: the bullet folds, the arrow at the right edge zooms.
+ * This matches the phone, where tapping the bullet is the whole interaction.
  *
- * These have now been each way round — first twisty-folds/bullet-zooms, then
- * bullet-folds/chevron-zooms, now back — so the point of pinning them is that
- * clicking a bullet must never fold, and clicking the triangle must never
- * navigate. The bullet keeps *showing* the folded state either way; only which
- * object you click to change it moves.
+ * These have now been each way round three times — twisty-folds/bullet-zooms,
+ * then bullet-folds/chevron-zooms, then back, and now here — so the point of
+ * pinning them is that clicking a bullet must never navigate, and clicking the
+ * arrow must never fold. The bullet keeps *showing* the folded state through
+ * every one of those arrangements; only which object you click to change it
+ * moves.
  */
 
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
@@ -56,76 +57,87 @@ function click(el: Element) {
   act(() => (el as HTMLElement).click())
 }
 
-test('clicking the triangle folds the row rather than zooming into it', () => {
+/** The zoom arrow at the row's right edge. */
+function zoom(container: HTMLElement, text: RegExp) {
+  return row(container, text).querySelector('button.zoom')!
+}
+
+/** The bullet, which is now the fold control. */
+function bullet(container: HTMLElement, text: RegExp) {
+  return row(container, text).querySelector('button.bullet')!
+}
+
+test('clicking a bullet folds the row rather than zooming into it', () => {
   const { container } = render(<Outliner initial={seedTree()} />)
   scopeInto(container, /tax/i)
 
   const before = crumbs(container)
   expect(labels(container)).toContain('Dig out the P60')
 
-  const fold = row(container, /Gather the documents/).querySelector('button.fold')!
-  expect(fold.getAttribute('aria-expanded')).toBe('true')
-  click(fold)
+  expect(bullet(container, /Gather the documents/).getAttribute('aria-expanded')).toBe('true')
+  click(bullet(container, /Gather the documents/))
 
   // The children are gone, the parent stayed, and we did not navigate.
   expect(labels(container)).not.toContain('Dig out the P60')
   expect(labels(container)).toContain('Gather the documents')
-  expect(
-    row(container, /Gather the documents/).querySelector('button.fold')!.getAttribute(
-      'aria-expanded',
-    ),
-  ).toBe('false')
+  expect(bullet(container, /Gather the documents/).getAttribute('aria-expanded')).toBe('false')
   expect(crumbs(container)).toEqual(before)
 })
 
-test('clicking the triangle again unfolds it', () => {
+test('clicking the bullet again unfolds it', () => {
   const { container } = render(<Outliner initial={seedTree()} />)
   scopeInto(container, /tax/i)
 
-  const fold = () => row(container, /Gather the documents/).querySelector('button.fold')!
-  click(fold())
+  click(bullet(container, /Gather the documents/))
   expect(labels(container)).not.toContain('Dig out the P60')
-  click(fold())
+  click(bullet(container, /Gather the documents/))
   expect(labels(container)).toContain('Dig out the P60')
 })
 
-test('a leaf has no fold control to click', () => {
+test('a leaf bullet folds nothing and stays out of the tab order', () => {
   const { container } = render(<Outliner initial={seedTree()} />)
   scopeInto(container, /tax/i)
 
   const before = labels(container)
   const crumbsBefore = crumbs(container)
-  const fold = row(container, /Dig out the P60/).querySelector('button.fold')!
+  const leaf = bullet(container, /Dig out the P60/)
 
-  // The button still holds the gutter open — dropping it would slide the row's
-  // contents a column left — but it is empty and claims no expanded state.
-  expect(fold).toBeTruthy()
-  expect(fold.querySelector('svg')).toBeNull()
-  expect(fold.getAttribute('aria-expanded')).toBe(null)
-
-  // And it says so, so CSS can suppress the hover disc. Without the marker the
-  // row paints an empty circle where no control exists — which went unnoticed
-  // while the disc was the same colour as the row, and did not after.
-  //
-  // `leaf`, not `empty`: `.empty` is the empty-list placeholder and carries its
-  // own padding, which beat this button's height and made every leaf row 6px
-  // taller than every parent row. jsdom does no layout, so nothing caught that
-  // — the guard here is that the marker never goes back to a name the
-  // stylesheet already uses for something else.
-  expect(fold.classList.contains('leaf')).toBe(true)
-  expect(fold.classList.contains('empty')).toBe(false)
-  click(fold)
+  // It is still rendered — it draws the row's dot and it is the drag handle —
+  // but it claims no expanded state and announces nothing, because a click on
+  // it does nothing. A `folds` marker is what CSS reads for the cursor, and it
+  // must not be there.
+  expect(leaf).toBeTruthy()
+  expect(leaf.getAttribute('aria-expanded')).toBe(null)
+  expect(leaf.classList.contains('folds')).toBe(false)
+  expect(leaf.getAttribute('tabindex')).toBe('-1')
+  click(leaf)
 
   expect(labels(container)).toEqual(before)
   expect(crumbs(container)).toEqual(crumbsBefore)
 })
 
-test('clicking a bullet scopes into the row without folding it', () => {
+test('the marker for "this bullet folds" tracks children, not the ring', () => {
   const { container } = render(<Outliner initial={seedTree()} />)
   scopeInto(container, /tax/i)
 
-  const bullet = row(container, /Gather the documents/).querySelector('button.bullet')!
-  click(bullet)
+  // A bullet draws a ring when it is a parent *or* sits at the top level, so a
+  // top-level childless row is `.parent` while folding nothing. The cursor rule
+  // reads `.folds`, and if that were keyed on the ring instead, such a row would
+  // show a pointer for a click that does nothing.
+  const parent = bullet(container, /Gather the documents/)
+  expect(parent.classList.contains('folds')).toBe(true)
+
+  for (const b of container.querySelectorAll('button.bullet')) {
+    const foldable = b.getAttribute('aria-expanded') !== null
+    expect(b.classList.contains('folds')).toBe(foldable)
+  }
+})
+
+test('clicking the arrow scopes into the row without folding it', () => {
+  const { container } = render(<Outliner initial={seedTree()} />)
+  scopeInto(container, /tax/i)
+
+  click(zoom(container, /Gather the documents/))
 
   // Now inside that row: its children are the whole list, and it is the crumb.
   expect(crumbs(container)).toContain('Gather the documents')
@@ -133,33 +145,46 @@ test('clicking a bullet scopes into the row without folding it', () => {
   expect(labels(container)).not.toContain('Fill in the forms')
 })
 
-test('a leaf bullet zooms too, so nothing is unreachable', () => {
+test('a leaf has an arrow too, so nothing is unreachable', () => {
   const { container } = render(<Outliner initial={seedTree()} />)
   scopeInto(container, /tax/i)
 
-  const bullet = row(container, /Dig out the P60/).querySelector('button.bullet')!
-  expect(bullet).toBeTruthy()
-  click(bullet)
+  const arrow = zoom(container, /Dig out the P60/)
+  expect(arrow).toBeTruthy()
+  click(arrow)
   expect(crumbs(container)).toContain('Dig out the P60')
+})
+
+test('every row carries an arrow, so zoom never depends on the row having children', () => {
+  const { container } = render(<Outliner initial={seedTree()} />)
+  scopeInto(container, /tax/i)
+
+  const rows = [...container.querySelectorAll('.row')]
+  expect(rows.length).toBeGreaterThan(1)
+  for (const r of rows) {
+    expect(r.querySelector('button.zoom'), (r.textContent ?? '') + ' has no zoom').toBeTruthy()
+  }
 })
 
 test('a collapsed parent bullet is marked so the halo rule can reach it', () => {
   const { container } = render(<Outliner initial={seedTree()} />)
   scopeInto(container, /tax/i)
 
-  click(row(container, /Gather the documents/).querySelector('button.fold')!)
-  const bullet = row(container, /Gather the documents/).querySelector('button.bullet')!
+  click(bullet(container, /Gather the documents/))
+  const b = bullet(container, /Gather the documents/)
 
-  // The bullet still *shows* the folded state even though the triangle is what
-  // changed it. The halo selector is `.bullet.parent.collapsed`, and it once
-  // lost a specificity fight with `.bullet.parent` and rendered no differently
-  // at all. jsdom won't tell us the pixels, so pin the hook the rule needs.
-  expect(bullet.classList.contains('parent')).toBe(true)
-  expect(bullet.classList.contains('collapsed')).toBe(true)
+  // The bullet shows the folded state and is also what changed it — one object
+  // now, where the triangle used to be the other half. The halo selector is
+  // `.bullet.parent.collapsed`, and it once lost a specificity fight with
+  // `.bullet.parent` and rendered no differently at all. jsdom won't tell us the
+  // pixels, so pin the hook the rule needs.
+  expect(b.classList.contains('parent')).toBe(true)
+  expect(b.classList.contains('collapsed')).toBe(true)
 })
 
-test('the twisty is gone — the gutter triangle is the only fold control', () => {
+test('neither the twisty nor the gutter triangle survives', () => {
   const { container } = render(<Outliner initial={seedTree()} />)
   scopeInto(container, /tax/i)
   expect(container.querySelectorAll('.twisty')).toHaveLength(0)
+  expect(container.querySelectorAll('button.fold')).toHaveLength(0)
 })

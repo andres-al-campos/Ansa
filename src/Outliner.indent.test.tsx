@@ -44,9 +44,9 @@ function editRow(container: HTMLElement, text: RegExp): HTMLInputElement {
   return container.querySelector('input.label-input') as HTMLInputElement
 }
 
-/** Fold a row by clicking its triangle. The bullet zooms; the gutter folds. */
+/** Fold a row by clicking its bullet. The bullet folds; the edge arrow zooms. */
 function collapse(container: HTMLElement, text: RegExp) {
-  const fold = row(container, text).querySelector('button.fold') as HTMLElement
+  const fold = row(container, text).querySelector('button.bullet') as HTMLElement
   act(() => fold.click())
 }
 
