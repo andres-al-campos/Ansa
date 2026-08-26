@@ -155,8 +155,8 @@ function ZoomIcon() {
   return (
     <svg
       viewBox="0 0 14 14"
-      width="13"
-      height="13"
+      width="16"
+      height="16"
       fill="none"
       stroke="currentColor"
       strokeWidth="1.6"

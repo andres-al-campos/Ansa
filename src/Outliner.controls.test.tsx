@@ -199,7 +199,9 @@ test('the zoom control is a drawn arrow, not a text glyph', () => {
   scopeInto(container, /tax/i)
   const svg = zoom(container, /Gather the documents/).querySelector('svg')
   expect(svg, 'expected a drawn arrow inside the zoom button').not.toBeNull()
-  // Sized by its own attributes rather than by the row's font-size.
-  expect(svg!.getAttribute('width')).toBe('13')
+  // Sized by its own attributes rather than by the row's font-size — the exact
+  // number is a matter of taste and free to change; that it is set is not.
+  expect(Number(svg!.getAttribute('width'))).toBeGreaterThan(0)
+  expect(svg!.getAttribute('width')).toBe(svg!.getAttribute('height'))
   expect(svg!.getAttribute('stroke')).toBe('currentColor')
 })
