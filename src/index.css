@@ -2,6 +2,15 @@
   --ground: #f7f8fa;
   --panel: #ffffff;
   --sunk: #eff2f6;
+  /* The hovered row's band. Its own token rather than --sunk, which also paints
+   * the fold mask, the add button and the project rows — brightening those to
+   * fix the row would change four things to fix one.
+   *
+   * Chosen by ratio against --ground, not by eye: 1.18:1 here and in the dark
+   * block, so the band reads the same in both themes. --sunk was 1.057 light
+   * and 1.027 dark, and that dark value is the reason the hover was hard to
+   * see — a 3-point step on a near-black ground is not a step. */
+  --row-hover: #e0e6ee;
   --edge: #dce1e8;
   --edge-soft: #e9edf2;
   --edge-lit: #cbd2dd;
@@ -41,6 +50,8 @@
     --ground: #10131a;
     --panel: #181c24;
     --sunk: #13161d;
+    /* 1.181:1 against --ground, matching the light band's 1.182. */
+    --row-hover: #1e232e;
     --edge: #2a303b;
     --edge-soft: #222831;
     /* A step above --edge, for a control's disc under the pointer. --edge-soft
@@ -517,7 +528,7 @@ button { font: inherit; color: inherit; }
    * painted over it, so the well vanished the instant you hovered. */
   isolation: isolate;
 }
-.row:hover { background: var(--sunk); }
+.row:hover { background: var(--row-hover); }
 
 /* ---- drag & drop ---- */
 
@@ -667,7 +678,6 @@ button { font: inherit; color: inherit; }
   border: none;
   cursor: pointer;
   color: var(--ink-ghost);
-  font-size: 14px;
   line-height: 1;
   opacity: 0;
   transition: opacity 0.12s ease, color 0.12s ease, background 0.12s ease;

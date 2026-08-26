@@ -164,3 +164,17 @@ test('the collapsed drop rule outranks the expanded ring it overrides', () => {
   expect(css).toContain('.row.drop-into .bullet.parent.collapsed::before')
   expect(css).not.toMatch(/\.row\.drop-into \.bullet\.collapsed::before/)
 })
+
+/**
+ * The hovered row's band was `var(--sunk)`, which is 1.027:1 against the dark
+ * ground — a change too small to see, which is what put this test here. --sunk
+ * still paints three other things, so the fix was a token of its own rather
+ * than a brighter --sunk. Pin the separation: if the row hover goes back to
+ * --sunk, it goes back to invisible.
+ */
+test('the hovered row has its own background token, not the shared --sunk', () => {
+  expect(declarations('.row:hover', 'background')).toEqual(['var(--row-hover)'])
+  // Defined in both themes — light in :root, dark in the media block. A token
+  // declared once renders one theme's band on the other theme's ground.
+  expect(css.match(/--row-hover:/g)).toHaveLength(2)
+})
