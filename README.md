@@ -5,7 +5,7 @@ enough to actually do. *Ansa* is Latin for the handle of a thing.
 
 ## Architecture
 
-Three processes, one source of truth:
+Several clients, one source of truth:
 
 ```
 React app  ─┐  writes (REST)                    ┌─ browser (WebSocket) — live
@@ -36,7 +36,13 @@ way out.
   REST API, so a Claude and a person editing at once share one state and can't
   diverge.
 - **`shared/`** — the tree model and pure operations (`tree.ts`) plus the seed,
-  used identically by all three.
+  used identically by every TypeScript client.
+- **`ios/`** — a SwiftUI app for the same tree, with its own `./build.sh` that
+  builds, installs and launches on a connected iPhone. `AnsaCore` is the tree
+  model and `AnsaSync` the client, both plain Swift packages testable without a
+  device; `ios/AnsaCore/Tools/check-wire.sh` checks the Swift op encoding
+  against the server's, since the two models are written twice and have to
+  agree.
 
 ## Running it
 
@@ -82,6 +88,9 @@ moving on. `./build.sh deploy api` or `deploy app` when only one changed.
 The API goes first on purpose. If it fails, the old app is still talking to the
 old API — whereas shipping the app first can leave a new client calling an API
 that never updated.
+
+[HOSTING.md](HOSTING.md) is the plan behind the hosted setup: what each phase
+was for, which are done, and what the remaining ones still need.
 
 Cloudflare does **not** build this project: the Pages project has no git
 integration, so `wrangler` uploads a bundle built here. Environment variables
