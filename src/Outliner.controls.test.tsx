@@ -188,3 +188,18 @@ test('neither the twisty nor the gutter triangle survives', () => {
   expect(container.querySelectorAll('.twisty')).toHaveLength(0)
   expect(container.querySelectorAll('button.fold')).toHaveLength(0)
 })
+
+/**
+ * The arrow shipped once as a `›` text character, which inherited font-size and
+ * came out too small to read as an arrow. It is a drawn path now, so pin that
+ * it is drawn: a glyph would satisfy "the button exists" just as well.
+ */
+test('the zoom control is a drawn arrow, not a text glyph', () => {
+  const { container } = render(<Outliner initial={seedTree()} />)
+  scopeInto(container, /tax/i)
+  const svg = zoom(container, /Gather the documents/).querySelector('svg')
+  expect(svg, 'expected a drawn arrow inside the zoom button').not.toBeNull()
+  // Sized by its own attributes rather than by the row's font-size.
+  expect(svg!.getAttribute('width')).toBe('13')
+  expect(svg!.getAttribute('stroke')).toBe('currentColor')
+})

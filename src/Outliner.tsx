@@ -145,6 +145,31 @@ function MoreIcon() {
   )
 }
 
+/**
+ * The zoom arrow at a row's right edge. A drawn arrow rather than a text
+ * chevron: a glyph inherits font-size and lands too small at the size the rest
+ * of the row wants, and its weight is whatever the face happens to give it.
+ * The path is the one from the approved mockup.
+ */
+function ZoomIcon() {
+  return (
+    <svg
+      viewBox="0 0 14 14"
+      width="13"
+      height="13"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.6"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+      focusable="false"
+    >
+      <path d="M3 7h8M7.5 3.5L11 7l-3.5 3.5" />
+    </svg>
+  )
+}
+
 export default function Outliner({ initial }: { initial: Tree }) {
   // Undo/redo is a snapshot history: the whole tree is one immutable value, so
   // a step is just the previous value. `commit` replaces the tree and records
@@ -1454,7 +1479,7 @@ export default function Outliner({ initial }: { initial: Tree }) {
                   aria-label={`Zoom into ${node.text}`}
                   title="Zoom in"
                 >
-                  ›
+                  <ZoomIcon />
                 </button>
               </div>
             )
