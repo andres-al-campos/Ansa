@@ -37,6 +37,13 @@ import Foundation
 /// hibernates idle sockets to stay inside the free tier, and the token in the
 /// handshake URL expires in about a minute. Recovering from a drop is the
 /// client's job.
+///
+/// Recovering well means telling three states apart that all look alike from
+/// the outside — refused, open-and-quiet, and open-but-dead. Silence is the
+/// normal state of a healthy socket, since frames are only sent when somebody
+/// edits; a dead socket is silent in exactly the same way. `EventStream`
+/// separates the handshake from the frames so the first two are distinct, and
+/// a ping settles the third.
 @MainActor
 public final class SyncClient {
     /// Reconnect delay, doubling on repeated failure. The floor is short
@@ -52,6 +59,14 @@ public final class SyncClient {
     /// Warning on the first would flicker during normal use, which teaches
     /// people to ignore the one channel that matters when sync is truly broken.
     private static let failuresBeforeWarning = 3
+
+    /// How often an open socket is pinged to check it is still really there.
+    ///
+    /// Under the Durable Object's hibernation window, so an idle connection is
+    /// kept rather than being dropped and reconnected every time the user stops
+    /// typing for a minute. Short enough that a socket the OS never reported as
+    /// dead is noticed in about the time it takes to look at the screen.
+    private static let pingEvery: Duration = .seconds(25)
 
     /// How often a queue stalled by an unreachable server retries on its own.
     /// Without this the only thing that retries is the next edit, so an app the
@@ -81,6 +96,10 @@ public final class SyncClient {
 
     private var socket: Task<Void, Never>?
     private var retryLoop: Task<Void, Never>?
+    /// The connection currently open, so `stop()` can close it. Cancelling the
+    /// task alone leaves the socket up: the read is suspended inside
+    /// `URLSession`, which does not care that a Swift task was cancelled.
+    private var current: (any EventStream)?
     private var failures = 0
 
     /// False once the live connection has failed repeatedly.
@@ -128,6 +147,13 @@ public final class SyncClient {
         retryLoop?.cancel()
         socket = nil
         retryLoop = nil
+        if let stream = current {
+            current = nil
+            // Detached because `stop()` is synchronous — the app calls it from
+            // a lifecycle callback. Not cancelled with the socket task, so it
+            // still runs after the cancellation that prompted it.
+            Task { await stream.close() }
+        }
     }
 
     /// Tear down the socket because the app is going into the background.
@@ -261,10 +287,14 @@ public final class SyncClient {
     private func listen() async {
         var backoff = Self.reconnectMin
         while !Task.isCancelled {
-            let opened = await receive()
-            if opened {
+            if await receive() {
                 // A connection that worked resets the ladder, so a later drop
-                // starts fast again.
+                // starts fast again. Note this turns on the *handshake*, not on
+                // anything arriving: a socket that connects and then sits quiet
+                // for an hour is a healthy socket, because frames are only sent
+                // when somebody edits something. Counting silence as failure is
+                // what used to walk the backoff up to its ceiling and leave the
+                // app deaf while every other sign said it was fine.
                 backoff = Self.reconnectMin
                 failures = 0
                 if !live {
@@ -286,35 +316,59 @@ public final class SyncClient {
 
     /// One connection, from handshake to drop.
     ///
-    /// - Returns: whether it ever opened. A handshake that fails and a socket
-    ///   that opened and later dropped are the same shape here, but only the
-    ///   first counts toward the out-of-sync warning.
+    /// - Returns: whether the handshake succeeded. False is a refusal — no
+    ///   network, a stale token, no server — and is the only thing that counts
+    ///   toward the out-of-sync warning. A connection that opened and later
+    ///   dropped returns true: it proved the credential and the route work, so
+    ///   the next attempt should start at the bottom of the ladder.
     private func receive() async -> Bool {
-        guard let url = await api.eventsURL() else { return false }
-        let task = URLSession.shared.webSocketTask(with: url)
-        task.resume()
-        defer { task.cancel(with: .goingAway, reason: nil) }
+        guard let stream = await api.connect() else { return false }
+        // Held on the client, not just locally, so `stop()` can close it. A
+        // `defer` cannot: the close is async, and the detached Task a defer
+        // would need is born cancelled when the reason for closing is
+        // cancellation — which is precisely the case that must not leak.
+        current = stream
+        defer { current = nil }
 
-        var opened = false
+        guard await stream.open() else {
+            await stream.close()
+            return false
+        }
+
+        // Only now that it is open — a ping against a socket still handshaking
+        // proves nothing, and would tear this connection down before it began.
+        let keepalive = keepalive(on: stream)
+        defer { keepalive.cancel() }
+
         while !Task.isCancelled {
-            guard let message = try? await task.receive() else { return opened }
-            // The first frame to arrive is proof the handshake succeeded.
-            // URLSessionWebSocketTask reports no separate open event, and
-            // resume() succeeds long before the server has accepted anything.
-            opened = true
-
-            let data: Data? =
-                switch message {
-                case .data(let d): d
-                case .string(let s): s.data(using: .utf8)
-                @unknown default: nil
-                }
-            guard let data,
-                let frame = try? JSONDecoder().decode(Broadcast.self, from: data)
-            else { continue }
+            guard let frame = await stream.next() else { break }
             handle(frame)
         }
-        return opened
+        await stream.close()
+        return true
+    }
+
+    /// Ping until one fails, then drop the connection.
+    ///
+    /// `next()` on a half-dead socket never returns and never errors — the OS
+    /// does not always notice a connection has gone, which is the state a phone
+    /// lands in after switching network. Without this the app waits on that
+    /// socket forever, and the reconnect ladder never gets its turn.
+    ///
+    /// Cancelling the stream is what wakes the read loop: a closed socket makes
+    /// the pending `next()` return nil, which ends the connection normally and
+    /// sends `listen()` round for a fresh one.
+    private func keepalive(on stream: any EventStream) -> Task<Void, Never> {
+        Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: Self.pingEvery)
+                guard !Task.isCancelled, self != nil else { return }
+                if await !stream.ping() {
+                    await stream.close()
+                    return
+                }
+            }
+        }
     }
 
     private func handle(_ frame: Broadcast) {

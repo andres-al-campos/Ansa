@@ -61,6 +61,65 @@ private actor FakeBackend: SyncBackend {
     }
 
     func eventsURL() async -> URL? { nil }
+
+    /// Streams to hand out, one per connect attempt, oldest first. Once they
+    /// run out `connect()` answers nil — a backend that cannot be reached,
+    /// which is what a test that only cares about the first few attempts wants
+    /// for every attempt after them.
+    private var streams: [FakeStream] = []
+    private(set) var connects = 0
+
+    func willConnect(_ streams: [FakeStream]) { self.streams = streams }
+
+    func connect() async -> (any EventStream)? {
+        connects += 1
+        return streams.isEmpty ? nil : streams.removeFirst()
+    }
+}
+
+/// One scripted connection.
+///
+/// The three states this suite cares about are all expressible here: a refused
+/// handshake (`opens: false`), one that opens and stays quiet (opens with no
+/// frames), and one that opens and later drops (`drop()`).
+private actor FakeStream: EventStream {
+    private let opens: Bool
+    private var frames: [Broadcast]
+    private var dropped = false
+    private var pings: Bool
+    private(set) var closed = false
+    private(set) var pinged = 0
+
+    init(opens: Bool = true, frames: [Broadcast] = [], pings: Bool = true) {
+        self.opens = opens
+        self.frames = frames
+        self.pings = pings
+    }
+
+    func open() async -> Bool { opens }
+
+    func next() async -> Broadcast? {
+        if !frames.isEmpty { return frames.removeFirst() }
+        // Out of scripted frames: either the connection is finished, or it is
+        // an open socket with nothing to say. The latter must not return — a
+        // quiet socket suspends here rather than reporting a drop, and a test
+        // that let it return nil would be testing the old behaviour.
+        while !dropped { try? await Task.sleep(for: .milliseconds(1)) }
+        return nil
+    }
+
+    func ping() async -> Bool {
+        pinged += 1
+        return pings
+    }
+
+    func close() async {
+        closed = true
+        dropped = true
+    }
+
+    /// End the connection, as a server going away would.
+    func drop() { dropped = true }
 }
 
 private func node(_ id: NodeId, _ text: String) -> Node {
@@ -289,6 +348,121 @@ struct SyncClientTests {
         await settle(api, expecting: 1)
 
         #expect(await api.sent == [.setText(id: "a", text: "unsent")])
+    }
+
+    // ------------------------------------------------- the connection ladder
+
+    @Test("a socket that opens and stays quiet is not a failure")
+    func quietSocketIsHealthy() async {
+        // The regression this whole seam exists for. Frames are only sent when
+        // somebody edits, so silence is the normal state of a working
+        // connection. Counting it as failure walked the backoff to its 30s
+        // ceiling and left the phone deaf to everything the web app did, while
+        // writes kept working and nothing on screen said otherwise.
+        let api = FakeBackend()
+        await api.willConnect([FakeStream()])
+        let (client, _) = makeClient(api)
+
+        client.start()
+        defer { client.stop() }
+        // Comfortably longer than the 500ms floor, so a ladder that was
+        // climbing would have reconnected several times by now.
+        try? await Task.sleep(for: .milliseconds(60))
+
+        #expect(client.live)
+        #expect(await api.connects == 1, "a healthy quiet socket was reconnected")
+    }
+
+    @Test("a refused handshake warns after three tries")
+    func refusedHandshakeWarns() async {
+        let api = FakeBackend()
+        await api.willConnect([
+            FakeStream(opens: false), FakeStream(opens: false), FakeStream(opens: false),
+        ])
+        let (client, _) = makeClient(api)
+
+        client.start()
+        defer { client.stop() }
+        for _ in 0..<400 {
+            if !client.live { break }
+            try? await Task.sleep(for: .milliseconds(5))
+        }
+
+        #expect(!client.live, "three refusals should have raised the banner")
+    }
+
+    @Test("one refusal is not enough to warn")
+    func oneRefusalIsQuiet() async {
+        // A single drop is ordinary — the object hibernates, wifi blips. A
+        // banner on the first would flicker through normal use and teach people
+        // to ignore the one channel that matters.
+        let api = FakeBackend()
+        await api.willConnect([FakeStream(opens: false), FakeStream()])
+        let (client, _) = makeClient(api)
+
+        client.start()
+        defer { client.stop() }
+        try? await Task.sleep(for: .milliseconds(40))
+
+        #expect(client.live)
+    }
+
+    @Test("a frame arriving over the socket is adopted")
+    func socketFrameIsAdopted() async {
+        let served: Tree = [node("a", "from the server")]
+        let api = FakeBackend()
+        await api.willConnect([FakeStream(frames: [Broadcast(tree: served, origin: "other")])])
+        let (client, adopted) = makeClient(api)
+
+        client.start()
+        defer { client.stop() }
+        for _ in 0..<200 {
+            if !adopted().isEmpty { break }
+            try? await Task.sleep(for: .milliseconds(5))
+        }
+
+        #expect(adopted().count == 1)
+        #expect(adopted().first?.first?.text == "from the server")
+    }
+
+    @Test("a connection that opened and then dropped reconnects")
+    func dropReconnects() async {
+        let first = FakeStream()
+        let api = FakeBackend()
+        await api.willConnect([first, FakeStream()])
+        let (client, _) = makeClient(api)
+
+        client.start()
+        defer { client.stop() }
+        try? await Task.sleep(for: .milliseconds(20))
+        await first.drop()
+
+        for _ in 0..<200 {
+            if await api.connects >= 2 { break }
+            try? await Task.sleep(for: .milliseconds(5))
+        }
+
+        #expect(await api.connects >= 2, "a dropped socket was not replaced")
+        // It opened, so the ladder stays at the floor and `live` never dipped.
+        #expect(client.live)
+    }
+
+    @Test("the stream is closed when the client stops")
+    func stopClosesTheStream() async {
+        let stream = FakeStream()
+        let api = FakeBackend()
+        await api.willConnect([stream])
+        let (client, _) = makeClient(api)
+
+        client.start()
+        try? await Task.sleep(for: .milliseconds(20))
+        client.stop()
+
+        for _ in 0..<200 {
+            if await stream.closed { break }
+            try? await Task.sleep(for: .milliseconds(5))
+        }
+        #expect(await stream.closed, "the socket outlived the client")
     }
 }
 

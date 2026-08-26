@@ -201,14 +201,14 @@ struct ErrorEnvelope: Decodable {
 }
 
 /// A broadcast frame: the new tree, stamped with whoever caused it.
-struct Broadcast: Decodable {
-    let tree: Tree
+public struct Broadcast: Decodable, Sendable {
+    public let tree: Tree
     /// The `x-ansa-origin` of the client whose write this was, or nil for a
     /// change with no client behind it. Matching our own means this is the echo
     /// of our own edit and must not be re-adopted.
-    let origin: String?
+    public let origin: String?
 
-    init(tree: Tree, origin: String?) {
+    public init(tree: Tree, origin: String?) {
         self.tree = tree
         self.origin = origin
     }
