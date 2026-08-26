@@ -26,6 +26,14 @@
   --danger: #b3402f;
   --danger-soft: #f6e3df;
   --shadow: 0 1px 2px rgba(24, 29, 40, 0.05), 0 3px 10px rgba(24, 29, 40, 0.045);
+
+  /* Layout, in one place because three rules derive from it: the grid track,
+   * the column cap, and the offset that centres the column on the screen. Two
+   * of those are a subtraction apart, so a sidebar changed in only one of them
+   * moves the outline off centre with nothing to catch it. */
+  --side-w: 250px;
+  --col-w: 720px;
+  --main-pad: 30px;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -106,7 +114,7 @@ button { font: inherit; color: inherit; }
 
 .app {
   display: grid;
-  grid-template-columns: 250px 1fr;
+  grid-template-columns: var(--side-w) 1fr;
   height: 100%;
 }
 
@@ -385,7 +393,32 @@ button { font: inherit; color: inherit; }
  * width away from a centred column, so every block slides 7.5px left — and
  * folding it back slides them right again. Expanding a long subtree shouldn't
  * move the text you're reading. */
-.main { padding: 26px 30px 40px; overflow-y: auto; scrollbar-gutter: stable; }
+/* Centre the outline on the *screen*, not on the space left beside the sidebar.
+ *
+ * `.main` is the grid's second track, so a column centred inside it sits half
+ * the sidebar's width right of where the eye puts the middle of the window.
+ * Extra padding on the right pushes an auto-centred column left by half of it,
+ * so shifting by --side-w/2 means adding --side-w.
+ *
+ * The clamp is the part that matters. Below --side-w + --col-w + --main-pad
+ * there is no room to shift: the window's true centre is behind the sidebar,
+ * and forcing it there would slide the text underneath. So the offset grows in
+ * with the window and is zero on a narrow one, where the layout is then exactly
+ * what it was before this rule existed.
+ *
+ * Not exact to the pixel when the scrollbar is showing — scrollbar-gutter holds
+ * 15px on the right, so the optical centre sits ~7px left. Deliberate: matching
+ * it would mean the column moved whenever a list grew long enough to scroll,
+ * which is the jump the stable gutter exists to prevent. */
+.main {
+  padding: 26px var(--main-pad) 40px;
+  padding-right: calc(
+    var(--main-pad) +
+      clamp(0px, 100vw - (var(--side-w) + var(--col-w) + var(--main-pad)), var(--side-w))
+  );
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+}
 
 /* One centred column: crumbs, heading, progress and rows share a width and
  * sit in the middle of the pane rather than hugging the left edge. width:100%
@@ -399,7 +432,7 @@ button { font: inherit; color: inherit; }
 .landing,
 .rows {
   width: 100%;
-  max-width: 720px;
+  max-width: var(--col-w);
   margin-inline: auto;
 }
 
@@ -1218,6 +1251,10 @@ body:has(.row.gap-slot) { cursor: default; }
 @media (max-width: 820px) {
   .app { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
   .side { border-right: none; border-bottom: 1px solid var(--edge-soft); padding: 18px; }
+  /* Also resets the centring offset above: with the sidebar stacked on top
+   * rather than beside, .main already spans the window and there is nothing to
+   * correct for. The clamp would be holding it at 0 here anyway — this is the
+   * shorthand saying so, not a second rule. */
   .main { padding: 20px 18px 40px; }
 }
 

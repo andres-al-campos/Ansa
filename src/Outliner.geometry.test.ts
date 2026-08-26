@@ -179,3 +179,43 @@ test('a depth-0 guide lands on the centre of a depth-0 bullet', () => {
     GEOMETRY.ROW_PAD + GEOMETRY.GUTTER + GEOMETRY.ROW_GAP + GEOMETRY.BULLET / 2
   expect(GEOMETRY.GUIDE_X0).toBe(bulletCentre)
 })
+
+/**
+ * The shell's widths are coupled by subtraction, not by repetition.
+ *
+ * `.main` carries a right padding that shifts the outline back onto the
+ * window's centre — the grid puts it half a sidebar to the right of that — and
+ * the size of the shift is derived from the sidebar, the column cap, and the
+ * pane's padding. Written as literals, changing the sidebar in the grid would
+ * leave the offset correcting for the old width, and the outline would sit off
+ * centre by half the difference. Nothing renders wrong, so nothing catches it.
+ *
+ * These check the derivation is still a derivation.
+ */
+
+test('the grid track is the sidebar variable, not a repeated number', () => {
+  expect(declaration('.app', 'grid-template-columns')).toBe('var(--side-w) 1fr')
+})
+
+test('the centred column is capped by the same variable the offset subtracts', () => {
+  expect(declaration('.crumbs', 'max-width')).toBe('var(--col-w)')
+})
+
+test('the centring offset is derived from all three widths', () => {
+  // Collapsed to one line: the declaration spans several in the source, and
+  // what matters is which variables appear in it, not how it is wrapped.
+  const pad = declaration('.main', 'padding-right').replace(/\s+/g, ' ')
+  for (const v of ['--side-w', '--col-w', '--main-pad']) {
+    expect(pad, `the offset should be derived from ${v}`).toContain(`var(${v})`)
+  }
+  // Clamped, or a window narrower than the sidebar plus the column slides the
+  // outline underneath the sidebar instead of stopping short of it.
+  expect(pad).toContain('clamp(')
+})
+
+test('the shell widths are declared once', () => {
+  for (const v of ['--side-w', '--col-w', '--main-pad']) {
+    const declared = css.match(new RegExp(`^\\s*${v}\\s*:`, 'gm')) ?? []
+    expect(declared.length, `${v} should be defined exactly once`).toBe(1)
+  }
+})
