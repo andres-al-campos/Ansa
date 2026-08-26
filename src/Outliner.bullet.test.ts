@@ -237,13 +237,25 @@ test('the bullet and checkbox centre on the first text line', () => {
  * margin, which is also what keeps the text from jumping when you click in.
  */
 test('the editor fills the row without moving the row or the text', () => {
-  // Padding and margin must cancel on both axes, or the row changes height or
-  // the text shifts sideways on entering edit mode.
-  expect(declarations('.label-input', 'padding')).toEqual(['5px 6px'])
-  expect(declarations('.label-input', 'margin')).toEqual(['-5px -6px'])
-  // The negative horizontal margin widens the box past its container.
-  expect(declarations('.label-input', 'width')).toEqual(['calc(100% + 12px)'])
-  // Sharing an edge with the row means sharing its corner radius too.
+  const nums = (prop: string) =>
+    declarations('.label-input', prop)[0].split(/\s+/).map(parseFloat)
+  const pad = nums('padding')
+  const margin = nums('margin')
+  // Padding and margin must cancel on both axes, or the row changes height and
+  // the text shifts sideways on entering edit mode. Pin that they cancel, not
+  // what they are: the values are the row's own padding less a breathing gap,
+  // and that gap is a matter of taste.
+  expect(margin).toEqual(pad.map((v) => -v))
+  // The box stops short of the row's edge rather than bleeding to it. Under the
+  // row's 5px/6px padding, so the gold always sits inside the hover band.
+  expect(pad[0]).toBeLessThan(5)
+  expect(pad[1]).toBeLessThan(6)
+  // The negative horizontal margin widens the box past its container by exactly
+  // what it gave back on each side.
+  expect(declarations('.label-input', 'width')).toEqual([
+    `calc(100% + ${pad[1] * 2}px)`,
+  ])
+  // Sharing the row's shape means sharing its corner radius.
   expect(declarations('.label-input', 'border-radius')).toEqual(['6px'])
 })
 
@@ -259,4 +271,13 @@ test('the zoom button is square and does not drive the row height', () => {
   expect(new Set(pad[0].split(/\s+/)).size, 'padding should be even on both axes').toBe(1)
   // 16px icon + 2×3px padding = 22, under the row's 21.75px line box + padding.
   expect(parseFloat(pad[0])).toBeLessThanOrEqual(3)
+
+  // The row's padding is 5px vertical but 6px horizontal, so without a pull-back
+  // the button sits a pixel further from the right edge than from the top and
+  // bottom. The negative margin is what makes the gap read the same on all three
+  // sides it is near; it must be exactly that 1px difference.
+  const rowPad = declarations('.row', 'padding')[0].split(/\s+/).map(parseFloat)
+  expect(declarations('.zoom', 'margin-right')).toEqual([
+    `${rowPad[0] - rowPad[1]}px`,
+  ])
 })

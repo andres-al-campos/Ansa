@@ -958,22 +958,22 @@ body:has(.row.gap-slot) .proj:is(:active, :hover, .proj) { cursor: default; }
   background: none;
   color: var(--ink);
   border: none;
-  /* The brass fills the row's full height rather than hugging the text, so the
-   * outline and the row's hover band share one edge instead of sitting as a
-   * small box inside a taller one. The row's 5px vertical padding is the gap,
-   * so the field takes that padding itself and gives it straight back as a
-   * negative margin: the box grows to the row's height while the row's own
-   * height and the text's position stay exactly where they were. The radius
-   * matches the row's 6px for the same reason. */
+  /* The brass takes the row's height rather than hugging the text — it used to
+   * be a small box floating inside a taller one — but stops 2px short on each
+   * side so it has room to breathe instead of sitting hard against the row's
+   * edge. The row's own 5px/6px padding is what the field claims, minus that
+   * 2px: it takes the padding and hands most of it straight back as a negative
+   * margin, so the box grows while the row's height and the text's position
+   * stay exactly where they were. Giving back less than it takes is what leaves
+   * the 2px gap.
+   *
+   * The horizontal half matters for a second reason: without it the text would
+   * shift sideways on entering edit mode. `width` grows to match, since a
+   * negative margin widens the box past its container. */
   border-radius: 6px;
-  padding: 5px 6px;
-  /* Both axes give the padding straight back. Vertically that grows the box to
-   * the row's height without changing the row's; horizontally it keeps the
-   * text on the same x as the static label, so a glyph doesn't jump sideways
-   * when you click in. `width` then has to grow to match, since the negative
-   * margin widens the box past 100%. */
-  margin: -5px -6px;
-  width: calc(100% + 12px);
+  padding: 3px 4px;
+  margin: -3px -4px;
+  width: calc(100% + 8px);
   box-shadow: inset 0 0 0 1px var(--brass);
 }
 /* The brass border is the whole affordance; the global focus-visible ring on
