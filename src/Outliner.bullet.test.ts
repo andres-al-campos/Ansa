@@ -212,3 +212,37 @@ test('the in-place editor adds no box and no height', () => {
   // The margin hack that used to pull the taller box back into line is gone.
   expect(declarations('.label-input', 'margin-top')).toEqual([])
 })
+
+/**
+ * The bullet and the checkbox are nudged down from the row's top to sit on the
+ * first text line — the row is flex-start, so a wrapped row keeps them beside
+ * line one rather than floating to the middle. Both offsets had been tuned by
+ * eye and both sat ~2px low; nothing drew an edge to measure them against until
+ * the editor's brass box did. They derive from the 21.75px line box, so pin the
+ * derivation rather than the taste.
+ */
+test('the bullet and checkbox centre on the first text line', () => {
+  const line = 21.75 // 14.5px text at line-height 1.5, the row's line box
+  const offset = (box: number) => `${(line - box) / 2}px`
+  // (21.75 - 18) / 2 — the bullet's box is 18px.
+  expect(declarations('.bullet', 'margin-top')).toEqual([offset(18)])
+  // (21.75 - 15) / 2 — and the checkbox's is an odd 15px, so this keeps the
+  // fraction: rounding to 3px is a visible half-pixel on a square that small.
+  expect(declarations('.check', 'margin-top')).toEqual([offset(15)])
+})
+
+/**
+ * The brass fills the row's height instead of hugging the text. It gets there
+ * by taking the row's own padding and handing it straight back as a negative
+ * margin, which is also what keeps the text from jumping when you click in.
+ */
+test('the editor fills the row without moving the row or the text', () => {
+  // Padding and margin must cancel on both axes, or the row changes height or
+  // the text shifts sideways on entering edit mode.
+  expect(declarations('.label-input', 'padding')).toEqual(['5px 6px'])
+  expect(declarations('.label-input', 'margin')).toEqual(['-5px -6px'])
+  // The negative horizontal margin widens the box past its container.
+  expect(declarations('.label-input', 'width')).toEqual(['calc(100% + 12px)'])
+  // Sharing an edge with the row means sharing its corner radius too.
+  expect(declarations('.label-input', 'border-radius')).toEqual(['6px'])
+})
