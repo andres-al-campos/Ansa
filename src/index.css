@@ -671,7 +671,11 @@ button { font: inherit; color: inherit; }
 .zoom {
   flex: none;
   margin: 0 0 0 auto;
-  padding: 2px 5px;
+  /* Even padding, so the hover pill is square around a square icon rather than
+   * the wide short lozenge that 2px/5px made of it. 3px rather than more: the
+   * button is the tallest thing in the row, so its box sets the row's height —
+   * 5px here grew every row by 4px. This keeps it under the 21.75px line box. */
+  padding: 3px;
   border-radius: 5px;
   align-self: center;
   display: flex;

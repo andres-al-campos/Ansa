@@ -246,3 +246,17 @@ test('the editor fills the row without moving the row or the text', () => {
   // Sharing an edge with the row means sharing its corner radius too.
   expect(declarations('.label-input', 'border-radius')).toEqual(['6px'])
 })
+
+/**
+ * The zoom button's hover pill is square around a square icon. Its padding has
+ * to stay even for that, and small enough that the button doesn't become the
+ * tallest thing in the row — at 5px it set the row's height and grew every row
+ * by 4px.
+ */
+test('the zoom button is square and does not drive the row height', () => {
+  const pad = declarations('.zoom', 'padding')
+  expect(pad).toHaveLength(1)
+  expect(new Set(pad[0].split(/\s+/)).size, 'padding should be even on both axes').toBe(1)
+  // 16px icon + 2×3px padding = 22, under the row's 21.75px line box + padding.
+  expect(parseFloat(pad[0])).toBeLessThanOrEqual(3)
+})
