@@ -178,3 +178,37 @@ test('the hovered row has its own background token, not the shared --sunk', () =
   // declared once renders one theme's band on the other theme's ground.
   expect(css.match(/--row-hover:/g)).toHaveLength(2)
 })
+
+/**
+ * Everything draggable says so once you take hold of it. The sheet used to
+ * argue the opposite — hold-to-drag was treated as a power-user gesture nothing
+ * advertised — so this test exists to stop that decision drifting back in.
+ */
+test('the drag handles show a grab cursor', () => {
+  // A leaf has no fold, so its resting cursor is the grab. A parent rests on
+  // the pointer because a click folds it; both go to grabbing on the press.
+  expect(declarations('.bullet:not(.folds)', 'cursor')).toEqual(['grab'])
+  expect(declarations('.bullet:active', 'cursor')).toEqual(['grabbing'])
+  expect(declarations('.rail.projects .proj:active', 'cursor')).toEqual(['grabbing'])
+})
+
+/**
+ * Editing happens inside the row, not in a panel on top of it: one highlighted
+ * rectangle at a time, and no height change when you click in. Both used to be
+ * wrong — a filled bordered box nested in the hover band, 8px taller than a
+ * display row.
+ */
+test('the in-place editor adds no box and no height', () => {
+  // A border and a background are what made it a second box; the brass survives
+  // as an inset shadow, which paints in the same place and adds no height.
+  expect(declarations('.label-input', 'border')).toEqual(['none'])
+  expect(declarations('.label-input', 'background')).toEqual(['none'])
+  expect(declarations('.label-input', 'box-shadow')).toEqual([
+    'inset 0 0 0 1px var(--brass)',
+  ])
+  // An inline-block would sit on a text baseline and its line box would add
+  // descender space under it, which is a height change by another route.
+  expect(declarations('.label-input', 'display')).toEqual(['block'])
+  // The margin hack that used to pull the taller box back into line is gone.
+  expect(declarations('.label-input', 'margin-top')).toEqual([])
+})
