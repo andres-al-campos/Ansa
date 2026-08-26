@@ -676,6 +676,10 @@ button { font: inherit; color: inherit; }
    * button is the tallest thing in the row, so its box sets the row's height —
    * 5px here grew every row by 4px. This keeps it under the 21.75px line box. */
   padding: 3px;
+  /* The row's padding is 5px/6px, so the button sat 5px from the top and bottom
+   * but 6px from the right. Pull the extra pixel back so the gap reads the same
+   * on all three sides it is near. */
+  margin-right: -1px;
   border-radius: 5px;
   align-self: center;
   display: flex;
