@@ -216,9 +216,12 @@ button { font: inherit; color: inherit; }
 }
 .rail.projects li.here .proj { background: none; }
 
-/* Drag-to-reorder. The row is a click-to-open button at rest — no grab cursor
-   advertising the drag; it's there to find. Only the active drag shows grabbing.
+/* Drag-to-reorder. The row is a click-to-open button first, so it rests on the
+   pointer; the grab appears on the press, which is when the gesture is about
+   dragging rather than opening. Same scheme as the outline bullets — everything
+   draggable says so once you take hold of it.
    The dragged row dims; a brass line marks where it will land. */
+.rail.projects .proj:active { cursor: grabbing; }
 .rail.projects li.lifting { opacity: 0.4; }
 .rail.projects li.lifting .proj { cursor: grabbing; }
 .rail.projects li.drop-before::before,
@@ -744,9 +747,18 @@ button { font: inherit; color: inherit; }
 }
 /* Once a drag is live the ghost card is what you're "holding", so drop the grab
  * cursor for a plain arrow — the grabbing hand's fat palm sat right on the
- * insertion line's head dot and hid the indent it marks. (Hold-to-drag is a
- * power-user gesture, so no grab cursor advertises it on bullets at rest.) */
-body:has(.row.gap-slot) { cursor: default; }
+ * insertion line's head dot and hid the indent it marks. That is why it also
+ * wins over the handles' own grab/grabbing cursors for the length of the drag:
+ * here the cursor's job is reading the drop target, not advertising a gesture
+ * you are already performing.
+ *
+ * The `:is(…, .bullet)` repeat is a specificity weight, not a wider match: it
+ * matches exactly what `.bullet` alone would, but :is() takes its heaviest
+ * argument's specificity, so this outranks the `.bullet:active` grabbing rule
+ * further down without depending on which rule comes last. */
+body:has(.row.gap-slot),
+body:has(.row.gap-slot) .bullet:is(:active, :hover, .bullet),
+body:has(.row.gap-slot) .proj:is(:active, :hover, .proj) { cursor: default; }
 /* The dot: 6px, in the centre, in every state, and always the brightest part of
  * the bullet. It is the one part that never changes — and it is the drag
  * handle, so the thing you grab is the thing that is lit, with the surround
@@ -829,7 +841,19 @@ body:has(.row.gap-slot) { cursor: default; }
  * power-user gesture and the sheet deliberately doesn't advertise it at rest
  * (see the `.row.gap-slot` rule above). So a leaf reads as inert, which is what
  * a click on it does. */
-.bullet:not(.folds) { cursor: default; }
+.bullet:not(.folds) { cursor: grab; }
+
+/* Every bullet is a drag handle, so every bullet says so on the way down. A
+ * parent's resting cursor is the pointer, because a click folds it and that is
+ * the commoner intent; the grab appears once the press starts, which is the
+ * moment the gesture is actually about dragging. A leaf has no fold, so it
+ * rests on grab already (the rule above) and only needs the grabbing state.
+ *
+ * This reverses the sheet's earlier "no grab cursor advertises hold-to-drag at
+ * rest" call, at Alejandro's request: everything draggable should look
+ * draggable. */
+.bullet:active { cursor: grabbing; }
+
 
 .check {
   width: 15px;
