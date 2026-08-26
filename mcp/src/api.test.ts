@@ -92,3 +92,26 @@ test('move_task reports what happened rather than assuming success', () => {
   // And the failure path has to say so, not fall through to the success text.
   expect(body).toMatch(/Did not move/)
 })
+
+test('an env token wins over the Keychain', () => {
+  // Order matters for anywhere that isn't this laptop: CI, a container, or a
+  // Linux box passes ANSA_TOKEN the ordinary way, and a Keychain lookup that
+  // took precedence would either shadow it or, on a machine with no `security`
+  // binary, cost a failed subprocess on every start.
+  expect(source).toMatch(/process\.env\.ANSA_TOKEN\s*\|\|\s*keychainToken\(\)/)
+})
+
+test('the Keychain lookup is macOS-only and fails quiet', () => {
+  // `security` exists only on darwin, and a missing item is a normal "not
+  // configured" answer rather than an error — a throw here would take down a
+  // server that was about to work fine from an env var.
+  const fn = source.slice(source.indexOf('function keychainToken'))
+  expect(fn).toMatch(/process\.platform !== 'darwin'/)
+  expect(fn).toMatch(/catch\s*\{\s*return ''/)
+})
+
+test('the token is never written to stdout', () => {
+  // stdout is the JSON-RPC transport. A stray console.log of a credential would
+  // both corrupt the protocol and put the token somewhere it gets logged.
+  expect(source).not.toMatch(/console\.log\([^)]*TOKEN/)
+})

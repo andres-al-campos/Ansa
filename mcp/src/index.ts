@@ -10,6 +10,7 @@
  * rename, check/uncheck, move, fold, remove.
  */
 
+import { execFileSync } from 'node:child_process'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod'
@@ -29,8 +30,36 @@ const BASE = process.env.ANSA_API ?? 'https://ansa.id3arium.workers.dev'
  * header, which only a local server with ANSA_DEV_AUTH=1 will honour — a
  * deployed worker ignores it, by design.
  */
-const TOKEN = process.env.ANSA_TOKEN ?? ''
+const TOKEN = process.env.ANSA_TOKEN || keychainToken()
 const USER = process.env.ANSA_USER ?? 'legacy'
+
+/**
+ * The token from the macOS Keychain, or empty if it isn't there.
+ *
+ * Same arrangement build.sh uses for the Clerk keys, and for the same reason:
+ * this repo keeps secrets in the Keychain rather than in files, and an MCP
+ * client config is a file. Without this the token's only home would be a
+ * plaintext `env` block in claude_desktop_config.json.
+ *
+ * An env var wins when set, so a Linux machine, CI, or a container passes the
+ * token the ordinary way and never reaches this.
+ *
+ * Add it with (it prompts, so the value stays out of shell history):
+ *   security add-generic-password -a "$USER" -s ansa-mcp-token -w
+ */
+function keychainToken(): string {
+  if (process.platform !== 'darwin') return ''
+  try {
+    return execFileSync('security', ['find-generic-password', '-s', 'ansa-mcp-token', '-w'], {
+      encoding: 'utf8',
+      // A missing item exits non-zero and prints to stderr; that is a normal
+      // "not configured" answer here, not something to show the user.
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim()
+  } catch {
+    return ''
+  }
+}
 
 /** Call the server; throw a readable error the model can act on. */
 async function api(path: string, init?: RequestInit): Promise<{ tree: Tree } & Record<string, unknown>> {

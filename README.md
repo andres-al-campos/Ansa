@@ -174,9 +174,20 @@ misconfigured deployment obvious rather than mysterious.
 }
 ```
 
-Keep `ANSA_TOKEN` where your MCP client can read it: either an `env` block in
-the client config above, or the macOS Keychain alongside the Clerk publishable
-key. Not a `.env` file, matching how this repo treats every other secret.
+Then keep the token where the MCP server can find it. It reads `ANSA_TOKEN`
+from the environment first, and falls back to the macOS Keychain — which is
+where it belongs on this machine, since an MCP client config is a file and this
+repo keeps secrets out of files:
+
+```bash
+security add-generic-password -a "$USER" -s ansa-mcp-token -w
+```
+
+It prompts for the value, so the token stays out of shell history. Nothing else
+to configure: the MCP client launches the server, and the server finds it.
+
+The environment still wins where a Keychain doesn't exist — CI, a container, a
+Linux box — so those pass `ANSA_TOKEN` the ordinary way.
 
 Three properties worth knowing, each with a test in `worker/src/auth.test.ts`:
 
