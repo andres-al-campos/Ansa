@@ -66,7 +66,10 @@ public final class SyncClient {
     /// kept rather than being dropped and reconnected every time the user stops
     /// typing for a minute. Short enough that a socket the OS never reported as
     /// dead is noticed in about the time it takes to look at the screen.
-    private static let pingEvery: Duration = .seconds(25)
+    ///
+    /// Injectable only so the tests need not wait 25 seconds to watch a dead
+    /// socket be noticed. The app uses the default.
+    private let pingEvery: Duration
 
     /// How often a queue stalled by an unreachable server retries on its own.
     /// Without this the only thing that retries is the next edit, so an app the
@@ -120,9 +123,13 @@ public final class SyncClient {
     /// Notified when `live` or `rejected` changes, so the UI can redraw.
     public var onStatusChange: (() -> Void)?
 
-    public init(api: any SyncBackend, queueURL: URL, onAdopt: @escaping (Tree) -> Void) {
+    public init(
+        api: any SyncBackend, queueURL: URL, pingEvery: Duration = .seconds(25),
+        onAdopt: @escaping (Tree) -> Void
+    ) {
         self.api = api
         self.queue = OpQueue(url: queueURL)
+        self.pingEvery = pingEvery
         self.onAdopt = onAdopt
     }
 
@@ -359,9 +366,10 @@ public final class SyncClient {
     /// the pending `next()` return nil, which ends the connection normally and
     /// sends `listen()` round for a fresh one.
     private func keepalive(on stream: any EventStream) -> Task<Void, Never> {
-        Task { [weak self] in
+        let interval = pingEvery
+        return Task { [weak self] in
             while !Task.isCancelled {
-                try? await Task.sleep(for: Self.pingEvery)
+                try? await Task.sleep(for: interval)
                 guard !Task.isCancelled, self != nil else { return }
                 if await !stream.ping() {
                     await stream.close()

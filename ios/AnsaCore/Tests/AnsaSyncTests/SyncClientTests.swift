@@ -135,10 +135,15 @@ struct SyncClientTests {
     /// it do. `start()` is deliberately not called: it opens a real socket and
     /// a real timer, and every rule here is reachable without either.
     private func makeClient(
-        _ api: FakeBackend
+        _ api: FakeBackend, pingEvery: Duration = .milliseconds(5)
     ) -> (SyncClient, () -> [Tree]) {
         let adopted = Box<[Tree]>([])
-        let client = SyncClient(api: api, queueURL: tempURL()) { adopted.value.append($0) }
+        // Pings fast by default: the tests that care about the keepalive would
+        // otherwise wait the app's 25 seconds, and the ones that do not are
+        // unaffected, since a healthy fake answers every ping.
+        let client = SyncClient(api: api, queueURL: tempURL(), pingEvery: pingEvery) {
+            adopted.value.append($0)
+        }
         return (client, { adopted.value })
     }
 
@@ -445,6 +450,29 @@ struct SyncClientTests {
         #expect(await api.connects >= 2, "a dropped socket was not replaced")
         // It opened, so the ladder stays at the floor and `live` never dipped.
         #expect(client.live)
+    }
+
+    @Test("a socket whose ping fails is dropped and replaced")
+    func deadSocketIsNoticed() async {
+        // The half-dead case: the OS never reports the drop, so `next()` waits
+        // forever on a connection that will never deliver anything. Without the
+        // ping nothing else in the client ever notices — the read is suspended,
+        // so the reconnect ladder never gets its turn.
+        let dead = FakeStream(pings: false)
+        let api = FakeBackend()
+        await api.willConnect([dead, FakeStream()])
+        let (client, _) = makeClient(api)
+
+        client.start()
+        defer { client.stop() }
+
+        for _ in 0..<600 {
+            if await api.connects >= 2 { break }
+            try? await Task.sleep(for: .milliseconds(10))
+        }
+
+        #expect(await dead.closed, "the dead socket was left open")
+        #expect(await api.connects >= 2, "nothing replaced the dead socket")
     }
 
     @Test("the stream is closed when the client stops")
