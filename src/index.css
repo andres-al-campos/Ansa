@@ -741,7 +741,15 @@ button { font: inherit; color: inherit; }
   /* Refined below: only a bullet that actually folds keeps the pointer. */
   cursor: pointer;
   position: relative;
-  margin-top: 4px;
+  /* Sits on the first text line, not on the row's middle: a row can wrap to two
+   * lines and the bullet belongs beside the first one, which is why this is a
+   * nudge from the top rather than `align-items: center` on the row. From the
+   * 21.75px line box: (21.75 - 18) / 2. Kept as the exact fraction, like the
+   * checkbox below — rounding the two differently is what leaves them a
+   * half-pixel apart from each other. It used to be 4px, tuned by eye back when
+   * nothing drew an edge to measure it against; the editor's brass box made it
+   * visible as sitting low. */
+  margin-top: 1.875px;
   /* Hold-to-drag must not scroll the page under the finger on touch. */
   touch-action: none;
 }
@@ -859,7 +867,10 @@ body:has(.row.gap-slot) .proj:is(:active, :hover, .proj) { cursor: default; }
   width: 15px;
   height: 15px;
   flex: none;
-  margin-top: 5px;
+  /* Centred on the same first line as the bullet: (21.75 - 15) / 2 = 3.375.
+   * Not rounded to 3px — the box is an odd 15px, so half a pixel is visible on
+   * a square this small. Was 5px, which put it ~1.6px below the text. */
+  margin-top: 3.375px;
   /* --mark, not the text-ink token it used to borrow: the checkbox is one of
    * the row's structural marks, so it moves with the bullet and the guide. */
   border: 1.5px solid var(--mark);
@@ -928,7 +939,6 @@ body:has(.row.gap-slot) .proj:is(:active, :hover, .proj) { cursor: default; }
  * the text sits exactly where the static label had it — which is also what
  * retires the `margin-top: -4px` that used to pull the taller box back up. */
 .label-input {
-  width: 100%;
   /* Block, not the input's default inline-block: an inline-block sits on a text
    * baseline, so its parent's line box adds descender space underneath and the
    * row grew ~4px on entering edit mode even with the box itself the right
@@ -940,8 +950,22 @@ body:has(.row.gap-slot) .proj:is(:active, :hover, .proj) { cursor: default; }
   background: none;
   color: var(--ink);
   border: none;
-  border-radius: 4px;
-  padding: 0 2px;
+  /* The brass fills the row's full height rather than hugging the text, so the
+   * outline and the row's hover band share one edge instead of sitting as a
+   * small box inside a taller one. The row's 5px vertical padding is the gap,
+   * so the field takes that padding itself and gives it straight back as a
+   * negative margin: the box grows to the row's height while the row's own
+   * height and the text's position stay exactly where they were. The radius
+   * matches the row's 6px for the same reason. */
+  border-radius: 6px;
+  padding: 5px 6px;
+  /* Both axes give the padding straight back. Vertically that grows the box to
+   * the row's height without changing the row's; horizontally it keeps the
+   * text on the same x as the static label, so a glyph doesn't jump sideways
+   * when you click in. `width` then has to grow to match, since the negative
+   * margin widens the box past 100%. */
+  margin: -5px -6px;
+  width: calc(100% + 12px);
   box-shadow: inset 0 0 0 1px var(--brass);
 }
 /* The brass border is the whole affordance; the global focus-visible ring on
