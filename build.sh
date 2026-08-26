@@ -81,7 +81,15 @@ check_port_free() {
 }
 # The API port isn't known yet — it depends on which backend was asked for — so
 # that check happens once the argument has been parsed.
-check_port_free "$APP_PORT" "app"
+#
+# Deploying binds nothing: it builds a bundle and uploads it. Checking the dev
+# server's port here refused a perfectly good deploy because something
+# unrelated happened to hold 5173, so the guard is for the run paths only.
+# `$1` rather than a parsed variable because parsing happens further down.
+case "${1:-}" in
+  deploy) ;;
+  *) check_port_free "$APP_PORT" "app" ;;
+esac
 
 # Track child PIDs so Ctrl-C (or any exit) takes both processes down with us,
 # rather than orphaning the server in the background.
