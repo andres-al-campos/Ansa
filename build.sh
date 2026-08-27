@@ -41,6 +41,11 @@ APP_URL="http://localhost:${APP_PORT}"
 PAGES_PROJECT=ansaflow
 WORKER_API=https://ansa.id3arium.workers.dev
 
+# The bundle path deploy_app just built, for smoke_app to wait for. Empty on the
+# paths that don't build one — `deploy api` still smoke-checks the app it did
+# not touch, and there the contents check on whatever is live is the right test.
+DEPLOYED_JS=
+
 # Set ANSA_NO_OPEN=1 to skip auto-opening the browser (e.g. on a headless box).
 NO_OPEN=${ANSA_NO_OPEN:-}
 
@@ -199,8 +204,12 @@ deploy_api() {
 #
 # Retried rather than checked once: a deploy takes a few seconds to propagate,
 # so a single immediate probe reports a stale copy and calls it a regression.
+#
+# 20 × 2s rather than 10: the loop returns the moment a check passes, so the
+# ceiling only costs anything on a deploy that is genuinely slow — which is the
+# case the old budget turned into a spurious failure.
 retry_until() {
-  local what=$1 attempts=${2:-10}
+  local what=$1 attempts=${2:-20}
   local i=1
   while [ "$i" -le "$attempts" ]; do
     if "check_$what"; then
@@ -226,12 +235,18 @@ check_api() {
 check_app() {
   local index js
   index=$(curl -sf --max-time 10 "https://${PAGES_PROJECT}.pages.dev/" 2>/dev/null) || return 1
-  js=$(printf '%s' "$index" | grep -o '/assets/[^"]*\.js' | head -1)
+  js=$(grep -o '/assets/[^"]*\.js' <<<"$index" | head -1)
   [ -n "$js" ] || return 1
+  # Is this the bundle we just built, or the one from last time? For the first
+  # few seconds after an upload the URL still serves the previous deploy, which
+  # has both values inlined too — so checking only the contents passes on a
+  # stale copy and proves nothing. Refusing until the hashed filename matches is
+  # what makes a retry mean "not landed yet" rather than "look again and hope".
+  [ -z "${DEPLOYED_JS:-}" ] || [ "$js" = "$DEPLOYED_JS" ] || return 1
   local bundle
   bundle=$(curl -sf --max-time 20 "https://${PAGES_PROJECT}.pages.dev${js}" 2>/dev/null) || return 1
-  printf '%s' "$bundle" | grep -qF "$WORKER_API" || return 1
-  printf '%s' "$bundle" | grep -qF "$VITE_CLERK_PUBLISHABLE_KEY"
+  grep -qF "$WORKER_API" <<<"$bundle" || return 1
+  grep -qF "$VITE_CLERK_PUBLISHABLE_KEY" <<<"$bundle"
 }
 
 smoke_api() {
@@ -278,6 +293,10 @@ deploy_app() {
   # bundle that looks fine until someone opens it.
   local js
   js=$(find dist/assets -name '*.js' -print -quit)
+  # The smoke check waits for this exact filename to appear on the live site.
+  # Vite hashes the name from the contents, so it is the only thing that tells
+  # the new bundle apart from the one Pages is still serving.
+  DEPLOYED_JS="/${js#dist/}"
   for needle in "$WORKER_API" "$VITE_CLERK_PUBLISHABLE_KEY"; do
     if ! grep -qF "$needle" "$js"; then
       echo "The built bundle is missing a value it needs, so it was not deployed." >&2
