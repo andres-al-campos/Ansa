@@ -4,6 +4,7 @@ import {
   addSubtree,
   newId,
   adoptFollowing,
+  byId,
   childrenOf,
   depthAtGap,
   indent,
@@ -17,6 +18,7 @@ import {
   moveRow,
   outdent,
   progressOf,
+  reconcileDone,
   removeNode,
   resumeScope,
   roots,
@@ -708,5 +710,64 @@ describe('resumeScope — where to land on open', () => {
       n.id === 'taxes' ? { ...n, pinned: true } : n,
     )
     expect(resumeScope(t)).toBe('flat')
+  })
+})
+
+describe('reconcileDone re-derives a parent from its contents', () => {
+  const t = (spec: Array<[string, string | null, boolean]>): Tree =>
+    spec.map(([id, parentId, done], i) => ({
+      id,
+      parentId,
+      text: id,
+      done,
+      order: i,
+      collapsed: false,
+      createdAt: 0,
+    }))
+
+  it('completes a leaf that gained an already-done child', () => {
+    const out = reconcileDone(t([['a', null, false], ['b', 'a', true]]))
+    expect(byId(out, 'a')!.done).toBe(true)
+  })
+
+  it('un-completes a done leaf that gained an unfinished child', () => {
+    const out = reconcileDone(t([['a', null, true], ['b', 'a', false]]))
+    expect(byId(out, 'a')!.done).toBe(false)
+  })
+
+  it('completes a parent whose last unfinished child was removed', () => {
+    const out = reconcileDone(t([['a', null, false], ['b', 'a', true]]))
+    expect(byId(out, 'a')!.done).toBe(true)
+  })
+
+  it('leaves a leaf alone — its done is the real fact', () => {
+    const out = reconcileDone(t([['a', null, true], ['b', null, false]]))
+    expect(byId(out, 'a')!.done).toBe(true)
+    expect(byId(out, 'b')!.done).toBe(false)
+  })
+
+  it('rolls up through several levels in one pass', () => {
+    const out = reconcileDone(
+      t([
+        ['root', null, false],
+        ['mid', 'root', false],
+        ['leaf', 'mid', true],
+      ]),
+    )
+    expect(byId(out, 'mid')!.done).toBe(true)
+    expect(byId(out, 'root')!.done).toBe(true)
+  })
+
+  it('one unfinished leaf keeps every ancestor open', () => {
+    const out = reconcileDone(
+      t([
+        ['root', null, true],
+        ['mid', 'root', true],
+        ['x', 'mid', true],
+        ['y', 'mid', false],
+      ]),
+    )
+    expect(byId(out, 'mid')!.done).toBe(false)
+    expect(byId(out, 'root')!.done).toBe(false)
   })
 })

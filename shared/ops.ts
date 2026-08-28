@@ -30,6 +30,7 @@ import {
   markOpened,
   moveNode,
   outdent,
+  reconcileDone,
   removeNode,
   setDone,
   setPinned,
@@ -89,6 +90,18 @@ export const OP_KINDS = [
 ] as const satisfies readonly OpKind[]
 
 /**
+ * Finish a structural op: the shape changed, so every parent's `done` has to be
+ * re-derived from what it now contains. See `reconcileDone`.
+ *
+ * No `completed` ids: those drive the completion animation, which belongs to the
+ * user ticking something off. A parent that flips because a child was moved or
+ * deleted should update quietly rather than celebrate.
+ */
+function structural(tree: Tree): { tree: Tree; completed: NodeId[] } {
+  return { tree: reconcileDone(tree), completed: [] }
+}
+
+/**
  * Apply an op to a tree, returning the new tree.
  *
  * Total and non-throwing: an op naming a node that no longer exists returns the
@@ -103,28 +116,25 @@ export const OP_KINDS = [
 export function applyOp(tree: Tree, op: Op): { tree: Tree; completed: NodeId[] } {
   switch (op.op) {
     case 'addChild':
-      return { tree: addChild(tree, op.parentId, op.text, op.id, op.at).tree, completed: [] }
+      return structural(addChild(tree, op.parentId, op.text, op.id, op.at).tree)
     case 'addSubtree':
-      return { tree: addSubtree(tree, op.parentId, op.nodes, op.ids, op.at).tree, completed: [] }
+      return structural(addSubtree(tree, op.parentId, op.nodes, op.ids, op.at).tree)
     case 'setText':
       return { tree: setText(tree, op.id, op.text), completed: [] }
     case 'setDone':
       return setDone(tree, op.id, op.done)
     case 'removeNode':
-      return { tree: removeNode(tree, op.id), completed: [] }
+      return structural(removeNode(tree, op.id))
     case 'moveNode':
-      return { tree: moveNode(tree, op.id, op.parentId, op.index), completed: [] }
+      return structural(moveNode(tree, op.id, op.parentId, op.index))
     case 'indent':
-      return { tree: indent(tree, op.id), completed: [] }
+      return structural(indent(tree, op.id))
     case 'outdent':
-      return { tree: outdent(tree, op.id), completed: [] }
+      return structural(outdent(tree, op.id))
     case 'adoptFollowing':
-      return { tree: adoptFollowing(tree, op.id), completed: [] }
+      return structural(adoptFollowing(tree, op.id))
     case 'insertAtDepth':
-      return {
-        tree: insertAtDepth(tree, op.id, op.anchorId, op.depth, op.side, op.scope),
-        completed: [],
-      }
+      return structural(insertAtDepth(tree, op.id, op.anchorId, op.depth, op.side, op.scope))
     case 'toggleCollapsed':
       return { tree: toggleCollapsed(tree, op.id), completed: [] }
     case 'setPinned':

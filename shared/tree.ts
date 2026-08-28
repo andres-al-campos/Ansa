@@ -252,6 +252,61 @@ export function setDone(tree: Tree, id: NodeId, done: boolean): { tree: Tree; co
 }
 
 /**
+ * Re-derive every parent's `done` from its children, bottom-up.
+ *
+ * A parent is done exactly when all its children are — it is a summary of its
+ * contents and holds no completion of its own. Leaves are left alone; their
+ * `done` is the only place the fact actually lives.
+ *
+ * Structural ops need this because they change *what* a parent contains without
+ * going through `setDone`. Adding a done child to an open leaf should complete
+ * it; deleting a parent's last unfinished child should complete it; moving a
+ * child out reconciles the parent it left as well as the one it joined. Wiring
+ * each op to the parents it touched would work, but every op that reparents —
+ * move, indent, outdent, adoptFollowing, insertAtDepth — would have to get it
+ * right separately, and a new one could forget. Sweeping the tree cannot.
+ *
+ * A leaf that gains its first child stops being done unless that child is:
+ * adding a subtask to a finished task means it isn't finished any more. The
+ * alternative, pushing the parent's done onto the new child, would mark work
+ * complete that nobody has done.
+ */
+export function reconcileDone(tree: Tree): Tree {
+  const next = tree.map((n) => ({ ...n }))
+  const kids = new Map<NodeId, Node[]>()
+  for (const n of next) {
+    if (n.parentId === null) continue
+    const list = kids.get(n.parentId)
+    if (list) list.push(n)
+    else kids.set(n.parentId, [n])
+  }
+
+  // Deepest first, so a parent is decided only after its own children have
+  // been. Depth is computed once per node rather than by walking lineages,
+  // which would be quadratic on a deep tree.
+  const depth = new Map<NodeId, number>()
+  const index = new Map(next.map((n) => [n.id, n]))
+  const depthOfNode = (n: Node): number => {
+    const cached = depth.get(n.id)
+    if (cached !== undefined) return cached
+    // Guard a cycle the same way lineageOf does: a corrupt tree must not hang.
+    depth.set(n.id, 0)
+    const parent = n.parentId ? index.get(n.parentId) : undefined
+    const d = parent ? depthOfNode(parent) + 1 : 0
+    depth.set(n.id, d)
+    return d
+  }
+
+  const parents = next.filter((n) => kids.has(n.id))
+  parents.sort((a, b) => depthOfNode(b) - depthOfNode(a))
+  for (const parent of parents) {
+    parent.done = kids.get(parent.id)!.every((k) => k.done)
+  }
+
+  return next
+}
+
+/**
  * Mint a node id.
  *
  * Node ids are unique across the whole `nodes` table — `ownerId` is not part of

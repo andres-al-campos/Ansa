@@ -8,6 +8,7 @@ import {
   insertAtDepth,
   moveNode,
   outdent,
+  reconcileDone,
   removeNode,
   setDone,
   setPinned,
@@ -71,29 +72,33 @@ describe('applyOp matches the pure op it names', () => {
 
   it('removeNode', () => {
     const t = fixture()
-    expect(applyOp(t, { op: 'removeNode', id: 'gather' }).tree).toEqual(removeNode(t, 'gather'))
+    expect(applyOp(t, { op: 'removeNode', id: 'gather' }).tree).toEqual(
+      reconcileDone(removeNode(t, 'gather')),
+    )
   })
 
   it('moveNode', () => {
     const t = fixture()
     expect(applyOp(t, { op: 'moveNode', id: 'g1', parentId: 'forms', index: 1 }).tree).toEqual(
-      moveNode(t, 'g1', 'forms', 1),
+      reconcileDone(moveNode(t, 'g1', 'forms', 1)),
     )
   })
 
   it('indent', () => {
     const t = fixture()
-    expect(applyOp(t, { op: 'indent', id: 'g2' }).tree).toEqual(indent(t, 'g2'))
+    expect(applyOp(t, { op: 'indent', id: 'g2' }).tree).toEqual(reconcileDone(indent(t, 'g2')))
   })
 
   it('outdent', () => {
     const t = fixture()
-    expect(applyOp(t, { op: 'outdent', id: 'g2' }).tree).toEqual(outdent(t, 'g2'))
+    expect(applyOp(t, { op: 'outdent', id: 'g2' }).tree).toEqual(reconcileDone(outdent(t, 'g2')))
   })
 
   it('adoptFollowing', () => {
     const t = fixture()
-    expect(applyOp(t, { op: 'adoptFollowing', id: 'gather' }).tree).toEqual(adoptFollowing(t, 'gather'))
+    expect(applyOp(t, { op: 'adoptFollowing', id: 'gather' }).tree).toEqual(
+      reconcileDone(adoptFollowing(t, 'gather')),
+    )
   })
 
   it('insertAtDepth', () => {
@@ -106,7 +111,9 @@ describe('applyOp matches the pure op it names', () => {
       side: 'after',
       scope: 'taxes',
     }
-    expect(applyOp(t, op).tree).toEqual(insertAtDepth(t, 'f1', 'p1', 1, 'after', 'taxes'))
+    expect(applyOp(t, op).tree).toEqual(
+      reconcileDone(insertAtDepth(t, 'f1', 'p1', 1, 'after', 'taxes')),
+    )
   })
 
   it('toggleCollapsed', () => {
