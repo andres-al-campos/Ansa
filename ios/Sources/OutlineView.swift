@@ -33,6 +33,9 @@ struct OutlineView: View {
     /// One drag's worth of state and the geometry it reads. Grouped into a type
     /// because these pieces are meaningless apart and always changed together.
     @State private var drag = DragController()
+    /// The completion ripple — the wave of wiggles down a branch that just
+    /// finished. See `RippleController`.
+    @State private var ripple = RippleController()
     /// The project whose delete is awaiting confirmation.
     @State private var pendingDelete: Node?
 
@@ -351,8 +354,9 @@ struct OutlineView: View {
                     editing: interactive && edit.editing == row.node.id,
                     editText: $edit.text,
                     focusedRow: $focusedRow,
-                    onToggleDone: { apply(.setDone(id: row.node.id, done: !row.node.done)) },
+                    onToggleDone: { toggleDone(row.node) },
                     onCollapse: { toggleFold(row.node.id, proxy: proxy) },
+                    rippleDelay: interactive ? ripple.delay(for: row.node.id) : nil,
                     onBeginEdit: { beginEdit(row.node) },
                     onBlur: { id in commitEdit(from: id, releasingFocus: false) },
                     // Return commits and stops, rather than opening a fresh row
@@ -608,6 +612,33 @@ struct OutlineView: View {
     /// it for the server. Nothing here mutates the tree directly.
     private func apply(_ op: Op) {
         store.apply(op)
+    }
+
+    /// Tick a task, and ripple if that finished a branch.
+    ///
+    /// The ripple is the reward for *finishing* something, so it fires only when
+    /// a group closes out — not on every individual tick. A lone leaf that does
+    /// not complete its parent stays quiet; the payoff is saved for the moment a
+    /// branch actually finishes. Two ways a tap finishes one: it ticks a parent,
+    /// completing that whole subtree at once, or it is the last leaf that flips
+    /// an ancestor to done. `completed` lists only the ancestors that flipped,
+    /// never the tapped node, so the tap is checked for children too.
+    ///
+    /// Un-ticking never ripples. Ported from `handleToggleDone` in
+    /// `src/Outliner.tsx`.
+    private func toggleDone(_ node: Node) {
+        let willComplete = !node.done
+        let tappedIsParent = !TreeOps.isLeaf(store.tree, node.id)
+        let completed = store.apply(.setDone(id: node.id, done: willComplete))
+        guard willComplete, !completed.isEmpty || tappedIsParent else { return }
+
+        // The highest ancestor that flipped, else the tapped parent itself.
+        let topId = completed.last ?? node.id
+        var inSubtree = Set(TreeOps.subtreeOf(store.tree, topId).map(\.id))
+        inSubtree.insert(topId)
+        // In visible order, and only the rows on screen — a collapsed
+        // descendant has nothing to wiggle.
+        ripple.start(rows.filter { inSubtree.contains($0.node.id) }.map(\.node.id))
     }
 
     /// Fold or unfold a row, with the rows below moving rather than jumping.
@@ -1493,6 +1524,9 @@ private struct OutlineRow: View {
     @FocusState.Binding var focusedRow: NodeId?
     let onToggleDone: () -> Void
     let onCollapse: () -> Void
+    /// This row's offset into the completion ripple, or nil when it isn't in
+    /// one. See `RippleWiggle`.
+    let rippleDelay: Double?
     let onBeginEdit: () -> Void
     let onBlur: (NodeId) -> Void
     let onSubmit: () -> Void
@@ -1711,6 +1745,12 @@ private struct OutlineRow: View {
             .padding(.trailing, 4)
         }
         .padding(.leading, Self.railInset + CGFloat(depth) * Self.indent)
+        // On the content, never on the row. The nesting guides are a
+        // `.background` of the row, so a row-level offset would sway the lines
+        // along with the marks and the whole structure would appear to lean.
+        // The web draws them as children of `.row` and dodges this the same
+        // way, with `.row.ripple > :not(.guide)`.
+        .modifier(RippleWiggle(delay: rippleDelay))
         // The whole row arms a drag, not just the bullet. Reaching across the
         // screen for a 32pt column with the other hand was the cost of putting
         // the handle in one place, and the 0.35s hold already separates a drag

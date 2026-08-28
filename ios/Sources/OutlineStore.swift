@@ -69,9 +69,18 @@ final class OutlineStore {
 
     /// Every edit goes through here, so there is exactly one path from a
     /// gesture to both the screen and the server.
-    func apply(_ op: Op) {
-        tree = TreeOps.applyOp(tree, op).tree
+    ///
+    /// Hands back the ids of any parents that flipped to done.
+    ///
+    /// Discarded by most callers. The completion ripple is the one that wants
+    /// them: they are how it knows a branch actually finished, as opposed to a
+    /// single task being ticked.
+    @discardableResult
+    func apply(_ op: Op) -> [NodeId] {
+        let result = TreeOps.applyOp(tree, op)
+        tree = result.tree
         sync?.send(op)
+        return result.completed
     }
 
     /// True while the user is editing — an incoming tree is stashed rather than
