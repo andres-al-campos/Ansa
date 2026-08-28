@@ -32,6 +32,7 @@ import {
   invalidTree,
   markOpened,
   moveNode,
+  reconcileDone,
   removeNode,
   setDone,
   setPinned,
@@ -137,22 +138,28 @@ export class TreeStore {
 
   // --- atomic operations, each: load → pure op → persist → return new tree ---
 
+  /**
+   * The MCP tools reach the tree through these rather than through `applyOp`,
+   * so each structural one reconciles `done` for itself. Doing it inside
+   * `replace` would be tidier but wrong: a whole-tree PUT arrives with the
+   * caller's own completion state, which is theirs to set, not ours to derive.
+   */
   addChild(parentId: NodeId | null, text: string): { tree: Tree; id: NodeId } {
     const tree = this.load()
     requireExistingParent(tree, parentId)
     const added = addChild(tree, parentId, text)
-    return { tree: this.replace(added.tree), id: added.id }
+    return { tree: this.replace(reconcileDone(added.tree)), id: added.id }
   }
 
   addSubtree(parentId: NodeId | null, nodes: SubtreeSpec[]): { tree: Tree; ids: NodeId[] } {
     const tree = this.load()
     requireExistingParent(tree, parentId)
     const added = addSubtree(tree, parentId, nodes)
-    return { tree: this.replace(added.tree), ids: added.ids }
+    return { tree: this.replace(reconcileDone(added.tree)), ids: added.ids }
   }
 
   remove(id: NodeId): Tree {
-    return this.replace(removeNode(this.load(), id))
+    return this.replace(reconcileDone(removeNode(this.load(), id)))
   }
 
   rename(id: NodeId, text: string): Tree {
@@ -167,7 +174,7 @@ export class TreeStore {
   move(id: NodeId, newParentId: NodeId | null, index: number): Tree {
     const tree = this.load()
     requireExistingParent(tree, newParentId)
-    return this.replace(moveNode(tree, id, newParentId, index))
+    return this.replace(reconcileDone(moveNode(tree, id, newParentId, index)))
   }
 
   toggleCollapsed(id: NodeId): Tree {
