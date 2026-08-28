@@ -1081,6 +1081,9 @@ struct OutlineView: View {
     /// unfocused, and the focus-loss commit tears the edit down before it
     /// starts.
     private func beginEdit(_ node: Node) {
+        // The tap that lands on releasing a drag is the drop, not a request to
+        // rename. See `DragController.justEnded` for why the Button fires at all.
+        guard !drag.justEnded else { return }
         let wasEditing = edit.isEditing
         edit.begin(node)
         // Still a turn late, and it has to be: `editing` is what builds the

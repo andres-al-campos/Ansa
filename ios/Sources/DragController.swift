@@ -38,6 +38,28 @@ final class DragController {
     /// The list's bounds, so a drag can tell how close the finger is to an edge.
     var bounds: CGRect = .zero
 
+    /// When the last drag ended. Read by `justEnded`.
+    private var endedAt: Date?
+
+    /// A drag finished a moment ago, so a tap arriving now is its release.
+    ///
+    /// The row's label is a Button and the drag is a `.simultaneousGesture` —
+    /// which it has to be, since taking the touch outright is exactly what stops
+    /// a Button firing. The cost is that lifting the finger after a drop also
+    /// completes the tap, and the row opened for rename the instant it landed.
+    ///
+    /// Time rather than a flag cleared on the next tap: nothing guarantees that
+    /// tap ever comes. A drop over empty space fires no Button, and a flag left
+    /// standing would swallow the user's next real tap instead.
+    ///
+    /// 0.3s is well past the release — the tap lands in the same runloop turn —
+    /// while staying under the time it takes to look at the result and reach
+    /// back to rename it.
+    var justEnded: Bool {
+        guard let endedAt else { return false }
+        return Date().timeIntervalSince(endedAt) < 0.3
+    }
+
     private var scroller: Timer?
     /// How far the edge-scroll has walked, across ticks. See `startScrolling`.
     private var scrollCursor: Int?
@@ -69,6 +91,7 @@ final class DragController {
     func begin(_ id: NodeId) {
         dragging = id
         target = nil
+        endedAt = nil
     }
 
     func moved(to p: CGPoint) {
@@ -81,6 +104,7 @@ final class DragController {
         stopScrolling()
         dragging = nil
         target = nil
+        endedAt = Date()
     }
 
     // MARK: - Edge scrolling
