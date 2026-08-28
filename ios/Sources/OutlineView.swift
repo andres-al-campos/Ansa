@@ -352,7 +352,7 @@ struct OutlineView: View {
                     editText: $edit.text,
                     focusedRow: $focusedRow,
                     onToggleDone: { apply(.setDone(id: row.node.id, done: !row.node.done)) },
-                    onCollapse: { toggleFold(row.node.id) },
+                    onCollapse: { toggleFold(row.node.id, proxy: proxy) },
                     onBeginEdit: { beginEdit(row.node) },
                     onBlur: { id in commitEdit(from: id, releasingFocus: false) },
                     // Return commits and stops, rather than opening a fresh row
@@ -620,10 +620,50 @@ struct OutlineView: View {
     /// The point is not the polish — a fold near the bottom of the screen moves
     /// the row you were reading, and without the tween there is nothing to
     /// follow, so it reads as the row teleporting and has to be hunted for.
-    private func toggleFold(_ id: NodeId) {
+    private func toggleFold(_ id: NodeId, proxy: ScrollViewProxy) {
+        // Where the row sits in the viewport right now, as a fraction of it.
+        // Captured before the op, because applying it is what moves everything.
+        let anchor = viewportFraction(of: id)
         withAnimation(.easeOut(duration: 0.2)) {
             apply(.toggleCollapsed(id: id))
         }
+        guard let anchor else { return }
+        // After the rows have relaid out, put the row back where it was.
+        //
+        // `scrollTo(id:)` with no anchor would do nothing here: it scrolls only
+        // far enough to bring a row *into* view, and this row never left. The
+        // anchor is what makes it a position rather than a visibility request —
+        // the same distinction the edge-scroll tick ran into.
+        //
+        // A turn late, since the fold's own layout pass has to land first;
+        // asking in the same pass measures the tree we are replacing.
+        DispatchQueue.main.async {
+            withAnimation(.easeOut(duration: 0.2)) {
+                proxy.scrollTo(id, anchor: UnitPoint(x: 0, y: anchor))
+            }
+        }
+    }
+
+    /// How far down the viewport a row's top sits, 0 at the top edge and 1 at
+    /// the bottom, or nil when the row has not been measured.
+    ///
+    /// This is what lets a fold keep the row still. Collapsing removes rows
+    /// below it, so without this the content closes up and the row rides
+    /// wherever the list's own scrolling puts it — which near the bottom means
+    /// the row you just tapped jumps away from your finger.
+    ///
+    /// Two cases it deliberately cannot fix, both because the scroll view has
+    /// nowhere to go: a row near the top has no content above it to scroll up
+    /// into, and a collapse that shrinks the tree below the viewport makes the
+    /// list clamp to its new end. In both the row moves anyway, exactly as it
+    /// does today — the anchor is a request, and `scrollTo` honours it only as
+    /// far as the content allows.
+    private func viewportFraction(of id: NodeId) -> CGFloat? {
+        guard let frame = drag.frames[id] else { return nil }
+        let bounds = drag.bounds
+        guard bounds.height > 0 else { return nil }
+        let y = (frame.minY - bounds.minY) / bounds.height
+        return min(max(y, 0), 1)
     }
 
     private func commitDraft() {
