@@ -357,6 +357,7 @@ struct OutlineView: View {
                     onToggleDone: { toggleDone(row.node) },
                     onCollapse: { toggleFold(row.node.id, proxy: proxy) },
                     rippleDelay: interactive ? ripple.delay(for: row.node.id) : nil,
+                    groupDone: groupDone(row.node),
                     onBeginEdit: { beginEdit(row.node) },
                     onBlur: { id in commitEdit(from: id, releasingFocus: false) },
                     // Return commits and stops, rather than opening a fresh row
@@ -612,6 +613,20 @@ struct OutlineView: View {
     /// it for the server. Nothing here mutates the tree directly.
     private func apply(_ op: Op) {
         store.apply(op)
+    }
+
+    /// Whether this row's box should read as "the whole group is finished".
+    ///
+    /// True when the row is done and its parent is too — a root counts, having
+    /// no group above it to be unfinished. So the green spreads up a branch only
+    /// as far as the completion actually reaches, and a done task sitting under
+    /// an unfinished parent stays blue.
+    ///
+    /// Ported from `groupDone` in `src/Outliner.tsx`.
+    private func groupDone(_ node: Node) -> Bool {
+        guard node.done else { return false }
+        guard let parentId = node.parentId else { return true }
+        return TreeOps.byId(store.tree, parentId)?.done ?? true
     }
 
     /// Tick a task, and ripple if that finished a branch.
@@ -1527,6 +1542,9 @@ private struct OutlineRow: View {
     /// This row's offset into the completion ripple, or nil when it isn't in
     /// one. See `RippleWiggle`.
     let rippleDelay: Double?
+    /// True when this row is done *and* so is the group around it, which is
+    /// what colours the box green. See `DonePalette`.
+    let groupDone: Bool
     let onBeginEdit: () -> Void
     let onBlur: (NodeId) -> Void
     let onSubmit: () -> Void
@@ -1675,7 +1693,7 @@ private struct OutlineRow: View {
                 .highPriorityGesture(bulletGesture)
 
             Button(action: onToggleDone) {
-                Checkbox(done: node.done)
+                Checkbox(done: node.done, groupDone: groupDone)
                     .frame(width: 32, height: 40)
                     .contentShape(Rectangle())
             }
@@ -1819,13 +1837,21 @@ private struct OutlineRow: View {
 /// The done control: a rounded square, filled with a tick once done.
 private struct Checkbox: View {
     let done: Bool
+    /// True when the group this row sits in is finished too, which turns the
+    /// box green rather than blue. See `DonePalette`.
+    let groupDone: Bool
+
+    /// Not `.tint`: the two done states have to be told apart by colour, and
+    /// the accent is the user's own choice — it could be either of them, or
+    /// neither. Everything that is not a done state still follows the accent.
+    private var fill: Color { groupDone ? DonePalette.group : DonePalette.task }
 
     var body: some View {
         RoundedRectangle(cornerRadius: 5)
             .strokeBorder(done ? AnyShapeStyle(.clear) : AnyShapeStyle(.secondary), lineWidth: 2)
             .background(
                 RoundedRectangle(cornerRadius: 5)
-                    .fill(done ? AnyShapeStyle(.tint) : AnyShapeStyle(.clear)))
+                    .fill(done ? AnyShapeStyle(fill) : AnyShapeStyle(.clear)))
             .frame(width: 19, height: 19)
             .overlay {
                 if done {
@@ -1834,6 +1860,10 @@ private struct Checkbox: View {
                         .foregroundStyle(.background)
                 }
             }
+            // Faded, not cut. When a tick completes a group every box in it
+            // goes blue→green at once, and the fade is what makes that read as
+            // one event rather than a flicker. Matches the web's 0.25s.
+            .animation(.easeInOut(duration: 0.25), value: groupDone)
     }
 }
 

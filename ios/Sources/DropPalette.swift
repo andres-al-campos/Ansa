@@ -25,6 +25,30 @@ enum DropPalette {
         dark: Color(red: 0.435, green: 0.624, blue: 0.847))
 }
 
+/// The two colours a ticked box speaks in.
+///
+/// Green says the group this task belongs to is finished too; blue says the
+/// task is done but the group around it is not. So a branch turning green is
+/// visible from any row in it, not just from the parent — which is the thing
+/// the progress bar at the top cannot tell you about a subtree.
+///
+/// The web's `--leaf` and `--bar`, same as `DropPalette`'s. Kept separate from
+/// it despite `bar` being the identical blue: that palette means "what this
+/// drop will do", and one enum standing for two unrelated vocabularies is how
+/// a colour quietly acquires a second meaning.
+enum DonePalette {
+
+    /// Done, and so is everything around it.
+    static let group = Color(
+        light: Color(red: 0.173, green: 0.455, blue: 0.341),
+        dark: Color(red: 0.392, green: 0.718, blue: 0.584))
+
+    /// Done, but the group it sits in is not finished.
+    static let task = Color(
+        light: Color(red: 0.290, green: 0.482, blue: 0.710),
+        dark: Color(red: 0.435, green: 0.624, blue: 0.847))
+}
+
 extension Color {
     /// A colour that follows the interface style.
     ///
