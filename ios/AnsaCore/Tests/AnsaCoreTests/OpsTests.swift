@@ -367,3 +367,52 @@ struct OpWireTests {
         #expect(!String(decoding: data, as: UTF8.self).contains("children"))
     }
 }
+
+/// Ported from `shared/ops.test.ts`, case for case.
+///
+/// A Tree is every project the owner has, so an op has to reconcile the
+/// projects it touched and leave the others alone — including one that is
+/// already wrong. Sweeping everything would quietly "fix" the untouched project
+/// and hide that the scope was never applied.
+@Suite("reconcile is scoped to the projects the op touched")
+struct ReconcileScopeTests {
+    func twoProjects() -> Tree {
+        let spec: [(NodeId, NodeId?, Bool)] = [
+            ("a", nil, false),
+            ("a1", "a", true),
+            ("a2", "a", false),
+            // Deliberately stale: every child is done but the parent says otherwise.
+            ("b", nil, false),
+            ("b1", "b", true),
+        ]
+        return spec.enumerated().map { i, row in
+            Node(
+                id: row.0, parentId: row.1, text: row.0, done: row.2,
+                order: i, collapsed: false, createdAt: 0
+            )
+        }
+    }
+
+    @Test("reconciles the touched project")
+    func touched() {
+        let out = TreeOps.applyOp(twoProjects(), .removeNode(id: "a2")).tree
+        #expect(TreeOps.byId(out, "a")?.done == true)
+    }
+
+    @Test("leaves an untouched project exactly as it found it")
+    func untouched() {
+        let out = TreeOps.applyOp(twoProjects(), .removeNode(id: "a2")).tree
+        #expect(TreeOps.byId(out, "b")?.done == false)
+    }
+
+    @Test("a cross-project move reconciles both ends")
+    func crossProject() {
+        let out = TreeOps.applyOp(
+            twoProjects(), .moveNode(id: "a2", parentId: "b", index: 1)
+        ).tree
+        // 'a' lost its only unfinished child; 'b' gained one.
+        #expect(TreeOps.byId(out, "a")?.done == true)
+        #expect(TreeOps.byId(out, "b")?.done == false)
+    }
+}
+

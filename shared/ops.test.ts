@@ -318,3 +318,37 @@ describe('parseOp', () => {
     expect(bad).toHaveProperty('error')
   })
 })
+
+/**
+ * A Tree is every project the owner has, so an op has to reconcile the projects
+ * it touched and leave the others alone — including one that is already wrong.
+ * Sweeping everything would quietly "fix" the untouched project and hide that
+ * the scope was never applied.
+ */
+describe('reconcile is scoped to the projects the op touched', () => {
+  const twoProjects = (): Tree => [
+    { id: 'a', parentId: null, text: 'A', done: false, order: 0, collapsed: false, createdAt: 0 },
+    { id: 'a1', parentId: 'a', text: 'A1', done: true, order: 0, collapsed: false, createdAt: 0 },
+    { id: 'a2', parentId: 'a', text: 'A2', done: false, order: 1, collapsed: false, createdAt: 0 },
+    // Deliberately stale: every child is done but the parent says otherwise.
+    { id: 'b', parentId: null, text: 'B', done: false, order: 1, collapsed: false, createdAt: 0 },
+    { id: 'b1', parentId: 'b', text: 'B1', done: true, order: 0, collapsed: false, createdAt: 0 },
+  ]
+
+  it('reconciles the touched project', () => {
+    const out = applyOp(twoProjects(), { op: 'removeNode', id: 'a2' }).tree
+    expect(byId(out, 'a')!.done).toBe(true)
+  })
+
+  it('leaves an untouched project exactly as it found it', () => {
+    const out = applyOp(twoProjects(), { op: 'removeNode', id: 'a2' }).tree
+    expect(byId(out, 'b')!.done).toBe(false)
+  })
+
+  it('a cross-project move reconciles both ends', () => {
+    const out = applyOp(twoProjects(), { op: 'moveNode', id: 'a2', parentId: 'b', index: 1 }).tree
+    // 'a' lost its only unfinished child; 'b' gained one.
+    expect(byId(out, 'a')!.done).toBe(true)
+    expect(byId(out, 'b')!.done).toBe(false)
+  })
+})

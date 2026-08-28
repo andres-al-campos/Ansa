@@ -31,6 +31,7 @@ import {
   addSubtree,
   invalidTree,
   markOpened,
+  lineageOf,
   moveNode,
   reconcileDone,
   removeNode,
@@ -144,22 +145,42 @@ export class TreeStore {
    * `replace` would be tidier but wrong: a whole-tree PUT arrives with the
    * caller's own completion state, which is theirs to set, not ours to derive.
    */
+  /**
+   * The projects an id sits in, before and after the change — the scope for a
+   * reconcile. See `touchedRoots` in shared/ops.ts for why both trees.
+   */
+  private rootsFor(before: Tree, after: Tree, ...ids: (NodeId | null)[]): NodeId[] {
+    const roots = new Set<NodeId>()
+    for (const id of ids) {
+      if (id === null) continue
+      for (const tree of [before, after]) {
+        const root = lineageOf(tree, id)[0]
+        if (root) roots.add(root.id)
+      }
+    }
+    return [...roots]
+  }
+
   addChild(parentId: NodeId | null, text: string): { tree: Tree; id: NodeId } {
     const tree = this.load()
     requireExistingParent(tree, parentId)
     const added = addChild(tree, parentId, text)
-    return { tree: this.replace(reconcileDone(added.tree)), id: added.id }
+    const scope = this.rootsFor(tree, added.tree, parentId)
+    return { tree: this.replace(reconcileDone(added.tree, scope)), id: added.id }
   }
 
   addSubtree(parentId: NodeId | null, nodes: SubtreeSpec[]): { tree: Tree; ids: NodeId[] } {
     const tree = this.load()
     requireExistingParent(tree, parentId)
     const added = addSubtree(tree, parentId, nodes)
-    return { tree: this.replace(reconcileDone(added.tree)), ids: added.ids }
+    const scope = this.rootsFor(tree, added.tree, parentId)
+    return { tree: this.replace(reconcileDone(added.tree, scope)), ids: added.ids }
   }
 
   remove(id: NodeId): Tree {
-    return this.replace(reconcileDone(removeNode(this.load(), id)))
+    const tree = this.load()
+    const next = removeNode(tree, id)
+    return this.replace(reconcileDone(next, this.rootsFor(tree, next, id)))
   }
 
   rename(id: NodeId, text: string): Tree {
@@ -174,7 +195,8 @@ export class TreeStore {
   move(id: NodeId, newParentId: NodeId | null, index: number): Tree {
     const tree = this.load()
     requireExistingParent(tree, newParentId)
-    return this.replace(reconcileDone(moveNode(tree, id, newParentId, index)))
+    const next = moveNode(tree, id, newParentId, index)
+    return this.replace(reconcileDone(next, this.rootsFor(tree, next, id, newParentId)))
   }
 
   toggleCollapsed(id: NodeId): Tree {

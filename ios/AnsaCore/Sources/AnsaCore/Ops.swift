@@ -215,8 +215,28 @@ extension TreeOps {
     /// No `completed` ids: those drive the completion animation, which belongs
     /// to the user ticking something off. A parent that flips because a child
     /// was moved or deleted should update quietly rather than celebrate.
-    private static func structural(_ tree: Tree) -> (tree: Tree, completed: [NodeId]) {
-        (reconcileDone(tree), [])
+    private static func structural(
+        _ before: Tree, _ after: Tree, _ ids: NodeId?...
+    ) -> (tree: Tree, completed: [NodeId]) {
+        (reconcileDone(after, touchedRoots(before, after, ids)), [])
+    }
+
+    /// The projects an op disturbed, so the reconcile can skip the rest.
+    ///
+    /// Resolved against both trees because neither alone has every id: a
+    /// removed node is gone from the new tree, and a node the op created is
+    /// absent from the old one. A cross-project move is the case that yields
+    /// two.
+    private static func touchedRoots(_ before: Tree, _ after: Tree, _ ids: [NodeId?]) -> [NodeId] {
+        var roots: [NodeId] = []
+        for case let id? in ids {
+            for tree in [before, after] {
+                if let root = lineageOf(tree, id).first, !roots.contains(root.id) {
+                    roots.append(root.id)
+                }
+            }
+        }
+        return roots
     }
 
     /// Apply an op to a tree, returning the new tree.
@@ -233,25 +253,25 @@ extension TreeOps {
     public static func applyOp(_ tree: Tree, _ op: Op) -> (tree: Tree, completed: [NodeId]) {
         switch op {
         case let .addChild(id, parentId, text, at):
-            return structural(addChild(tree, parentId, text, id: id, now: at).tree)
+            return structural(tree, addChild(tree, parentId, text, id: id, now: at).tree, parentId)
         case let .addSubtree(ids, parentId, nodes, at):
-            return structural(addSubtree(tree, parentId, nodes, withIds: ids, now: at).tree)
+            return structural(tree, addSubtree(tree, parentId, nodes, withIds: ids, now: at).tree, parentId)
         case let .setText(id, text):
             return (setText(tree, id, text), [])
         case let .setDone(id, done):
             return setDone(tree, id, done)
         case let .removeNode(id):
-            return structural(removeNode(tree, id))
+            return structural(tree, removeNode(tree, id), id)
         case let .moveNode(id, parentId, index):
-            return structural(moveNode(tree, id, parentId, index))
+            return structural(tree, moveNode(tree, id, parentId, index), id, parentId)
         case let .indent(id):
-            return structural(indent(tree, id))
+            return structural(tree, indent(tree, id), id)
         case let .outdent(id):
-            return structural(outdent(tree, id))
+            return structural(tree, outdent(tree, id), id)
         case let .adoptFollowing(id):
-            return structural(adoptFollowing(tree, id))
+            return structural(tree, adoptFollowing(tree, id), id)
         case let .insertAtDepth(id, anchorId, depth, side, scope):
-            return structural(insertAtDepth(tree, id, anchorId, depth, side, scope))
+            return structural(tree, insertAtDepth(tree, id, anchorId, depth, side, scope), id, anchorId)
         case let .toggleCollapsed(id):
             return (toggleCollapsed(tree, id), [])
         case let .setPinned(id, pinned):

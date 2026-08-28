@@ -252,7 +252,11 @@ public enum TreeOps {
     ///
     /// A leaf that gains its first child stops being done unless that child is:
     /// adding a subtask to a finished task means it isn't finished any more.
-    public static func reconcileDone(_ tree: Tree) -> Tree {
+    ///
+    /// `rootIds` narrows the sweep to those projects. A `Tree` is every project
+    /// the owner has, not one of them, so an unscoped call re-derives projects
+    /// the op never touched — harmless but pointless work on every edit.
+    public static func reconcileDone(_ tree: Tree, _ rootIds: [NodeId]? = nil) -> Tree {
         var next = tree
         var kids: [NodeId: [Int]] = [:]
         var indexOf: [NodeId: Int] = [:]
@@ -280,8 +284,27 @@ public enum TreeOps {
             return d
         }
 
+        // Only the projects the caller names, when it names any. An op touches
+        // one project (a cross-project move touches two), and every other
+        // project's children are exactly as they were — re-deriving them cannot
+        // change an answer. Omitting the scope sweeps everything, which is what
+        // a repair pass over a tree of unknown provenance wants.
+        let scope = rootIds.map(Set.init)
+        func inScope(_ node: Node) -> Bool {
+            guard let scope else { return true }
+            var cur: Node? = node
+            var seen = Set<NodeId>()
+            while let node = cur, !seen.contains(node.id) {
+                if scope.contains(node.id) { return true }
+                seen.insert(node.id)
+                cur = node.parentId.flatMap { indexOf[$0] }.map { next[$0] }
+            }
+            return false
+        }
+
         let parents = kids.keys
             .compactMap { indexOf[$0] }
+            .filter { inScope(next[$0]) }
             .sorted { depthOf(next[$0]) > depthOf(next[$1]) }
         for i in parents {
             guard let childIndices = kids[next[i].id] else { continue }

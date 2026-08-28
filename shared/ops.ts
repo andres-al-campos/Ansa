@@ -27,6 +27,7 @@ import {
   adoptFollowing,
   indent,
   insertAtDepth,
+  lineageOf,
   markOpened,
   moveNode,
   outdent,
@@ -90,15 +91,41 @@ export const OP_KINDS = [
 ] as const satisfies readonly OpKind[]
 
 /**
+ * The projects an op disturbed, so the reconcile can skip the rest.
+ *
+ * Resolved against both trees because neither alone has every id: a removed
+ * node is gone from the new tree, and a node the op created is absent from the
+ * old one. A cross-project move is the case that yields two.
+ */
+function touchedRoots(before: Tree, after: Tree, ids: readonly (NodeId | null)[]): NodeId[] {
+  const roots = new Set<NodeId>()
+  for (const id of ids) {
+    if (id === null) continue
+    for (const tree of [before, after]) {
+      const root = lineageOf(tree, id)[0]
+      if (root) roots.add(root.id)
+    }
+  }
+  return [...roots]
+}
+
+/**
  * Finish a structural op: the shape changed, so every parent's `done` has to be
  * re-derived from what it now contains. See `reconcileDone`.
+ *
+ * Scoped to the projects the op named. A `Tree` holds every project the owner
+ * has, so an unscoped sweep would re-derive projects the edit never reached.
  *
  * No `completed` ids: those drive the completion animation, which belongs to the
  * user ticking something off. A parent that flips because a child was moved or
  * deleted should update quietly rather than celebrate.
  */
-function structural(tree: Tree): { tree: Tree; completed: NodeId[] } {
-  return { tree: reconcileDone(tree), completed: [] }
+function structural(
+  before: Tree,
+  after: Tree,
+  ...ids: (NodeId | null)[]
+): { tree: Tree; completed: NodeId[] } {
+  return { tree: reconcileDone(after, touchedRoots(before, after, ids)), completed: [] }
 }
 
 /**
@@ -116,25 +143,30 @@ function structural(tree: Tree): { tree: Tree; completed: NodeId[] } {
 export function applyOp(tree: Tree, op: Op): { tree: Tree; completed: NodeId[] } {
   switch (op.op) {
     case 'addChild':
-      return structural(addChild(tree, op.parentId, op.text, op.id, op.at).tree)
+      return structural(tree, addChild(tree, op.parentId, op.text, op.id, op.at).tree, op.parentId)
     case 'addSubtree':
-      return structural(addSubtree(tree, op.parentId, op.nodes, op.ids, op.at).tree)
+      return structural(tree, addSubtree(tree, op.parentId, op.nodes, op.ids, op.at).tree, op.parentId)
     case 'setText':
       return { tree: setText(tree, op.id, op.text), completed: [] }
     case 'setDone':
       return setDone(tree, op.id, op.done)
     case 'removeNode':
-      return structural(removeNode(tree, op.id))
+      return structural(tree, removeNode(tree, op.id), op.id)
     case 'moveNode':
-      return structural(moveNode(tree, op.id, op.parentId, op.index))
+      return structural(tree, moveNode(tree, op.id, op.parentId, op.index), op.id, op.parentId)
     case 'indent':
-      return structural(indent(tree, op.id))
+      return structural(tree, indent(tree, op.id), op.id)
     case 'outdent':
-      return structural(outdent(tree, op.id))
+      return structural(tree, outdent(tree, op.id), op.id)
     case 'adoptFollowing':
-      return structural(adoptFollowing(tree, op.id))
+      return structural(tree, adoptFollowing(tree, op.id), op.id)
     case 'insertAtDepth':
-      return structural(insertAtDepth(tree, op.id, op.anchorId, op.depth, op.side, op.scope))
+      return structural(
+        tree,
+        insertAtDepth(tree, op.id, op.anchorId, op.depth, op.side, op.scope),
+        op.id,
+        op.anchorId,
+      )
     case 'toggleCollapsed':
       return { tree: toggleCollapsed(tree, op.id), completed: [] }
     case 'setPinned':

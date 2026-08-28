@@ -270,8 +270,12 @@ export function setDone(tree: Tree, id: NodeId, done: boolean): { tree: Tree; co
  * adding a subtask to a finished task means it isn't finished any more. The
  * alternative, pushing the parent's done onto the new child, would mark work
  * complete that nobody has done.
+ *
+ * `rootIds` narrows the sweep to those projects. A `Tree` is every project the
+ * owner has, not one of them, so an unscoped call re-derives projects the op
+ * never touched — harmless but pointless work on every edit.
  */
-export function reconcileDone(tree: Tree): Tree {
+export function reconcileDone(tree: Tree, rootIds?: readonly NodeId[]): Tree {
   const next = tree.map((n) => ({ ...n }))
   const kids = new Map<NodeId, Node[]>()
   for (const n of next) {
@@ -297,7 +301,25 @@ export function reconcileDone(tree: Tree): Tree {
     return d
   }
 
-  const parents = next.filter((n) => kids.has(n.id))
+  // Only the projects the caller names, when it names any. An op touches one
+  // project (a cross-project move touches two), and every other project's
+  // children are exactly as they were — re-deriving them cannot change an
+  // answer. Omitting the scope sweeps everything, which is what a repair pass
+  // over a tree of unknown provenance wants.
+  const scope = rootIds && new Set(rootIds)
+  const inScope = (n: Node): boolean => {
+    if (!scope) return true
+    let cur: Node | undefined = n
+    const seen = new Set<NodeId>()
+    while (cur && !seen.has(cur.id)) {
+      if (scope.has(cur.id)) return true
+      seen.add(cur.id)
+      cur = cur.parentId ? index.get(cur.parentId) : undefined
+    }
+    return false
+  }
+
+  const parents = next.filter((n) => kids.has(n.id) && inScope(n))
   parents.sort((a, b) => depthOfNode(b) - depthOfNode(a))
   for (const parent of parents) {
     parent.done = kids.get(parent.id)!.every((k) => k.done)
