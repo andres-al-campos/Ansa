@@ -235,6 +235,62 @@ public enum TreeOps {
         return (next, completed)
     }
 
+    /// Re-derive every parent's `done` from its children, bottom-up.
+    ///
+    /// A parent is done exactly when all its children are — it is a summary of
+    /// its contents and holds no completion of its own. Leaves are left alone;
+    /// their `done` is the only place the fact actually lives.
+    ///
+    /// Structural ops need this because they change *what* a parent contains
+    /// without going through `setDone`. Adding a done child to an open leaf
+    /// should complete it; deleting a parent's last unfinished child should
+    /// complete it; moving a child out reconciles the parent it left as well as
+    /// the one it joined. Wiring each op to the parents it touched would work,
+    /// but every op that reparents — move, indent, outdent, adoptFollowing,
+    /// insertAtDepth — would have to get it right separately, and a new one
+    /// could forget. Sweeping the tree cannot.
+    ///
+    /// A leaf that gains its first child stops being done unless that child is:
+    /// adding a subtask to a finished task means it isn't finished any more.
+    public static func reconcileDone(_ tree: Tree) -> Tree {
+        var next = tree
+        var kids: [NodeId: [Int]] = [:]
+        var indexOf: [NodeId: Int] = [:]
+        for (i, node) in next.enumerated() {
+            indexOf[node.id] = i
+            if let parentId = node.parentId {
+                kids[parentId, default: []].append(i)
+            }
+        }
+
+        // Deepest first, so a parent is decided only after its own children
+        // have been. Depth is memoised rather than walked per node, which
+        // would be quadratic on a deep tree.
+        var depth: [NodeId: Int] = [:]
+        func depthOf(_ node: Node) -> Int {
+            if let cached = depth[node.id] { return cached }
+            // Seed before recursing, so a corrupt tree with a cycle terminates
+            // instead of hanging the UI — the same guard `lineageOf` uses.
+            depth[node.id] = 0
+            var d = 0
+            if let parentId = node.parentId, let pi = indexOf[parentId] {
+                d = depthOf(next[pi]) + 1
+            }
+            depth[node.id] = d
+            return d
+        }
+
+        let parents = kids.keys
+            .compactMap { indexOf[$0] }
+            .sorted { depthOf(next[$0]) > depthOf(next[$1]) }
+        for i in parents {
+            guard let childIndices = kids[next[i].id] else { continue }
+            next[i].done = childIndices.allSatisfy { next[$0].done }
+        }
+
+        return next
+    }
+
     /// A nested outline to graft in one call.
     public struct SubtreeSpec: Sendable, Equatable, Codable {
         public let text: String

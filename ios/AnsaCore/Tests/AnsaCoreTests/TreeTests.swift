@@ -405,3 +405,57 @@ struct ResumeScopeTests {
         #expect(TreeOps.resumeScope(t) == "flat")
     }
 }
+
+@Suite("reconcileDone re-derives a parent from its contents")
+struct ReconcileDoneTests {
+    /// Ported from `shared/tree.test.ts`, case for case.
+    func build(_ spec: [(NodeId, NodeId?, Bool)]) -> Tree {
+        spec.enumerated().map { i, row in
+            Node(
+                id: row.0, parentId: row.1, text: row.0, done: row.2,
+                order: i, collapsed: false, createdAt: 0
+            )
+        }
+    }
+
+    @Test("completes a leaf that gained an already-done child")
+    func gainsDoneChild() {
+        let out = TreeOps.reconcileDone(build([("a", nil, false), ("b", "a", true)]))
+        #expect(TreeOps.byId(out, "a")?.done == true)
+    }
+
+    @Test("un-completes a done leaf that gained an unfinished child")
+    func gainsOpenChild() {
+        let out = TreeOps.reconcileDone(build([("a", nil, true), ("b", "a", false)]))
+        #expect(TreeOps.byId(out, "a")?.done == false)
+    }
+
+    @Test("leaves a leaf alone — its done is the real fact")
+    func leavesUntouched() {
+        let out = TreeOps.reconcileDone(build([("a", nil, true), ("b", nil, false)]))
+        #expect(TreeOps.byId(out, "a")?.done == true)
+        #expect(TreeOps.byId(out, "b")?.done == false)
+    }
+
+    @Test("rolls up through several levels in one pass")
+    func rollsUp() {
+        let out = TreeOps.reconcileDone(
+            build([("root", nil, false), ("mid", "root", false), ("leaf", "mid", true)])
+        )
+        #expect(TreeOps.byId(out, "mid")?.done == true)
+        #expect(TreeOps.byId(out, "root")?.done == true)
+    }
+
+    @Test("one unfinished leaf keeps every ancestor open")
+    func oneOpenLeafReopensAll() {
+        let out = TreeOps.reconcileDone(
+            build([
+                ("root", nil, true), ("mid", "root", true),
+                ("x", "mid", true), ("y", "mid", false),
+            ])
+        )
+        #expect(TreeOps.byId(out, "mid")?.done == false)
+        #expect(TreeOps.byId(out, "root")?.done == false)
+    }
+}
+

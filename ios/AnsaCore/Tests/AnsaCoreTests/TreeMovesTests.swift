@@ -613,7 +613,10 @@ struct NestOpTests {
     func indentMatches() {
         let t = fixture()
         for node in t {
-            let direct = TreeOps.indent(t, node.id)
+            // reconcileDone, because applying an op now includes it: the
+            // property under test is that the two land on the same tree, not
+            // that applyOp is the bare move.
+            let direct = TreeOps.reconcileDone(TreeOps.indent(t, node.id))
             let viaOp = TreeOps.indentOp(t, node.id).map { TreeOps.applyOp(t, $0).tree } ?? t
             #expect(viaOp == direct, "indentOp disagrees with indent on \(node.id)")
         }
@@ -623,7 +626,7 @@ struct NestOpTests {
     func outdentMatches() {
         let t = fixture()
         for node in t {
-            let direct = TreeOps.outdent(t, node.id)
+            let direct = TreeOps.reconcileDone(TreeOps.outdent(t, node.id))
             let viaOp = TreeOps.outdentOp(t, node.id).map { TreeOps.applyOp(t, $0).tree } ?? t
             #expect(viaOp == direct, "outdentOp disagrees with outdent on \(node.id)")
         }

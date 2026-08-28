@@ -209,6 +209,16 @@ extension Op: Codable {
 // MARK: - Apply
 
 extension TreeOps {
+    /// Finish a structural op: the shape changed, so every parent's `done` has
+    /// to be re-derived from what it now contains. See `reconcileDone`.
+    ///
+    /// No `completed` ids: those drive the completion animation, which belongs
+    /// to the user ticking something off. A parent that flips because a child
+    /// was moved or deleted should update quietly rather than celebrate.
+    private static func structural(_ tree: Tree) -> (tree: Tree, completed: [NodeId]) {
+        (reconcileDone(tree), [])
+    }
+
     /// Apply an op to a tree, returning the new tree.
     ///
     /// Total and non-throwing: an op naming a node that no longer exists returns
@@ -223,25 +233,25 @@ extension TreeOps {
     public static func applyOp(_ tree: Tree, _ op: Op) -> (tree: Tree, completed: [NodeId]) {
         switch op {
         case let .addChild(id, parentId, text, at):
-            return (addChild(tree, parentId, text, id: id, now: at).tree, [])
+            return structural(addChild(tree, parentId, text, id: id, now: at).tree)
         case let .addSubtree(ids, parentId, nodes, at):
-            return (addSubtree(tree, parentId, nodes, withIds: ids, now: at).tree, [])
+            return structural(addSubtree(tree, parentId, nodes, withIds: ids, now: at).tree)
         case let .setText(id, text):
             return (setText(tree, id, text), [])
         case let .setDone(id, done):
             return setDone(tree, id, done)
         case let .removeNode(id):
-            return (removeNode(tree, id), [])
+            return structural(removeNode(tree, id))
         case let .moveNode(id, parentId, index):
-            return (moveNode(tree, id, parentId, index), [])
+            return structural(moveNode(tree, id, parentId, index))
         case let .indent(id):
-            return (indent(tree, id), [])
+            return structural(indent(tree, id))
         case let .outdent(id):
-            return (outdent(tree, id), [])
+            return structural(outdent(tree, id))
         case let .adoptFollowing(id):
-            return (adoptFollowing(tree, id), [])
+            return structural(adoptFollowing(tree, id))
         case let .insertAtDepth(id, anchorId, depth, side, scope):
-            return (insertAtDepth(tree, id, anchorId, depth, side, scope), [])
+            return structural(insertAtDepth(tree, id, anchorId, depth, side, scope))
         case let .toggleCollapsed(id):
             return (toggleCollapsed(tree, id), [])
         case let .setPinned(id, pinned):

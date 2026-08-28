@@ -74,7 +74,7 @@ struct ApplyOpTests {
         let t = opsFixture()
         #expect(
             TreeOps.applyOp(t, .removeNode(id: "gather")).tree
-                == TreeOps.removeNode(t, "gather"))
+                == TreeOps.reconcileDone(TreeOps.removeNode(t, "gather")))
     }
 
     @Test("moveNode")
@@ -82,19 +82,19 @@ struct ApplyOpTests {
         let t = opsFixture()
         #expect(
             TreeOps.applyOp(t, .moveNode(id: "g1", parentId: "forms", index: 1)).tree
-                == TreeOps.moveNode(t, "g1", "forms", 1))
+                == TreeOps.reconcileDone(TreeOps.moveNode(t, "g1", "forms", 1)))
     }
 
     @Test("indent")
     func indent() {
         let t = opsFixture()
-        #expect(TreeOps.applyOp(t, .indent(id: "g2")).tree == TreeOps.indent(t, "g2"))
+        #expect(TreeOps.applyOp(t, .indent(id: "g2")).tree == TreeOps.reconcileDone(TreeOps.indent(t, "g2")))
     }
 
     @Test("outdent")
     func outdent() {
         let t = opsFixture()
-        #expect(TreeOps.applyOp(t, .outdent(id: "g2")).tree == TreeOps.outdent(t, "g2"))
+        #expect(TreeOps.applyOp(t, .outdent(id: "g2")).tree == TreeOps.reconcileDone(TreeOps.outdent(t, "g2")))
     }
 
     @Test("adoptFollowing")
@@ -102,7 +102,7 @@ struct ApplyOpTests {
         let t = opsFixture()
         #expect(
             TreeOps.applyOp(t, .adoptFollowing(id: "gather")).tree
-                == TreeOps.adoptFollowing(t, "gather"))
+                == TreeOps.reconcileDone(TreeOps.adoptFollowing(t, "gather")))
     }
 
     @Test("insertAtDepth")
@@ -112,7 +112,7 @@ struct ApplyOpTests {
             id: "f1", anchorId: "p1", depth: 1, side: .after, scope: "taxes")
         #expect(
             TreeOps.applyOp(t, op).tree
-                == TreeOps.insertAtDepth(t, "f1", "p1", 1, .after, "taxes"))
+                == TreeOps.reconcileDone(TreeOps.insertAtDepth(t, "f1", "p1", 1, .after, "taxes")))
     }
 
     @Test("toggleCollapsed")
