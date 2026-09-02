@@ -323,7 +323,15 @@ struct OutlineView: View {
                 if scope == nil {
                     ProjectGrid(
                         tree: tree, loaded: store.loaded,
-                        onOpen: openProject, onDelete: confirmDeleteProject)
+                        editing: edit.editing, editText: $edit.text,
+                        focused: $focusedRow,
+                        onOpen: openProject,
+                        onBeginEdit: beginEdit,
+                        // Return on a project name means "done naming", not
+                        // "next project" — a run of projects is not a thing
+                        // people do, so this is a plain commit either way.
+                        onSubmit: submitProjectName,
+                        onDelete: confirmDeleteProject)
                 } else {
                     outline(for: scope, interactive: interactive)
                 }
@@ -754,15 +762,39 @@ struct OutlineView: View {
         addRow()
     }
 
-    /// Make a project, open it, and start adding tasks inside it.
+    /// Make a project and open its name for typing, on the grid.
+    ///
+    /// It used to name the project "New project" and jump straight inside,
+    /// because the grid had no field to type into. That left every project
+    /// carrying a placeholder until someone went back and fixed it — and there
+    /// was no way to fix it, since the grid had no rename either. The cards can
+    /// hold a field now, so the name is typed where the project is.
+    ///
+    /// Not `adding`: the mode exists so Return can ask for another row, and a
+    /// run of projects is not a thing people do. Return here means done.
     private func addProject() {
         let id = TreeOps.newId()
-        let now = Date().timeIntervalSince1970 * 1000
-        apply(.addChild(id: id, parentId: nil, text: "New project", at: now))
+        apply(.addChild(
+            id: id, parentId: nil, text: "",
+            at: Date().timeIntervalSince1970 * 1000))
+        guard let node = TreeOps.byId(tree, id) else { return }
+        beginEdit(node)
+    }
+
+    /// Return on a project's name.
+    ///
+    /// Named projects open, and the task run starts inside — naming a project
+    /// and then filling it should not be two trips. An empty name is the user
+    /// backing out, and `commitEdit` deletes the node, so there is nothing to
+    /// open.
+    private func submitProjectName() {
+        let id = edit.editing
+        commitEdit()
+        guard let id, TreeOps.byId(tree, id) != nil else { return }
         openProject(id)
-        // After the scope change, so the row is created inside the new project
-        // rather than beside it. `openProject` clears the run, which is why
-        // this comes second rather than being folded into it.
+        // After the scope change, so the first task lands inside the new
+        // project rather than beside it. `openProject` clears the run, which is
+        // why this comes second.
         edit.adding = true
         addRow()
     }
@@ -852,6 +884,15 @@ struct OutlineView: View {
     ///
     /// Matches `setScope` in `src/Outliner.tsx`.
     private func setScope(_ id: NodeId?) {
+        // Here rather than in the callers that navigate. A run and its anchor
+        // are both facts about one scope, so any move out of that scope ends
+        // them — and `openProject`/`zoomOut` clearing them individually left
+        // the home button, which calls this directly, showing a checkmark on
+        // the grid with no run to end.
+        if id != scope {
+            edit.stopAdding()
+            edit.captureParent = nil
+        }
         autoScope = false
         // Not when it changes nothing, so back never spends a step standing
         // still.
@@ -878,10 +919,8 @@ struct OutlineView: View {
     /// the instant this device opened it rather than whenever the write landed.
     /// Matches `openProject` in `src/Outliner.tsx`.
     private func openProject(_ id: NodeId) {
-        // A target from a different project is never the right guess, and a run
-        // does not follow you across projects.
-        edit.stopAdding()
-        edit.captureParent = nil
+        // The run and the anchor are cleared by `setScope`, which every
+        // navigation goes through.
         setScope(id)
         let root = TreeOps.lineageOf(tree, id).first?.id ?? id
         apply(.markOpened(id: root, at: Date().timeIntervalSince1970 * 1000))
@@ -1483,11 +1522,12 @@ struct OutlineView: View {
 
     private func zoomOut() {
         // Zooming out changes where a new task would land, so the run and its
-        // anchor both go with it.
+        // anchor both go with it. Done here rather than inherited from
+        // `setScope`, because this deliberately does not call it: `setScope`
+        // would push the step being undone and leave back bouncing between two
+        // scopes.
         edit.stopAdding()
         edit.captureParent = nil
-        // Pop rather than `setScope`, which would push the step being undone
-        // and leave back bouncing between two scopes.
         autoScope = false
         scope = popBack()
     }
@@ -2040,7 +2080,17 @@ private struct ProjectGrid: View {
     /// that had not finished asking announced "No projects yet" over what was
     /// about to become a full list.
     let loaded: Bool
+    /// The project whose name is being typed, or nil. The grid draws a field in
+    /// place of that card's title; every other card is unchanged.
+    let editing: NodeId?
+    @Binding var editText: String
+    /// Focus lives on the parent so one binding covers rows and cards alike —
+    /// `@FocusState` only works declared on a View, and the outline already has
+    /// one.
+    let focused: FocusState<NodeId?>.Binding
     let onOpen: (NodeId) -> Void
+    let onBeginEdit: (Node) -> Void
+    let onSubmit: () -> Void
     let onDelete: (NodeId) -> Void
 
     private var projects: [Node] { TreeOps.projectList(tree) }
@@ -2067,7 +2117,23 @@ private struct ProjectGrid: View {
                     ProjectRow(
                         project: project,
                         progress: TreeOps.progressOf(tree, project.id),
-                        onOpen: { onOpen(project.id) })
+                        editing: editing == project.id,
+                        editText: $editText,
+                        focused: focused,
+                        onOpen: { onOpen(project.id) },
+                        onSubmit: onSubmit)
+                        // Long-press rather than tap-the-title. A tap on a card
+                        // already means open, and a tap that sometimes opens
+                        // and sometimes edits is the overloading this whole
+                        // redesign was about removing.
+                        .contextMenu {
+                            Button("Rename", systemImage: "pencil") {
+                                onBeginEdit(project)
+                            }
+                            Button("Delete", systemImage: "trash", role: .destructive) {
+                                onDelete(project.id)
+                            }
+                        }
                         // Deleting a project takes everything under it, so this
                         // is not the same weight of action as deleting a task.
                         // `role: .destructive` alone would fire on a full swipe
@@ -2091,25 +2157,51 @@ private struct ProjectGrid: View {
 private struct ProjectRow: View {
     let project: Node
     let progress: TreeOps.Progress
+    let editing: Bool
+    @Binding var editText: String
+    let focused: FocusState<NodeId?>.Binding
     let onOpen: () -> Void
+    let onSubmit: () -> Void
 
     private var complete: Bool { progress.pct == 100 }
 
-    var body: some View {
-        Button(action: onOpen) {
-            VStack(alignment: .leading, spacing: 8) {
+    @ViewBuilder var body: some View {
+        // Only a Button when it is not being renamed. A TextField inside a
+        // Button never sees the tap that would place the caret — the Button
+        // swallows it and opens the project instead.
+        if editing {
+            card
+        } else {
+            Button(action: onOpen) { card }
+                .buttonStyle(.plain)
+        }
+    }
+
+    private var card: some View {
+        VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 6) {
                     if project.pinned == true {
                         Image(systemName: "pin.fill")
                             .font(.caption2)
                             .foregroundStyle(.tint)
                     }
-                    // Untitled is the web's word for a project with no name, and
-                    // an empty row would otherwise look unopenable.
-                    Text(project.text.isEmpty ? "Untitled" : project.text)
-                        .font(.body.weight(.medium))
-                        .foregroundStyle(.primary)
-                        .lineLimit(1)
+                    if editing {
+                        // Same weight and position as the label it replaces, so
+                        // the card does not jump when the field appears.
+                        TextField("Project name", text: $editText)
+                            .textFieldStyle(.plain)
+                            .font(.body.weight(.medium))
+                            .focused(focused, equals: project.id)
+                            .submitLabel(.done)
+                            .onSubmit(onSubmit)
+                    } else {
+                        // Untitled is the web's word for a project with no name, and
+                        // an empty row would otherwise look unopenable.
+                        Text(project.text.isEmpty ? "Untitled" : project.text)
+                            .font(.body.weight(.medium))
+                            .foregroundStyle(.primary)
+                            .lineLimit(1)
+                    }
                     Spacer(minLength: 8)
                     Text(complete ? "All done" : "\(progress.done)/\(progress.total)")
                         .font(.caption.monospacedDigit())
@@ -2128,10 +2220,8 @@ private struct ProjectRow: View {
                         }
                     }
             }
-            .padding(.vertical, 6)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
+        .padding(.vertical, 6)
+        .contentShape(Rectangle())
     }
 }
 
