@@ -291,6 +291,25 @@ print(hit[0]["udid"] if hit else "")')
       [ -n "$udid" ] || die "No iOS simulators are installed. Open Xcode → Settings → Components and add an iOS runtime."
       xcrun simctl boot "$udid"
     fi
+
+    # Software keyboard, not the Mac's. A hardware keyboard means nothing ever
+    # covers the bottom of the screen, so anything that has to stay clear of the
+    # keyboard — a focused row near the end of a list, a button that rides above
+    # it — looks right on the simulator and is broken on a phone. That is how
+    # the add-task run shipped without its auto-scroll working.
+    #
+    # The Simulator reads this only at launch, and nothing short of a restart
+    # takes effect: toggling the guest's own keyboard prefs over `simctl spawn`
+    # does not move a running keyboard. So the restart is conditional — the
+    # common case is a rebuild against a simulator that is already correct, and
+    # that case must not pay for one.
+    if [ "$(defaults read com.apple.iphonesimulator ConnectHardwareKeyboard 2>/dev/null)" != "0" ]; then
+      echo "Switching the simulator to the software keyboard…"
+      defaults write com.apple.iphonesimulator ConnectHardwareKeyboard -bool false
+      # Only if it is up: quitting one that is not running is a no-op that still
+      # costs a second, and `open` below starts it either way.
+      pgrep -q -x Simulator && osascript -e 'quit app "Simulator"'
+    fi
     open -a Simulator
 
     xcodebuild \
