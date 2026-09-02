@@ -573,20 +573,16 @@ struct OutlineView: View {
             // apart, which is how a run ends by accident; with "next" drawn
             // as an arrow the tick is unambiguously "no more rows".
             //
-            // Blue only at rest. Adding, this is the way *out* of the mode and
-            // Return is the action being repeated, so a filled accent circle
-            // put the loudest thing on screen on the least-used control. Quiet
-            // chrome, like the back and home buttons it now matches.
+            // Quiet in both states, matching the back and home buttons. Neither
+            // glyph is doing repeated work — Return is, while adding — and a
+            // filled accent circle on a corner control that gets pressed twice
+            // per run was the loudest thing on a screen that is mostly text.
             Image(systemName: adding ? "checkmark" : "plus")
                 .font(.system(size: 20, weight: .semibold))
-                .foregroundStyle(adding ? Color.primary : .white)
+                .foregroundStyle(Color.primary)
                 .frame(width: 52, height: 52)
-                .background(
-                    Circle().fill(
-                        adding
-                            ? AnyShapeStyle(.regularMaterial)
-                            : AnyShapeStyle(Color.accentColor)))
-                .shadow(color: .black.opacity(adding ? 0.12 : 0.22), radius: 6, y: 2)
+                .background(Circle().fill(.regularMaterial))
+                .shadow(color: .black.opacity(0.12), radius: 6, y: 2)
                 // Swapped rather than cross-faded. The two glyphs mean opposite
                 // things, and a dissolve through a moment of being both reads
                 // as the button being unsure which it is.
