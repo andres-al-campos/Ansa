@@ -896,6 +896,10 @@ struct OutlineView: View {
         // the home button, which calls this directly, showing a checkmark on
         // the grid with no run to end.
         if id != scope {
+            // Committed, not abandoned. `commitEdit` deletes a row left empty
+            // and keeps one with text, which is the same line Return draws — so
+            // navigating out of a run can never leave a blank task behind.
+            commitEdit()
             edit.stopAdding()
             edit.captureParent = nil
         }
@@ -1532,6 +1536,7 @@ struct OutlineView: View {
         // `setScope`, because this deliberately does not call it: `setScope`
         // would push the step being undone and leave back bouncing between two
         // scopes.
+        commitEdit()
         edit.stopAdding()
         edit.captureParent = nil
         autoScope = false
