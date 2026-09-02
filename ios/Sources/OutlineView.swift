@@ -29,7 +29,6 @@ struct OutlineView: View {
     /// Renaming and capture, grouped: the capture field files next to the row
     /// last edited, which only the edit path knows.
     @State private var edit = EditController()
-    @FocusState private var capturing: Bool
     /// One drag's worth of state and the geometry it reads. Grouped into a type
     /// because these pieces are meaningless apart and always changed together.
     @State private var drag = DragController()
@@ -38,6 +37,15 @@ struct OutlineView: View {
     @State private var ripple = RippleController()
     /// The project whose delete is awaiting confirmation.
     @State private var pendingDelete: Node?
+    /// The outline's scroll proxy, kept so paths outside the `ScrollViewReader`
+    /// can drive it.
+    ///
+    /// Adding a task is one: the row is created by a button living in the
+    /// safe-area inset, well outside the reader's closure, and it has to be
+    /// scrolled clear of the keyboard the moment it appears. Threading a proxy
+    /// down through the button and every caller to reach one view is worse than
+    /// holding the one the list already made.
+    @State private var scroller: ScrollViewProxy?
 
 
     /// How far the edge swipe has pulled the view, in points.
@@ -152,11 +160,14 @@ struct OutlineView: View {
             // combined here rather than each calling setBusy on its own — the
             // one that ends first would otherwise clear the other's hold.
             //
-            // Typing: the capture field holds a draft the user can see, and
-            // adopting a server tree under it is what makes text vanish as it
-            // is being written. Dragging: the row would move out from under the
-            // finger mid-gesture.
-            .onChange(of: capturing || drag.isActive || edit.isEditing) { _, busy in
+            // Typing: a row holds text the user can see, and adopting a
+            // server tree under it is what makes it vanish as it is being
+            // written. Dragging: the row would move out from under the finger
+            // mid-gesture.
+            //
+            // One flag covers adding too, because a new task is a row with a
+            // field open like any other.
+            .onChange(of: drag.isActive || edit.isEditing) { _, busy in
                 store.setBusy(busy)
             }
             // A project takes its whole subtree with it, and unlike ticking a
@@ -317,14 +328,20 @@ struct OutlineView: View {
                     outline(for: scope, interactive: interactive)
                 }
 
-                // Capture sits at the bottom. It was at the top so an idea
-                // could be caught without scrolling anywhere first, which is
-                // what this app is for — the bottom serves that just as well,
-                // and adds two things the top could not: it is inside the
-                // thumb's arc, and it rises with the keyboard instead of
-                // sitting at the far end of the screen from it.
-                captureField(for: scope, interactive: interactive)
             }
+        // Over the list rather than below it, so it costs no height — and as a
+        // safe-area inset rather than an overlay, because the inset is what
+        // rises with the keyboard. Sitting still while the keyboard came up
+        // would put the button under it at exactly the moment it becomes the
+        // way out.
+        //
+        // On the grid too, where it makes a project rather than a task. Gating
+        // it to inside a project left the empty state telling people to start
+        // one below a field that no longer exists, with no way to make a first
+        // project at all.
+        .safeAreaInset(edge: .bottom, alignment: .trailing, spacing: 0) {
+            captureButton(interactive: interactive)
+        }
         // Opaque, so the rows behind cannot show through the slab as it
         // moves. A `VStack` paints only what its children paint, and the
         // list's own background does not cover the whole stack.
@@ -360,13 +377,11 @@ struct OutlineView: View {
                     groupDone: groupDone(row.node),
                     onBeginEdit: { beginEdit(row.node) },
                     onBlur: { id in commitEdit(from: id, releasingFocus: false) },
-                    // Return commits and stops, rather than opening a fresh row
-                    // below. The web auto-advances because typing is how you add
-                    // there; the phone has a permanent "New task" field at the
-                    // bottom, so a new row here was a second way to do the same
-                    // thing — and it cost a keyboard dismiss-and-reopen on every
-                    // Return as focus jumped.
-                    onSubmit: { commitEdit() },
+                    // Return means one thing per mode. Renaming, it commits and
+                    // stops — a rename is finished when the words are right, and
+                    // there is nothing to advance to. Adding, it commits and
+                    // opens the next row, which is the whole shape of a run.
+                    onSubmit: { edit.adding ? submitAdding() : commitEdit() },
                     // No-ops behind the swipe. A gesture there could pick
                     // up a row on a screen the user may be about to slide away
                     // from, and its coordinates would be measured against a
@@ -519,62 +534,48 @@ struct OutlineView: View {
             guard interactive else { return }
             if id == nil { drag.stopScrolling() } else { startScrolling(proxy) }
         }
+        // Only the live copy's proxy. The one behind a swipe scrolls a list
+        // that is on its way off screen.
+        .onAppear { if interactive { scroller = proxy } }
         }
     }
 
-    /// The bottom bar: the chip saying where a task will land, and the field.
+    /// The one control: plus at rest, checkmark while adding.
     ///
-    /// Inert behind a swipe for the same reason as a row's field — one focus
-    /// state, so a second live field would fight the real one for it.
-    @ViewBuilder private func captureField(for scope: NodeId?, interactive: Bool) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            // Says where the next task will land whenever that is not the
-            // bottom. Without it the field drops a row into the middle of the
-            // list while looking exactly as it does at rest, and a capture box
-            // you cannot predict is one you stop trusting.
-            //
-            // The X is the way out, and it is what makes the guess affordable:
-            // it only has to be right often enough to be worth one tap to undo.
-            if interactive, let parent = edit.captureParent,
-               let node = TreeOps.byId(tree, parent) {
-                HStack(spacing: 6) {
-                    Image(systemName: "arrow.down")
-                    Text("After \(node.text)").lineLimit(1)
-                    Button {
-                        edit.captureParent = nil
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                    }
-                    .buttonStyle(.plain)
-                }
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            }
-
-            HStack {
-                let label = scope == nil ? "New project" : "Add a task"
-                if interactive {
-                    TextField(label, text: $edit.draft)
-                        .textFieldStyle(.plain)
-                        .submitLabel(.done)
-                        .focused($capturing)
-                        .onSubmit(commitDraft)
-                } else {
-                    // A drawn stand-in rather than a disabled field: what is
-                    // wanted behind the swipe is the bar's shape and height, so
-                    // the two screens line up as one slides off the other.
-                    Text(label).foregroundStyle(.tertiary)
-                }
-                if interactive, !edit.draft.isEmpty {
-                    Button("Add", action: commitDraft)
-                }
-            }
+    /// It replaced a permanent text field, which is the point. A field that is
+    /// always on screen looks the same whether or not it is live, so there was
+    /// no way to tell adding from not adding — and it spent two rows of a short
+    /// screen saying so. A button can only be pressed, so pressing it is
+    /// unambiguously the user choosing to add.
+    ///
+    /// The same button is also the way out, and the symbol swap is what says
+    /// the mode is on. Nothing else on screen changes, so the mode costs no
+    /// space at all: same corner, same size, different glyph.
+    ///
+    /// Inert behind a swipe for the same reason as a row's field — the copy
+    /// underneath must not act on a screen that is sliding away.
+    @ViewBuilder private func captureButton(interactive: Bool) -> some View {
+        let adding = edit.adding
+        Button {
+            if adding { stopAdding() } else { startAdding() }
+        } label: {
+            Image(systemName: adding ? "checkmark" : "plus")
+                .font(.system(size: 20, weight: .semibold))
+                .foregroundStyle(.white)
+                .frame(width: 52, height: 52)
+                .background(Circle().fill(Color.accentColor))
+                .shadow(color: .black.opacity(0.22), radius: 6, y: 2)
+                // Swapped rather than cross-faded. The two glyphs mean opposite
+                // things, and a dissolve through a moment of being both reads
+                // as the button being unsure which it is.
+                .contentTransition(.symbolEffect(.replace))
         }
-        .padding(.leading, OutlineRow.columnLeft)
+        .buttonStyle(.plain)
+        .disabled(!interactive)
         .padding(.trailing, OutlineRow.railInset)
-        .padding(.vertical, 10)
-        .background(.bar)
-        .animation(.easeOut(duration: 0.15), value: edit.captureParent)
+        .padding(.bottom, 12)
+        .accessibilityLabel(adding ? "Done adding" : "Add a task")
+        .animation(.easeOut(duration: 0.15), value: adding)
     }
 
 
@@ -712,19 +713,67 @@ struct OutlineView: View {
         return min(max(y, 0), 1)
     }
 
-    private func commitDraft() {
-        let text = edit.draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty else { return }
+    // MARK: - Adding
+
+    /// Enter the adding run: open an empty row where the next task goes.
+    ///
+    /// The row *is* the input. There is no separate field to read the text out
+    /// of, so this creates the node up front and lets the ordinary rename path
+    /// name it — which means one code path for "what a row is called" instead
+    /// of two that have to agree.
+    ///
+    /// The cost of creating first is that an abandoned row is a real node, so
+    /// every exit has to clean up after itself. `commitEdit` already deletes a
+    /// row emptied by a rename, and that is exactly what an untouched new row
+    /// is, so the cleanup comes for free.
+    private func startAdding() {
+        // On the grid there is no row to type into: `ProjectGrid` draws cards,
+        // not editable rows, so a nameless new project would have nowhere to
+        // put the name. It gets one straight away and opens, and the run starts
+        // on its first task — which is where you were going anyway, since a
+        // project with nothing in it is not a destination.
+        if scope == nil {
+            addProject()
+            return
+        }
+        edit.adding = true
+        addRow()
+    }
+
+    /// Make a project, open it, and start adding tasks inside it.
+    private func addProject() {
+        let id = TreeOps.newId()
+        let now = Date().timeIntervalSince1970 * 1000
+        apply(.addChild(id: id, parentId: nil, text: "New project", at: now))
+        openProject(id)
+        // After the scope change, so the row is created inside the new project
+        // rather than beside it. `openProject` clears the run, which is why
+        // this comes second rather than being folded into it.
+        edit.adding = true
+        addRow()
+    }
+
+    /// Leave the run. The open row commits if it has text and is deleted if it
+    /// does not — both by the ordinary rename commit, which already draws that
+    /// line the same way the web does.
+    private func stopAdding() {
+        edit.stopAdding()
+        commitEdit()
+    }
+
+    /// Create the empty row the user types into, below the anchor.
+    ///
+    /// Placement is the rule the capture field already used: a sibling below
+    /// whatever row was last touched, or the bottom of the project when nothing
+    /// has been. Depth is deliberately not guessed — a new task goes beside the
+    /// last one, never inside it.
+    private func addRow() {
         // The id and the timestamp are minted here and carried by the op, so the
         // server applies it to exactly the node this device created.
         let id = TreeOps.newId()
-        // A sibling of the row just edited, not a child of it. The complaint
-        // this answers is that captured tasks pile up at the bottom, far from
-        // whatever was being worked on — depth is a separate question, and
-        // guessing at it would be answering one nobody asked.
         let anchor = edit.captureParent.flatMap { TreeOps.byId(tree, $0) }
         apply(.addChild(
-            id: id, parentId: anchor?.parentId ?? scope, text: text,
+            id: id, parentId: anchor?.parentId ?? scope, text: "",
             at: Date().timeIntervalSince1970 * 1000))
         // `addChild` appends, so the row lands at the end of its parent's
         // children and then moves up into the slot below the anchor. Two ops
@@ -735,14 +784,44 @@ struct OutlineView: View {
             .firstIndex(where: { $0.id == anchor.id }) {
             apply(.moveNode(id: id, parentId: anchor.parentId, index: i + 1))
         }
-        // The new row becomes the anchor, so a run of captures stacks downward
-        // in the order typed instead of every one landing in the same slot and
-        // reversing itself.
-        edit.captureParent = id
-        edit.draft = ""
+        guard let node = TreeOps.byId(tree, id) else { return }
+        // Through `beginEdit` rather than setting focus here, so the new row
+        // takes the same path as a tapped one — including the deferral that
+        // keeps the keyboard up across the handover.
+        beginEdit(node)
+        // And into view, because the row is inside the scrolling list and the
+        // keyboard covers the bottom of it. The old capture bar never needed
+        // this: a bar pinned to the bottom edge sits above the keyboard by
+        // construction, while a row does not.
+        //
+        // A turn late, since the row has to exist in the list before it can be
+        // scrolled to. `.bottom` rather than a fraction: the aim is the lowest
+        // spot still clear of the keyboard, so a run of tasks walks down the
+        // screen and settles instead of the caret jumping about.
+        DispatchQueue.main.async {
+            withAnimation(.easeOut(duration: 0.2)) {
+                scroller?.scrollTo(id, anchor: .bottom)
+            }
+        }
     }
 
-
+    /// Return, inside the adding run.
+    ///
+    /// Two meanings, split on whether the row has anything in it. With text it
+    /// is "next" — commit and open another below. Empty it is "done", because
+    /// there is no next task to ask for and pressing Return twice at the end of
+    /// a run is how people stop typing.
+    ///
+    /// The empty case does not need to delete anything: `commitEdit` removes a
+    /// row committed empty, which is what `stopAdding` runs into.
+    private func submitAdding() {
+        guard !edit.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            stopAdding()
+            return
+        }
+        commitEdit(releasingFocus: false)
+        addRow()
+    }
 
     private func delete(at offsets: IndexSet) {
         for index in offsets { apply(.removeNode(id: rows[index].node.id)) }
@@ -781,7 +860,9 @@ struct OutlineView: View {
     /// the instant this device opened it rather than whenever the write landed.
     /// Matches `openProject` in `src/Outliner.tsx`.
     private func openProject(_ id: NodeId) {
-        // A target from a different project is never the right guess.
+        // A target from a different project is never the right guess, and a run
+        // does not follow you across projects.
+        edit.stopAdding()
         edit.captureParent = nil
         setScope(id)
         let root = TreeOps.lineageOf(tree, id).first?.id ?? id
@@ -1383,7 +1464,9 @@ struct OutlineView: View {
     }
 
     private func zoomOut() {
-        // Zooming out changes what the field means, so the guess goes with it.
+        // Zooming out changes where a new task would land, so the run and its
+        // anchor both go with it.
+        edit.stopAdding()
         edit.captureParent = nil
         // Pop rather than `setScope`, which would push the step being undone
         // and leave back bouncing between two scopes.
@@ -1942,7 +2025,10 @@ private struct ProjectGrid: View {
                 ContentUnavailableView(
                     "No projects yet",
                     systemImage: "tray",
-                    description: Text("Start one below."))
+                    // Names the control rather than a direction: the button
+                    // sits in the corner, so "below" stopped being true when
+                    // the field at the bottom went away.
+                    description: Text("Tap + to start one."))
             } else {
                 // Only reachable on a genuine cold start — with a cached tree
                 // there are already projects to draw. Deliberately says nothing

@@ -1,13 +1,13 @@
 import AnsaCore
 import SwiftUI
 
-/// Renaming a row, and the capture field's memory of which row that was.
+/// Renaming a row, adding a run of them, and which row the next one lands below.
 ///
-/// These are one concern wearing two names. The capture field files a new task
-/// next to the row last edited, which is a fact only the edit path knows — and
-/// the reason it has to be *remembered* rather than read live is that tapping
-/// the capture field is itself what ends the edit. Keeping them in one type
-/// puts that handoff in one place instead of spreading it across a comment.
+/// These are one concern wearing three names. A new task is a row that starts
+/// empty and focused, so adding *is* renaming with the mode flag set — and
+/// where it lands is a fact only the edit path knows, since the last row
+/// touched is the anchor. Keeping them in one type puts that in one place
+/// instead of spreading it across a comment.
 ///
 /// Focus is deliberately not here. `@FocusState` only works declared on a View,
 /// so `editing` (which row has a field) lives here while the focus binding
@@ -21,20 +21,29 @@ final class EditController {
     /// underneath without resetting what is being typed.
     var text = ""
 
-    /// The capture field's draft.
-    var draft = ""
+    /// Whether the user is in a run of adding tasks.
+    ///
+    /// Adding is a mode because Return has to mean one thing inside it: commit
+    /// this row and open the next. Without a mode the same key had to serve as
+    /// "next task", "stop adding" and "finish this rename" at once, and the
+    /// way that failed was silent — the keyboard came down and the next thing
+    /// typed went into a row that was already named.
+    ///
+    /// Separate from `editing`, which says a field is open. Every row in a run
+    /// is an edit; the mode is what makes the *next* one appear.
+    var adding = false
 
-    /// The row the capture field drops the next task below.
+    /// The row a new task lands below, or nil for the bottom of the project.
     ///
-    /// Not derived from `editing`: tapping the capture field moves focus, which
-    /// commits the edit and clears `editing` before a single character is
-    /// typed. By the time it matters the live state is already gone, so the row
-    /// is remembered as the edit closes.
+    /// Set by touching any row, so the plus button files next to whatever was
+    /// last worked on rather than always at the end. Nil is not a missing
+    /// answer — it is the honest one for a project nothing has been tapped in
+    /// yet, and the bottom is where a first task belongs.
     ///
-    /// Cleared whenever the context it was captured in stops being true —
-    /// leaving the project, tapping the X, or the row itself going away. A
-    /// field that silently files somewhere other than where it says is worse
-    /// than one that only ever files at the bottom.
+    /// Cleared whenever the context it was captured in stops being true:
+    /// leaving the project, or the row itself going away. Filing silently
+    /// somewhere other than where the user last was is worse than filing at the
+    /// bottom.
     var captureParent: NodeId?
 
     /// Whether a rename is open. What the busy flag actually asks.
@@ -47,11 +56,8 @@ final class EditController {
         text = node.text
         editing = node.id
         // Now, not on commit. Tapping a row is the user saying which row they
-        // mean, so the chip should answer straight away — waiting until the
-        // edit ended meant tapping B while A was open left the chip claiming A,
-        // and the thing that finally corrected it was tapping the capture
-        // field, which is the one moment the answer is already too late to be
-        // useful.
+        // mean, so the next task filed lands there even if the rename is
+        // abandoned rather than finished.
         captureParent = node.id
     }
 
@@ -76,5 +82,12 @@ final class EditController {
         captureParent = rememberAnchor
         editing = nil
         text = ""
+    }
+
+    /// Leave the adding run. The caller decides what happens to the open row —
+    /// this only drops the mode, so a plain rename started afterwards does not
+    /// inherit it.
+    func stopAdding() {
+        adding = false
     }
 }
