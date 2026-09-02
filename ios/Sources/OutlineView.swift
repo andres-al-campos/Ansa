@@ -789,11 +789,17 @@ struct OutlineView: View {
     /// open.
     private func submitProjectName() {
         let id = edit.editing
-        commitEdit()
+        // Focus is held rather than released, the same way a run of tasks holds
+        // it. iOS takes the keyboard down the moment nothing is focused, so
+        // releasing here made the keyboard drop and come straight back up for
+        // the first task — with the button animating to a plus and back in the
+        // gap. Focus passes from the name field to the row without ever being
+        // nil.
+        commitEdit(releasingFocus: false)
         guard let id, TreeOps.byId(tree, id) != nil else { return }
         openProject(id)
         // After the scope change, so the first task lands inside the new
-        // project rather than beside it. `openProject` clears the run, which is
+        // project rather than beside it. `setScope` clears the run, which is
         // why this comes second.
         edit.adding = true
         addRow()
