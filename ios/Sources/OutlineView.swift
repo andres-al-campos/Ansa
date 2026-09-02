@@ -375,6 +375,7 @@ struct OutlineView: View {
                     onCollapse: { toggleFold(row.node.id, proxy: proxy) },
                     rippleDelay: interactive ? ripple.delay(for: row.node.id) : nil,
                     groupDone: groupDone(row.node),
+                    adding: edit.adding,
                     onBeginEdit: { beginEdit(row.node) },
                     onBlur: { id in commitEdit(from: id, releasingFocus: false) },
                     // Return means one thing per mode. Renaming, it commits and
@@ -559,6 +560,10 @@ struct OutlineView: View {
         Button {
             if adding { stopAdding() } else { startAdding() }
         } label: {
+            // A tick is safe here only because Return is an arrow. When
+            // both showed a tick they meant opposite things a thumb's width
+            // apart, which is how a run ends by accident; with "next" drawn
+            // as an arrow the tick is unambiguously "no more rows".
             Image(systemName: adding ? "checkmark" : "plus")
                 .font(.system(size: 20, weight: .semibold))
                 .foregroundStyle(.white)
@@ -795,12 +800,16 @@ struct OutlineView: View {
         // construction, while a row does not.
         //
         // A turn late, since the row has to exist in the list before it can be
-        // scrolled to. `.bottom` rather than a fraction: the aim is the lowest
-        // spot still clear of the keyboard, so a run of tasks walks down the
-        // screen and settles instead of the caret jumping about.
+        // scrolled to.
+        //
+        // Deliberately not `.bottom`: that anchor means the bottom of the
+        // *scroll view*, and the scroll view runs on underneath the keyboard —
+        // so it parked the new row in exactly the strip the keyboard covers,
+        // which looked like no scrolling at all. `.center` is above the
+        // keyboard on any phone and needs no guess about how tall it is.
         DispatchQueue.main.async {
             withAnimation(.easeOut(duration: 0.2)) {
-                scroller?.scrollTo(id, anchor: .bottom)
+                scroller?.scrollTo(id, anchor: .center)
             }
         }
     }
@@ -1628,6 +1637,9 @@ private struct OutlineRow: View {
     /// True when this row is done *and* so is the group around it, which is
     /// what colours the box green. See `DonePalette`.
     let groupDone: Bool
+    /// Whether this field belongs to a run of new tasks rather than a rename.
+    /// Only the Return key's label depends on it.
+    let adding: Bool
     let onBeginEdit: () -> Void
     let onBlur: (NodeId) -> Void
     let onSubmit: () -> Void
@@ -1790,7 +1802,12 @@ private struct OutlineRow: View {
                     TextField("", text: $editText, axis: .vertical)
                         .textFieldStyle(.plain)
                         .focused($focusedRow, equals: node.id)
-                        .submitLabel(.done)
+                        // What Return actually does here, which is not the
+                        // same in both modes: it finishes a rename, and it asks
+                        // for another row in a run. The key said "done" in both
+                        // and was therefore labelled as the opposite of what it
+                        // did while adding.
+                        .submitLabel(adding ? .next : .done)
                         // Return commits and dismisses. It goes through
                         // onSubmit rather than the focus-loss commit so the
                         // two paths stay distinguishable — blur can also be a
