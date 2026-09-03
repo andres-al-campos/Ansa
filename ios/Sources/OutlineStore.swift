@@ -48,10 +48,18 @@ final class OutlineStore {
         let client = SyncClient(api: api, queueURL: Self.queueURL) { [weak self] tree in
             self?.tree = tree
         }
-        client.onStatusChange = { [weak self] in
-            guard let self, let sync = self.sync else { return }
-            self.live = sync.live
-            self.rejected = sync.rejected
+        // Reads `client`, not `self.sync`: the two are the same object, but
+        // `self.sync` is assigned on the line below, so a guard on it drops any
+        // status change arriving before then. Nothing fires one that early
+        // today — which is what makes it the kind of bug that surfaces later as
+        // a banner that won't clear.
+        //
+        // `unowned` because this closure is stored *on* `client`, so a strong
+        // capture is a cycle through itself that `stop()` does not break.
+        client.onStatusChange = { [weak self, unowned client] in
+            guard let self else { return }
+            self.live = client.live
+            self.rejected = client.rejected
         }
         sync = client
         client.start()
