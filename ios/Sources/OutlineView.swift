@@ -318,7 +318,7 @@ struct OutlineView: View {
                 // Only inside a project. On the grid each card carries its own
                 // bar, and a single figure across every project at once answers
                 // a question nobody asked.
-                if scope != nil, let progress = TreeOps.scopeProgress(tree, scope) {
+                if scope != nil, let progress = adjusted(TreeOps.scopeProgress(tree, scope)) {
                     ScopeProgress(
                         progress: progress,
                         title: title(of: scope),
@@ -421,6 +421,20 @@ struct OutlineView: View {
                     // the thing being dropped into, so it lights with the row
                     // rather than leaving the highlight to the frame alone.
                     isDropTarget: interactive && litGuideParent == row.node.id)
+                    // The waiting row stays in the hierarchy but takes up no
+                    // space and draws nothing. It has to stay built: it exists
+                    // so Return has a live field to move focus onto, and
+                    // filtering it out of `rows(of:)` would destroy that field
+                    // and reopen the gap that drops the keyboard. But it is an
+                    // empty row, so drawing it puts a blank line under the
+                    // cursor for the whole run — the implementation detail
+                    // showing through as what looks like a stray empty task.
+                    //
+                    // `frame(height: 0)` over `hidden()` alone because hidden
+                    // still reserves the row's height.
+                    .opacity(row.node.id == spareRow ? 0 : 1)
+                    .frame(height: row.node.id == spareRow ? 0 : nil)
+                    .allowsHitTesting(row.node.id != spareRow)
                     // One segment per guide, drawn inside the row.
                     //
                     // The segments abut into what reads as a single unbroken
@@ -634,6 +648,20 @@ struct OutlineView: View {
     /// The scope a back swipe lands in: one step out, or the project grid.
     private var parentScope: NodeId? {
         scope.flatMap { TreeOps.byId(tree, $0)?.parentId }
+    }
+
+    /// Take the waiting row back out of the count.
+    ///
+    /// It is a real leaf in the tree, so `scopeProgress` counts it, and a run
+    /// would read "0 of 4" with three tasks on screen. Corrected here rather
+    /// than in `TreeOps` because the spare is a detail of how this view keeps
+    /// the keyboard up — the model has no reason to know about it.
+    private func adjusted(_ progress: TreeOps.Progress?) -> TreeOps.Progress? {
+        guard let progress, spareRow != nil else { return progress }
+        let total = progress.total - 1
+        guard total > 0 else { return nil }
+        let pct = Int((Double(progress.done) / Double(total) * 100).rounded())
+        return TreeOps.Progress(done: progress.done, total: total, pct: pct)
     }
 
     /// The rows the outline draws, flattened depth-first with a folded subtree
@@ -966,6 +994,11 @@ struct OutlineView: View {
     /// an id rather than a flag because it has to be findable again: it is a
     /// real node, and a run that ends leaves it behind to be removed.
     private func addSpare(below anchorId: NodeId) {
+        // Whatever was staged before goes first. Overwriting `spareRow` with a
+        // new id orphans the old node: nothing else knows it exists, so no exit
+        // can clean it up and it syncs to the web as a blank task. Cheap to be
+        // certain here rather than to trust every caller to have cleared it.
+        dropSpare()
         let id = TreeOps.newId()
         guard let anchor = TreeOps.byId(tree, anchorId) else { return }
         apply(.addChild(

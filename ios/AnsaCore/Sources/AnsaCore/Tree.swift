@@ -156,6 +156,12 @@ public enum TreeOps {
         public let done: Int
         public let total: Int
         public let pct: Int
+
+        public init(done: Int, total: Int, pct: Int) {
+            self.done = done
+            self.total = total
+            self.pct = pct
+        }
     }
 
     /// Leaf-weighted progress for `id`.
