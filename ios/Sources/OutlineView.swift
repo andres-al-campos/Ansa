@@ -583,17 +583,20 @@ struct OutlineView: View {
                 .frame(width: 52, height: 52)
                 .background(Circle().fill(.regularMaterial))
                 .shadow(color: .black.opacity(0.12), radius: 6, y: 2)
-                // Swapped rather than cross-faded. The two glyphs mean opposite
-                // things, and a dissolve through a moment of being both reads
-                // as the button being unsure which it is.
-                .contentTransition(.symbolEffect(.replace))
+                // Swapped outright. `.symbolEffect(.replace)` animated the
+                // outgoing glyph as its own detached layer, which is fine on
+                // its own and wrong here: the swap fires as the keyboard is
+                // dismissing, so the button slides down with the keyboard
+                // while the old checkmark plays out where it was — a tick
+                // hanging in the air outside its own button. A plain swap has
+                // nothing left to strand.
+                .id(adding)
         }
         .buttonStyle(.plain)
         .disabled(!interactive)
         .padding(.trailing, OutlineRow.railInset)
         .padding(.bottom, 12)
         .accessibilityLabel(adding ? "Done adding" : "Add a task")
-        .animation(.easeOut(duration: 0.15), value: adding)
     }
 
 
