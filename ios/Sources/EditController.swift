@@ -53,12 +53,21 @@ final class EditController {
     /// what builds it, so focusing in the same pass targets a field that does
     /// not exist yet.
     func begin(_ node: Node) {
-        text = node.text
-        editing = node.id
+        begin(id: node.id, text: node.text)
+    }
+
+    /// The same, for a row that does not exist in the tree yet.
+    ///
+    /// `addRow` opens the field before it applies the ops that create the node,
+    /// so there is nothing to pass a `Node` from — and that ordering is what
+    /// keeps the keyboard up across the rebuild.
+    func begin(id: NodeId, text newText: String) {
+        text = newText
+        editing = id
         // Now, not on commit. Tapping a row is the user saying which row they
         // mean, so the next task filed lands there even if the rename is
         // abandoned rather than finished.
-        captureParent = node.id
+        captureParent = id
     }
 
     /// Whether a commit from `from` should be honoured.

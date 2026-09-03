@@ -63,6 +63,16 @@ struct OutlineView: View {
     /// being torn down and the one being built, and Return-for-new-sibling
     /// lost it every time. Naming the id makes the target unambiguous.
     @FocusState private var focusedRow: NodeId?
+    /// The empty row waiting below the one being typed in, during a run.
+    ///
+    /// Return has to land on a field that already exists — building one and
+    /// focusing it leaves a moment with nothing focused, and iOS takes the
+    /// keyboard down for exactly that moment. Keeping a row one step ahead
+    /// means the handover is a focus move between two live fields.
+    ///
+    /// Nil outside a run, and cleared by `dropSpare` on every exit, because an
+    /// empty row that outlives the run is a blank task.
+    @State private var spareRow: NodeId?
     @Environment(\.scenePhase) private var scenePhase
 
     /// Prepared once rather than per tick: a generator built at the moment of
@@ -118,7 +128,12 @@ struct OutlineView: View {
             .onChange(of: scenePhase) { _, phase in
                 switch phase {
                 case .active: store.resume()
-                case .background: store.suspend()
+                case .background:
+                    // The waiting row is a real empty node. Suspending with one
+                    // staged would sync it as a blank task and show it on the
+                    // web, so the run ends when the app leaves the foreground.
+                    if edit.adding { stopAdding() }
+                    store.suspend()
                 default: break
                 }
             }
@@ -759,6 +774,7 @@ struct OutlineView: View {
         }
         edit.adding = true
         addRow()
+        stageSpare()
     }
 
     /// Make a project and open its name for typing, on the grid.
@@ -802,12 +818,27 @@ struct OutlineView: View {
         // why this comes second.
         edit.adding = true
         addRow()
+        stageSpare()
+    }
+
+    /// Put the waiting row below whatever `addRow` just opened.
+    ///
+    /// Separate from `addRow` because not every caller wants one: a plain
+    /// rename opens a field with no run behind it, and a spare there would be
+    /// an empty row nobody asked for.
+    private func stageSpare() {
+        guard let open = edit.editing else { return }
+        addSpare(below: open)
     }
 
     /// Leave the run. The open row commits if it has text and is deleted if it
     /// does not — both by the ordinary rename commit, which already draws that
     /// line the same way the web does.
     private func stopAdding() {
+        // Before the commit, so the row being typed in is still the one
+        // `commitEdit` sees. Dropping the spare is not optional: it is an empty
+        // node in the tree, and leaving it is the blank task the rule forbids.
+        dropSpare()
         edit.stopAdding()
         commitEdit()
     }
@@ -823,6 +854,20 @@ struct OutlineView: View {
         // server applies it to exactly the node this device created.
         let id = TreeOps.newId()
         let anchor = edit.captureParent.flatMap { TreeOps.byId(tree, $0) }
+        // Focus moves to the new id *before* the ops, and that ordering is the
+        // whole fix. `apply` publishes, and there are two of them, so the list
+        // rebuilds twice between the old field and the new one. Claiming focus
+        // afterwards leaves a window where the outgoing field is gone and the
+        // incoming one is not focused yet — iOS takes the keyboard down the
+        // instant nothing holds it, then puts it straight back up, which is the
+        // slide-down-slide-up. The simulator hid this by coalescing the
+        // publishes into one pass; a phone is slow enough not to.
+        //
+        // Focusing an id whose row does not exist yet is safe: `focusedRow` is
+        // a plain value, and the field binds to it via `.focused(equals:)` when
+        // it is built a moment later.
+        edit.begin(id: id, text: "")
+        focusedRow = id
         apply(.addChild(
             id: id, parentId: anchor?.parentId ?? scope, text: "",
             at: Date().timeIntervalSince1970 * 1000))
@@ -835,24 +880,28 @@ struct OutlineView: View {
             .firstIndex(where: { $0.id == anchor.id }) {
             apply(.moveNode(id: id, parentId: anchor.parentId, index: i + 1))
         }
-        guard let node = TreeOps.byId(tree, id) else { return }
-        // Through `beginEdit` rather than setting focus here, so the new row
-        // takes the same path as a tapped one — including the deferral that
-        // keeps the keyboard up across the handover.
-        beginEdit(node)
+        // Not routed through `beginEdit` any more. That path defers focus to
+        // the next runloop turn for a row that already exists; here the field
+        // is opened up front, deliberately, and re-running it would hand focus
+        // over a second time through exactly the gap this avoids.
         // And into view, because the row is inside the scrolling list and the
         // keyboard covers the bottom of it. The old capture bar never needed
         // this: a bar pinned to the bottom edge sits above the keyboard by
         // construction, while a row does not.
-        //
-        // A turn late, since the row has to exist in the list before it can be
-        // scrolled to.
-        //
-        // Deliberately not `.bottom`: that anchor means the bottom of the
-        // *scroll view*, and the scroll view runs on underneath the keyboard —
-        // so it parked the new row in exactly the strip the keyboard covers,
-        // which looked like no scrolling at all. `.center` is above the
-        // keyboard on any phone and needs no guess about how tall it is.
+        scrollInto(id)
+    }
+
+    /// Bring a row clear of the keyboard.
+    ///
+    /// A turn late, since the row has to exist in the list before it can be
+    /// scrolled to.
+    ///
+    /// Deliberately not `.bottom`: that anchor means the bottom of the
+    /// *scroll view*, and the scroll view runs on underneath the keyboard — so
+    /// it parked the new row in exactly the strip the keyboard covers, which
+    /// looked like no scrolling at all. `.center` is above the keyboard on any
+    /// phone and needs no guess about how tall it is.
+    private func scrollInto(_ id: NodeId) {
         DispatchQueue.main.async {
             withAnimation(.easeOut(duration: 0.2)) {
                 scroller?.scrollTo(id, anchor: .center)
@@ -874,8 +923,60 @@ struct OutlineView: View {
             stopAdding()
             return
         }
+        // Focus moves to a field that is already on screen, and that is the
+        // whole point. Creating the next row here and focusing it meant the
+        // outgoing field was destroyed before the incoming one had been built,
+        // and iOS drops the keyboard the moment no field holds it — the slide
+        // down and back up. Nothing about the axis, the List, the two ops or
+        // the deferred focus changed that; a harness on a real phone showed
+        // all four combinations sliding. The gap itself was the bug, so the
+        // fix is to not have one.
+        //
+        // The spare is a real row in the tree, kept one ahead of the cursor.
+        guard let spare = spareRow else {
+            // No spare means the run was not started through `startAdding` —
+            // fall back to the old path rather than dropping the Return.
+            commitEdit(releasingFocus: false)
+            addRow()
+            return
+        }
         commitEdit(releasingFocus: false)
-        addRow()
+        spareRow = nil
+        // Hand over first, then build the next spare behind it. Reversing these
+        // puts a list rebuild between the commit and the focus move, which is
+        // the gap again.
+        edit.begin(id: spare, text: "")
+        focusedRow = spare
+        scrollInto(spare)
+        addSpare(below: spare)
+    }
+
+    /// The empty row waiting below the one being typed in.
+    ///
+    /// It exists so Return has somewhere to land that is already built. Held as
+    /// an id rather than a flag because it has to be findable again: it is a
+    /// real node, and a run that ends leaves it behind to be removed.
+    private func addSpare(below anchorId: NodeId) {
+        let id = TreeOps.newId()
+        guard let anchor = TreeOps.byId(tree, anchorId) else { return }
+        apply(.addChild(
+            id: id, parentId: anchor.parentId, text: "",
+            at: Date().timeIntervalSince1970 * 1000))
+        if let i = TreeOps.childrenOf(tree, anchor.parentId)
+            .firstIndex(where: { $0.id == anchorId }) {
+            apply(.moveNode(id: id, parentId: anchor.parentId, index: i + 1))
+        }
+        spareRow = id
+    }
+
+    /// Take the waiting row away. Always paired with leaving the run: an empty
+    /// row left in the tree is exactly what the no-blank-tasks rule forbids,
+    /// and it would sync to the web as one.
+    private func dropSpare() {
+        if let id = spareRow, TreeOps.byId(tree, id) != nil {
+            apply(.removeNode(id: id))
+        }
+        spareRow = nil
     }
 
     private func delete(at offsets: IndexSet) {
@@ -895,6 +996,10 @@ struct OutlineView: View {
         // the home button, which calls this directly, showing a checkmark on
         // the grid with no run to end.
         if id != scope {
+            // Before the commit, for the same reason as `stopAdding`: the
+            // waiting row is a real empty node, and navigating away from it
+            // would leave a blank task behind in the project being left.
+            dropSpare()
             // Committed, not abandoned. `commitEdit` deletes a row left empty
             // and keeps one with text, which is the same line Return draws — so
             // navigating out of a run can never leave a blank task behind.
@@ -1535,6 +1640,7 @@ struct OutlineView: View {
         // `setScope`, because this deliberately does not call it: `setScope`
         // would push the step being undone and leave back bouncing between two
         // scopes.
+        dropSpare()
         commitEdit()
         edit.stopAdding()
         edit.captureParent = nil
