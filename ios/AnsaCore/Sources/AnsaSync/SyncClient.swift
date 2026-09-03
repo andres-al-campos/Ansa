@@ -294,7 +294,20 @@ public final class SyncClient {
     private func listen() async {
         var backoff = Self.reconnectMin
         while !Task.isCancelled {
-            if await receive() {
+            switch await receive() {
+            case .skipped:
+                // Neither proof nor refusal: there was no credential to try
+                // with, so nothing was learned about the connection. Leaving
+                // `failures` alone is the point — counting this would raise the
+                // out-of-sync banner over a token that is merely a moment late,
+                // which is the ordinary state just after launch and after every
+                // return from background.
+                //
+                // The ladder is held at the floor rather than doubled: waiting
+                // is right, but a token that arrives a moment later should be
+                // picked up a moment later, not thirty seconds on.
+                backoff = Self.reconnectMin
+            case .connected:
                 // A connection that worked resets the ladder, so a later drop
                 // starts fast again. Note this turns on the *handshake*, not on
                 // anything arriving: a socket that connects and then sits quiet
@@ -308,7 +321,7 @@ public final class SyncClient {
                     live = true
                     onStatusChange?()
                 }
-            } else {
+            case .refused:
                 failures += 1
                 if failures >= Self.failuresBeforeWarning, live {
                     live = false
@@ -328,8 +341,20 @@ public final class SyncClient {
     ///   toward the out-of-sync warning. A connection that opened and later
     ///   dropped returns true: it proved the credential and the route work, so
     ///   the next attempt should start at the bottom of the ladder.
-    private func receive() async -> Bool {
-        guard let stream = await api.connect() else { return false }
+    /// What one connection attempt amounted to.
+    enum Attempt {
+        /// The socket opened. It may since have dropped, but the credential and
+        /// the route are proven.
+        case connected
+        /// The server refused, or there was no network.
+        case refused
+        /// Nothing was tried, because there was no credential to try with.
+        /// Not evidence about the connection either way.
+        case skipped
+    }
+
+    private func receive() async -> Attempt {
+        guard let stream = await api.connect() else { return .skipped }
         // Held on the client, not just locally, so `stop()` can close it. A
         // `defer` cannot: the close is async, and the detached Task a defer
         // would need is born cancelled when the reason for closing is
@@ -339,7 +364,7 @@ public final class SyncClient {
 
         guard await stream.open() else {
             await stream.close()
-            return false
+            return .refused
         }
 
         // Only now that it is open — a ping against a socket still handshaking
@@ -352,7 +377,7 @@ public final class SyncClient {
             handle(frame)
         }
         await stream.close()
-        return true
+        return .connected
     }
 
     /// Ping until one fails, then drop the connection.

@@ -30,6 +30,11 @@ public actor AnsaAPI {
     private let token: TokenSource
     private let user: String
 
+    /// Whether this build signs in. True means the `user` query fallback is
+    /// dead code that the server will refuse, so a missing token is a reason to
+    /// wait rather than to try and fail.
+    private let authenticated: Bool
+
     /// A per-install id sent on every write. The server echoes it on the
     /// broadcast, so this client recognises its own change coming back and
     /// skips re-adopting it — which is what stops a local edit being clobbered
@@ -44,12 +49,14 @@ public actor AnsaAPI {
         base: URL,
         token: @escaping TokenSource,
         user: String = "legacy",
+        authenticated: Bool = false,
         session: URLSession = .shared,
         defaults: UserDefaults = .standard
     ) {
         self.base = base
         self.token = token
         self.user = user
+        self.authenticated = authenticated
         self.session = session
 
         let key = "ansa.origin.v1"
@@ -175,12 +182,22 @@ public actor AnsaAPI {
         // secure origin.
         parts.scheme = parts.scheme == "https" ? "wss" : "ws"
         parts.path = "/api/events"
-        parts.queryItems =
-            if let t = await token() {
-                [URLQueryItem(name: "token", value: t)]
-            } else {
-                [URLQueryItem(name: "user", value: user)]
-            }
+        if let t = await token() {
+            parts.queryItems = [URLQueryItem(name: "token", value: t)]
+        } else if authenticated {
+            // No URL rather than the `user` fallback. On a build that signs in,
+            // that fallback cannot work — the server refuses it — so using it
+            // turns "the token isn't ready yet" into a failed handshake, and
+            // three of those raise the out-of-sync banner.
+            //
+            // A nil token is routine, not an outage: Clerk rotates roughly
+            // every minute, and the session takes a moment to restore after
+            // launch or a return from background. Those are moments to wait
+            // through, and the reconnect ladder comes back on its own.
+            return nil
+        } else {
+            parts.queryItems = [URLQueryItem(name: "user", value: user)]
+        }
         return parts.url
     }
 }

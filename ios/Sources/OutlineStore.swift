@@ -31,7 +31,11 @@ final class OutlineStore {
     @ObservationIgnored private let cache: TreeCache
 
     init(token: @escaping TokenSource = ClerkToken.current) {
-        api = AnsaAPI(base: Config.apiBase, token: token, user: Config.devUser)
+        api = AnsaAPI(
+            base: Config.apiBase, token: token, user: Config.devUser,
+            // A signing build has no use for the `user` fallback — the server
+            // refuses it — so a missing token means wait, not fail.
+            authenticated: ClerkConfig.publishableKey != nil)
         cache = TreeCache(url: Self.cacheURL)
         // Straight into the stored property, so the read happens before the
         // first paint rather than a frame into it. Assigning `tree` here would

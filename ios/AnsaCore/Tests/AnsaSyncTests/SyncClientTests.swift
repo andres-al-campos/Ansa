@@ -396,6 +396,26 @@ struct SyncClientTests {
         #expect(!client.live, "three refusals should have raised the banner")
     }
 
+    @Test("no credential to try with is not a refusal")
+    func missingCredentialIsQuiet() async {
+        // `connect()` returning nil means the attempt never happened — on a
+        // signing build with no token yet, there is no URL worth opening. That
+        // is the ordinary state just after launch and after every return from
+        // background, and counting it raised the out-of-sync banner on a phone
+        // whose connection was fine.
+        let api = FakeBackend()
+        await api.willConnect([])
+        let (client, _) = makeClient(api)
+
+        client.start()
+        defer { client.stop() }
+        // Long enough for many attempts at the 500ms floor the skip holds it
+        // to, so a ladder that counted these would be well past three.
+        try? await Task.sleep(for: .milliseconds(60))
+
+        #expect(client.live, "a missing token should not raise the banner")
+    }
+
     @Test("one refusal is not enough to warn")
     func oneRefusalIsQuiet() async {
         // A single drop is ordinary — the object hibernates, wifi blips. A
