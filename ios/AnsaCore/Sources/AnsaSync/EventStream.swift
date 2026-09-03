@@ -41,13 +41,17 @@ public protocol EventStream: Sendable {
 final class WebSocketStream: EventStream {
     private let task: URLSessionWebSocketTask
     private let opener: Opener
+    /// Held so `close` can invalidate it. A delegate session retains its
+    /// delegate and stays alive until told otherwise — cancelling the task is
+    /// not enough.
+    private let session: URLSession
 
     init(url: URL) {
         opener = Opener()
         // A session per connection, because the delegate is per session and
         // holds this connection's continuation. Sharing `URLSession.shared`
         // would mean one delegate for every socket the app ever opens.
-        let session = URLSession(
+        session = URLSession(
             configuration: .default, delegate: opener, delegateQueue: nil)
         task = session.webSocketTask(with: url)
         task.resume()
@@ -77,7 +81,22 @@ final class WebSocketStream: EventStream {
 
     func close() async {
         task.cancel(with: .goingAway, reason: nil)
+        // The session as well as the task. A delegate session holds a strong
+        // reference to its delegate and is not released when its task is
+        // cancelled, so a reconnect that only cancelled the task left the whole
+        // session alive. One per attempt, every 500ms once the ladder is at its
+        // floor, is a leak that ends with the per-host connection limit full —
+        // and then the handshake fails *on the device*, without a request ever
+        // reaching the server. That reads as "refused" and raises the
+        // out-of-sync banner on a perfectly good network.
+        session.invalidateAndCancel()
         await opener.give(up: false)
+    }
+
+    /// A last resort for a stream dropped without `close()`. Invalidating twice
+    /// is harmless; leaking the session is not.
+    deinit {
+        session.invalidateAndCancel()
     }
 }
 
