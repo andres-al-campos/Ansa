@@ -597,15 +597,24 @@ struct OutlineView: View {
                 .foregroundStyle(Color.primary)
                 .frame(width: 52, height: 52)
                 .background(Circle().fill(.regularMaterial))
+                // Flattened into one layer before the shadow, so the circle and
+                // the glyph cannot resolve at different times.
+                //
+                // They did. The button rides the bottom safe-area inset, which
+                // animates down as the keyboard goes; the material background
+                // travelled with that animation while the `Image` was laid out
+                // against the *final* safe area from the first frame. So the
+                // plus appeared at the bottom and waited there while the circle
+                // slid down to meet it, with the outgoing checkmark fading in
+                // the old layout — two images, in two coordinate spaces, inside
+                // one view. No change to the transition could reach it, because
+                // it was never a transition.
+                .drawingGroup()
                 .shadow(color: .black.opacity(0.12), radius: 6, y: 2)
-                // Swapped outright. `.symbolEffect(.replace)` animated the
-                // outgoing glyph as its own detached layer, which is fine on
-                // its own and wrong here: the swap fires as the keyboard is
-                // dismissing, so the button slides down with the keyboard
-                // while the old checkmark plays out where it was — a tick
-                // hanging in the air outside its own button. A plain swap has
-                // nothing left to strand.
-                .id(adding)
+                // Deliberately no `.id(adding)` and no transition. Either one
+                // makes the two states separate views, so SwiftUI removes one
+                // and inserts the other, which is a second way to get two
+                // buttons on screen at once.
         }
         .buttonStyle(.plain)
         .disabled(!interactive)
