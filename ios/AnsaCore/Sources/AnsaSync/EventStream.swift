@@ -1,5 +1,6 @@
 import AnsaCore
 import Foundation
+import OSLog
 
 /// One live connection, from handshake to drop.
 ///
@@ -145,6 +146,7 @@ private final class Opener: NSObject, URLSessionWebSocketDelegate, @unchecked Se
         _ session: URLSession, webSocketTask: URLSessionWebSocketTask,
         didCloseWith closeCode: URLSessionWebSocketTask.CloseCode, reason: Data?
     ) {
+        log("closed \(closeCode.rawValue): \(String(data: reason ?? Data(), encoding: .utf8) ?? "")")
         settle(false)
     }
 
@@ -153,6 +155,21 @@ private final class Opener: NSObject, URLSessionWebSocketDelegate, @unchecked Se
     func urlSession(
         _ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?
     ) {
+        // Logged, not discarded. This parameter is the only place that says
+        // *why* a handshake failed, and throwing it away is what turned one
+        // server-side outage into three rounds of guessing on this side: every
+        // layer above sees an indistinguishable "refused". -1011 here, for
+        // instance, is a non-101 HTTP response — the server answering, and
+        // refusing, rather than the network being down.
+        if let error {
+            let ns = error as NSError
+            log("\(ns.domain) \(ns.code): \(ns.localizedDescription)")
+        }
         settle(false)
+    }
+
+    private func log(_ message: String) {
+        Logger(subsystem: "com.ansa.sync", category: "socket").error(
+            "handshake failed — \(message, privacy: .public)")
     }
 }

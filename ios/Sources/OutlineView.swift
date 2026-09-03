@@ -332,7 +332,9 @@ struct OutlineView: View {
                     // lie that pushes people into re-typing work that is
                     // already queued and will go out on its own.
                     SyncBanner(
-                        text: "Not receiving changes from other devices. Your edits are still saved.")
+                        text:
+                            "Not receiving changes from other devices. Your edits are still saved."
+                    )
                 }
 
                 if scope == nil {
