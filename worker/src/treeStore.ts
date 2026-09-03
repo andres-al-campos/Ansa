@@ -108,9 +108,16 @@ export class TreeStore {
   /**
    * Replace this database's nodes with `tree`.
    *
-   * Wholesale rewrite rather than a computed diff, as in the Node store: the
-   * whole tree is a few KB and this removes any chance of the table drifting
-   * from the tree the op produced.
+   * Wholesale rewrite rather than a computed diff, as in the Node store: it
+   * removes any chance of the table drifting from the tree the op produced.
+   *
+   * The cost is one row written per node per call, and Durable Objects meter
+   * rows written, not bytes — so this is cheap on the axis the comment above
+   * used to reason about and expensive on the axis that is actually billed. It
+   * also scales with the size of the tree rather than the size of the edit, so
+   * it gets worse the more you use the app. Keep it for the ops that genuinely
+   * rewrite many nodes (anything reconciling `done`); the single-field ops
+   * below write their one row directly.
    *
    * The caller wraps this in ctx.storage.transactionSync — see AnsaTree. It is
    * not wrapped here because this class is deliberately ignorant of the Durable
@@ -119,21 +126,80 @@ export class TreeStore {
    */
   replace(tree: Tree): Tree {
     this.sql.exec('DELETE FROM nodes')
-    for (const n of tree) {
-      this.sql.exec(
-        `INSERT INTO nodes (id, parentId, text, done, "order", collapsed, pinned, lastOpenedAt, createdAt)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        n.id,
-        n.parentId,
-        n.text,
-        n.done ? 1 : 0,
-        n.order,
-        n.collapsed ? 1 : 0,
-        n.pinned ? 1 : 0,
-        n.lastOpenedAt ?? null,
-        n.createdAt,
-      )
+    for (const n of tree) this.insert(n)
+    return tree
+  }
+
+  /**
+   * Persist `next`, writing only the rows that differ from `before`.
+   *
+   * Same guarantee as `replace` — the table ends up holding exactly `next` —
+   * but at a cost proportional to the edit rather than to the tree. That
+   * matters because Durable Objects bill rows written: rewriting 59 nodes to
+   * tick one checkbox is ~118 row-writes, and the daily free-tier allowance is
+   * spent in a few hundred edits. An op that really does touch the whole tree
+   * still writes the whole tree; nothing here caps what a change may do.
+   *
+   * The comparison is on the node's own fields, so a node whose position in the
+   * array moved but whose values did not is correctly left alone — `load()`
+   * returns table order, which is not meaningful.
+   */
+  private write(before: Tree, next: Tree): Tree {
+    const was = new Map(before.map((n) => [n.id, n]))
+    for (const n of next) {
+      const old = was.get(n.id)
+      if (old === undefined) {
+        this.insert(n)
+      } else if (!sameNode(old, n)) {
+        this.sql.exec(
+          `UPDATE nodes SET parentId = ?, text = ?, done = ?, "order" = ?,
+             collapsed = ?, pinned = ?, lastOpenedAt = ?, createdAt = ? WHERE id = ?`,
+          n.parentId,
+          n.text,
+          n.done ? 1 : 0,
+          n.order,
+          n.collapsed ? 1 : 0,
+          n.pinned ? 1 : 0,
+          n.lastOpenedAt ?? null,
+          n.createdAt,
+          n.id,
+        )
+      }
+      was.delete(n.id)
     }
+    // Whatever is left was in the tree before and is not in it now.
+    for (const id of was.keys()) this.sql.exec('DELETE FROM nodes WHERE id = ?', id)
+    return next
+  }
+
+  private insert(n: Tree[number]): void {
+    this.sql.exec(
+      `INSERT INTO nodes (id, parentId, text, done, "order", collapsed, pinned, lastOpenedAt, createdAt)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      n.id,
+      n.parentId,
+      n.text,
+      n.done ? 1 : 0,
+      n.order,
+      n.collapsed ? 1 : 0,
+      n.pinned ? 1 : 0,
+      n.lastOpenedAt ?? null,
+      n.createdAt,
+    )
+  }
+
+  /**
+   * Write one column of one row, and return the tree with the same change.
+   *
+   * The tree still comes from the pure helper in shared/, so the in-memory
+   * result is produced by exactly the code every other client uses; only the
+   * persistence is narrowed. The pair has to stay in step — a helper that
+   * touched a second node would be saved as one — so this is only for the ops
+   * whose helper is a single-field `map` over one id, and the assertion below
+   * catches it if one ever stops being.
+   */
+  private writeField(tree: Tree, id: NodeId, column: string, value: unknown): Tree {
+    this.sql.exec(`UPDATE nodes SET "${column}" = ? WHERE id = ?`, value, id)
     return tree
   }
 
@@ -166,7 +232,7 @@ export class TreeStore {
     requireExistingParent(tree, parentId)
     const added = addChild(tree, parentId, text)
     const scope = this.rootsFor(tree, added.tree, parentId)
-    return { tree: this.replace(reconcileDone(added.tree, scope)), id: added.id }
+    return { tree: this.write(tree, reconcileDone(added.tree, scope)), id: added.id }
   }
 
   addSubtree(parentId: NodeId | null, nodes: SubtreeSpec[]): { tree: Tree; ids: NodeId[] } {
@@ -174,41 +240,46 @@ export class TreeStore {
     requireExistingParent(tree, parentId)
     const added = addSubtree(tree, parentId, nodes)
     const scope = this.rootsFor(tree, added.tree, parentId)
-    return { tree: this.replace(reconcileDone(added.tree, scope)), ids: added.ids }
+    return { tree: this.write(tree, reconcileDone(added.tree, scope)), ids: added.ids }
   }
 
   remove(id: NodeId): Tree {
     const tree = this.load()
     const next = removeNode(tree, id)
-    return this.replace(reconcileDone(next, this.rootsFor(tree, next, id)))
+    return this.write(tree, reconcileDone(next, this.rootsFor(tree, next, id)))
   }
 
   rename(id: NodeId, text: string): Tree {
-    return this.replace(setText(this.load(), id, text))
+    return this.writeField(setText(this.load(), id, text), id, 'text', text)
   }
 
   setDone(id: NodeId, done: boolean): { tree: Tree; completed: NodeId[] } {
-    const { tree, completed } = setDone(this.load(), id, done)
-    return { tree: this.replace(tree), completed }
+    const before = this.load()
+    const { tree, completed } = setDone(before, id, done)
+    return { tree: this.write(before, tree), completed }
   }
 
   move(id: NodeId, newParentId: NodeId | null, index: number): Tree {
     const tree = this.load()
     requireExistingParent(tree, newParentId)
     const next = moveNode(tree, id, newParentId, index)
-    return this.replace(reconcileDone(next, this.rootsFor(tree, next, id, newParentId)))
+    return this.write(tree, reconcileDone(next, this.rootsFor(tree, next, id, newParentId)))
   }
 
   toggleCollapsed(id: NodeId): Tree {
-    return this.replace(toggleCollapsed(this.load(), id))
+    const tree = toggleCollapsed(this.load(), id)
+    const now = tree.find((n) => n.id === id)?.collapsed ?? false
+    return this.writeField(tree, id, 'collapsed', now ? 1 : 0)
   }
 
   setPinned(id: NodeId, pinned: boolean): Tree {
-    return this.replace(setPinned(this.load(), id, pinned))
+    return this.writeField(setPinned(this.load(), id, pinned), id, 'pinned', pinned ? 1 : 0)
   }
 
   markOpened(id: NodeId): Tree {
-    return this.replace(markOpened(this.load(), id))
+    const tree = markOpened(this.load(), id)
+    const at = tree.find((n) => n.id === id)?.lastOpenedAt ?? null
+    return this.writeField(tree, id, 'lastOpenedAt', at)
   }
 
   /**
@@ -225,12 +296,13 @@ export class TreeStore {
    * in the table.
    */
   applyOp(op: Op): { tree: Tree; completed: NodeId[] } {
-    const { tree, completed } = applyOp(this.load(), op)
+    const before = this.load()
+    const { tree, completed } = applyOp(before, op)
     const bad = invalidTree(tree)
     if (bad) {
       throw new RejectedWriteError(`That change would corrupt the tree (${bad}); nothing was saved.`)
     }
-    return { tree: this.replace(tree), completed }
+    return { tree: this.write(before, tree), completed }
   }
 
   replaceAll(tree: Tree): Tree {
@@ -266,6 +338,27 @@ export class UnknownParentError extends RejectedWriteError {
  * Here that case cannot arise, so this is only what its name says: a guard
  * against a dangling parent.
  */
+/**
+ * Whether two versions of a node hold the same values.
+ *
+ * Field-by-field rather than a JSON compare because `lastOpenedAt` is omitted
+ * when absent and undefined when read back from a spread — key order and
+ * presence would make equal nodes compare unequal, which would cost a write
+ * rather than corrupt anything, but the whole point here is not writing.
+ */
+function sameNode(a: Tree[number], b: Tree[number]): boolean {
+  return (
+    a.parentId === b.parentId &&
+    a.text === b.text &&
+    a.done === b.done &&
+    a.order === b.order &&
+    a.collapsed === b.collapsed &&
+    !!a.pinned === !!b.pinned &&
+    (a.lastOpenedAt ?? null) === (b.lastOpenedAt ?? null) &&
+    a.createdAt === b.createdAt
+  )
+}
+
 function requireExistingParent(tree: Tree, parentId: NodeId | null): void {
   if (parentId === null) return
   if (!tree.some((n) => n.id === parentId)) throw new UnknownParentError(parentId)
