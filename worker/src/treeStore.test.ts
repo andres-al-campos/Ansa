@@ -322,3 +322,129 @@ describe('writes cost the edit, not the tree', () => {
     expect(storeA.load()).toEqual(before)
   })
 })
+
+describe('the trash', () => {
+  it('keeps nothing unless the op asks', () => {
+    // The default matters more than it looks: three of the removeNode call
+    // sites in the web client are editing mechanics — a backspace merging two
+    // rows, an empty row abandoned — and trashing those would fill it with
+    // blank strings.
+    const { id } = storeA.addChild(null, 'project')
+    storeA.applyOp({ op: 'removeNode', id })
+    expect(storeA.trashPage().entries).toEqual([])
+  })
+
+  it('keeps the whole subtree, and reports its size', () => {
+    const { id: root } = storeA.addChild(null, 'project')
+    const { id: parent } = storeA.addChild(root, 'parent')
+    storeA.addChild(parent, 'child')
+    storeA.applyOp({ op: 'removeNode', id: parent, trash: true })
+
+    const { entries } = storeA.trashPage()
+    expect(entries).toHaveLength(1)
+    expect(entries[0].text).toBe('parent')
+    // The node itself plus its one child.
+    expect(entries[0].count).toBe(2)
+    expect(storeA.load().map((n) => n.text).sort()).toEqual(['project'])
+  })
+
+  it('restores under the original parent', () => {
+    const { id: root } = storeA.addChild(null, 'project')
+    const { id: parent } = storeA.addChild(root, 'parent')
+    const { id: child } = storeA.addChild(parent, 'child')
+    storeA.applyOp({ op: 'removeNode', id: parent, trash: true })
+
+    const entry = storeA.trashPage().entries[0]
+    const tree = storeA.restore(entry.id)!
+    expect(tree.find((n) => n.id === parent)!.parentId).toBe(root)
+    expect(tree.find((n) => n.id === child)!.parentId).toBe(parent)
+    // Restoring consumes the entry.
+    expect(storeA.trashPage().entries).toEqual([])
+    expect(invalidTree(storeA.load())).toBeNull()
+  })
+
+  it('restores to the top level when the original parent is gone too', () => {
+    const { id: root } = storeA.addChild(null, 'project')
+    const { id: parent } = storeA.addChild(root, 'parent')
+    storeA.applyOp({ op: 'removeNode', id: parent, trash: true })
+    storeA.applyOp({ op: 'removeNode', id: root, trash: true })
+
+    const entry = storeA.trashPage().entries.find((e) => e.text === 'parent')!
+    const tree = storeA.restore(entry.id)!
+    // Notion's rule: an orphan comes back as a project rather than vanishing.
+    expect(tree.find((n) => n.id === parent)!.parentId).toBeNull()
+    expect(invalidTree(storeA.load())).toBeNull()
+  })
+
+  it('does not re-adopt when the parent is restored afterwards', () => {
+    // Stated as a test because it is the accepted cost of the rule above, not
+    // an oversight: the child is already a project by then, and moving it back
+    // would be a second, unasked-for change.
+    const { id: root } = storeA.addChild(null, 'project')
+    const { id: parent } = storeA.addChild(root, 'parent')
+    storeA.applyOp({ op: 'removeNode', id: parent, trash: true })
+    storeA.applyOp({ op: 'removeNode', id: root, trash: true })
+
+    const childEntry = storeA.trashPage().entries.find((e) => e.text === 'parent')!
+    storeA.restore(childEntry.id)
+    const rootEntry = storeA.trashPage().entries.find((e) => e.text === 'project')!
+    const tree = storeA.restore(rootEntry.id)!
+    expect(tree.find((n) => n.id === parent)!.parentId).toBeNull()
+    expect(invalidTree(tree)).toBeNull()
+  })
+
+  it('restoring an unknown entry answers null rather than throwing', () => {
+    expect(storeA.restore('nope')).toBeNull()
+  })
+
+  it('forgets an entry for good', () => {
+    const { id } = storeA.addChild(null, 'project')
+    storeA.applyOp({ op: 'removeNode', id, trash: true })
+    const entry = storeA.trashPage().entries[0]
+    storeA.forget(entry.id)
+    expect(storeA.trashPage().entries).toEqual([])
+    expect(storeA.restore(entry.id)).toBeNull()
+  })
+
+  it('sweeps only what is past the cutoff', () => {
+    const { id: a1 } = storeA.addChild(null, 'old')
+    const { id: a2 } = storeA.addChild(null, 'new')
+    storeA.applyOp({ op: 'removeNode', id: a1, trash: true })
+    storeA.applyOp({ op: 'removeNode', id: a2, trash: true })
+    // Age the first entry by hand — the alternative is a clock injection that
+    // exists only for this assertion.
+    const old = storeA.trashPage().entries.find((e) => e.text === 'old')!
+    a.exec('UPDATE trash_entries SET deletedAt = ? WHERE id = ?', 1000, old.id)
+
+    expect(storeA.sweep(2000)).toBe(1)
+    expect(storeA.trashPage().entries.map((e) => e.text)).toEqual(['new'])
+    // The swept entry's nodes go with it, not just its row.
+    expect(a.exec('SELECT * FROM trash_nodes WHERE entryId = ?', old.id).toArray()).toEqual([])
+  })
+
+  it('pages newest first, and says when there is more', () => {
+    const ids = ['one', 'two', 'three'].map((t) => storeA.addChild(null, t).id)
+    for (const id of ids) storeA.applyOp({ op: 'removeNode', id, trash: true })
+    // Distinct timestamps, so the order under test is the one being asserted
+    // rather than whatever three same-millisecond rows happen to come back in.
+    const all = storeA.trashPage().entries
+    all.forEach((e, i) =>
+      a.exec('UPDATE trash_entries SET deletedAt = ? WHERE id = ?', 1000 + i, e.id))
+
+    const first = storeA.trashPage(2)
+    expect(first.entries).toHaveLength(2)
+    expect(first.nextCursor).toBeDefined()
+    const second = storeA.trashPage(2, first.nextCursor)
+    expect(second.entries).toHaveLength(1)
+    expect(second.nextCursor).toBeUndefined()
+    // No entry appears on both pages.
+    const seen = [...first.entries, ...second.entries].map((e) => e.id)
+    expect(new Set(seen).size).toBe(3)
+  })
+
+  it('is per owner, like everything else here', () => {
+    const { id } = storeA.addChild(null, 'A project')
+    storeA.applyOp({ op: 'removeNode', id, trash: true })
+    expect(storeB.trashPage().entries).toEqual([])
+  })
+})
