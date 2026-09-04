@@ -54,7 +54,25 @@ export type Op =
   | { op: 'addSubtree'; ids: NodeId[]; parentId: NodeId | null; nodes: SubtreeSpec[]; at: number }
   | { op: 'setText'; id: NodeId; text: string }
   | { op: 'setDone'; id: NodeId; done: boolean }
-  | { op: 'removeNode'; id: NodeId }
+  | {
+      op: 'removeNode'
+      id: NodeId
+      /**
+       * Whether the subtree is kept in the trash, so it can be restored.
+       *
+       * Optional and off by default, because most `removeNode`s are not a user
+       * deleting anything: backspace at the start of a line merges two rows by
+       * removing one, and an empty row abandoned mid-edit removes itself. Those
+       * would fill the trash with blank strings and merge artifacts, which is
+       * how it stops being useful for the deletes that matter.
+       *
+       * A flag rather than a second op kind, because clients queue ops while
+       * offline: an old build's queued `removeNode` reaching a new server must
+       * still mean something, and an absent optional field does. A `discardNode`
+       * op that older clients had never heard of would not.
+       */
+      trash?: boolean
+    }
   | { op: 'moveNode'; id: NodeId; parentId: NodeId | null; index: number }
   | { op: 'indent'; id: NodeId }
   | { op: 'outdent'; id: NodeId }
@@ -151,6 +169,9 @@ export function applyOp(tree: Tree, op: Op): { tree: Tree; completed: NodeId[] }
     case 'setDone':
       return setDone(tree, op.id, op.done)
     case 'removeNode':
+      // `trash` is not read here. It says what to keep on the way out, which is
+      // a persistence question — the resulting tree is the same either way, and
+      // this stays the pure function every client runs.
       return structural(tree, removeNode(tree, op.id), op.id)
     case 'moveNode':
       return structural(tree, moveNode(tree, op.id, op.parentId, op.index), op.id, op.parentId)
@@ -237,8 +258,13 @@ export function parseOp(input: unknown): { op: Op } | { error: string } {
       if (done === undefined) return miss('done', 'a boolean')
       return { op: { op: 'setDone', id: id!, done } }
     }
-    case 'removeNode':
-      return { op: { op: 'removeNode', id: id! } }
+    case 'removeNode': {
+      // Absent means false. A client that has never heard of the trash sends no
+      // field and gets exactly today's behaviour, which is what lets an op
+      // queued by an older build stay meaningful.
+      const trash = bool('trash')
+      return { op: trash === undefined ? { op: 'removeNode', id: id! } : { op: 'removeNode', id: id!, trash } }
+    }
     case 'moveNode': {
       const parentId = nullableStr('parentId')
       if (parentId === undefined) return miss('parentId', 'a string or null')
