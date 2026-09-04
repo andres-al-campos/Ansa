@@ -13,6 +13,7 @@ import {
 import { useFoldAnimation } from './useFoldAnimation'
 import { useOutlinerSync } from './useOutlinerSync'
 import { useRipple } from './useRipple'
+import TrashPanel from './TrashPanel'
 import WhoAmIPanel from './WhoAmI'
 import SyncToast from './SyncToast'
 import type { Op } from '@shared/ops'
@@ -30,6 +31,7 @@ import {
   progressOf,
   projectList,
   projectSections,
+  pinnedTasks,
   removeNode,
   resumeScope,
   roots,
@@ -166,6 +168,29 @@ function ZoomIcon() {
       focusable="false"
     >
       <path d="M3 7h8M7.5 3.5L11 7l-3.5 3.5" />
+    </svg>
+  )
+}
+
+/**
+ * The pin mark. Filled when pinned, outline when not — the fill is what makes a
+ * pinned row readable at a glance once the pointer has left.
+ */
+function PinIcon() {
+  return (
+    <svg
+      viewBox="0 0 14 14"
+      width="16"
+      height="16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.4"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+      focusable="false"
+    >
+      <path d="M7 8.5V12M4.2 2h5.6l-.8 3.2 1.4 1.6H3.6l1.4-1.6L4.2 2z" />
     </svg>
   )
 }
@@ -892,6 +917,12 @@ export default function Outliner({ initial }: { initial: Tree }) {
   // Sidebar projects, split into Pinned and Recent (most-recently-opened first).
   const sections = projectSections(tree)
 
+  // Pinned tasks — the pinned nodes that aren't projects. Its own section
+  // because the two answer different questions: a pinned project is a place you
+  // go, a pinned task is a specific thing partway down a tree, and it only
+  // reads with the trail that leads to it.
+  const checkpoints = pinnedTasks(tree)
+
   // One sidebar project row: the name plus a ⋯ menu holding pin and delete.
   // Shared by both the Pinned and Recent lists.
   const projectRow = (node: (typeof sections.unpinned)[number]) => {
@@ -1013,6 +1044,34 @@ export default function Outliner({ initial }: { initial: Tree }) {
           </>
         )}
 
+        {checkpoints.length > 0 && (
+          <>
+            <p className="sect">Pinned tasks</p>
+            <ol className="rail pins">
+              {checkpoints.map(({ node, trail }) => (
+                <li key={node.id} className={scope === node.id ? 'here' : ''}>
+                  <button className="pin" onClick={() => openProject(node.id)}>
+                    <span className="pin-text">{node.text || 'Untitled'}</span>
+                    {/* The trail is what makes a pinned task legible: "Total the
+                        invoices" means nothing without "Taxes › Page 2". */}
+                    <span className="pin-trail">
+                      {trail.map((t) => t.text || 'Untitled').join(' › ')}
+                    </span>
+                  </button>
+                  <button
+                    className="row-more"
+                    onClick={() => togglePin(node.id)}
+                    aria-label="Unpin this task"
+                    title="Unpin"
+                  >
+                    ✕
+                  </button>
+                </li>
+              ))}
+            </ol>
+          </>
+        )}
+
         <p className="sect">Projects</p>
         <ol className="rail projects">
           {sections.unpinned.map(projectRow)}
@@ -1052,6 +1111,17 @@ export default function Outliner({ initial }: { initial: Tree }) {
             ↷ Redo
           </button>
         </div>
+
+        <TrashPanel
+          tree={tree}
+          onRestored={(next) => {
+            // The server's tree, adopted wholesale. A restore's landing spot is
+            // the server's call — the original parent, or top level when that
+            // parent was deleted too — so recomputing it here would be a second
+            // implementation of a rule that has to match.
+            setTree(next)
+          }}
+        />
 
         <details className="data-fold">
           <summary>Backup &amp; transfer</summary>
@@ -1484,6 +1554,20 @@ export default function Outliner({ initial }: { initial: Tree }) {
                   title="Zoom in"
                 >
                   <ZoomIcon />
+                </button>
+
+                {/* Pin, in the same hover-revealed column as zoom. A pinned row
+                    keeps its mark visible after the pointer leaves — otherwise
+                    the only way to tell a pinned task from an unpinned one is to
+                    go and look in the sidebar. */}
+                <button
+                  className={'pin-toggle trailing' + (node.pinned ? ' on' : '')}
+                  onClick={() => togglePin(id)}
+                  aria-pressed={!!node.pinned}
+                  aria-label={node.pinned ? `Unpin ${node.text}` : `Pin ${node.text}`}
+                  title={node.pinned ? 'Unpin' : 'Pin to the sidebar'}
+                >
+                  <PinIcon />
                 </button>
               </div>
             )

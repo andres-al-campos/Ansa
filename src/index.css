@@ -358,7 +358,88 @@ button { font: inherit; color: inherit; }
 .undo-actions button:hover:not(:disabled) { border-color: var(--brass); color: var(--ink); }
 .undo-actions button:disabled { opacity: 0.4; cursor: default; }
 
-/* Backup is an escape hatch, folded away so it doesn't read as a chore. */
+/* Pinned tasks — the sidebar's checkpoints.
+ *
+ * Two lines rather than one: the task's own text, and the trail that leads to
+ * it. The trail is what makes the row legible — "Total the invoices" means
+ * nothing without "Taxes › Page 2" under it — so it is small and quiet but
+ * always present, not a tooltip. */
+.rail.pins li {
+  position: relative;
+  display: flex;
+  align-items: center;
+  border-radius: 5px;
+}
+.rail.pins li.here { background: var(--brass-soft); }
+.rail.pins .pin {
+  /* `width: auto` on both buttons in this row, against `.rail button`'s
+     `width: 100%`. That 100% made the ✕ — whose `flex: none` leaves its basis
+     at `auto`, so it reads the declared width — claim the entire row, leaving
+     this one nothing to grow into and collapsing it to its 12px of padding. */
+  flex: 1 1 0;
+  width: auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 1px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  padding: 4px 6px;
+  border-radius: 5px;
+  color: var(--ink);
+  /* Matches the project rows below it. `font: inherit` here would take the
+     body size and make a checkpoint shout louder than the project it sits in. */
+  font-size: 12.5px;
+  line-height: 1.4;
+}
+.rail.pins li:hover { background: var(--row-hover); }
+.rail.pins li.here:hover { background: var(--brass-soft); }
+.pin-text {
+  width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Truncates from the left: the tail of a trail is the part nearest the task and
+ * so the part that identifies it. A right-side ellipsis would keep the project
+ * name every sibling pin already shares and cut the half that tells them
+ * apart. */
+.pin-trail {
+  /* Its own size rather than the `.fine` class the markup also carries: that
+     rule is scoped to `.filters` and does nothing out here. */
+  font-size: 11px;
+  color: var(--ink-ghost);
+  width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: rtl;
+  text-align: left;
+}
+.rail.pins .row-more {
+  flex: none;
+  width: auto;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--ink-ghost);
+  padding: 4px 6px;
+  border-radius: 5px;
+  opacity: 0;
+  font-size: 11px;
+  transition: opacity 0.12s ease, color 0.12s ease;
+}
+.rail.pins li:hover .row-more { opacity: 1; }
+.rail.pins .row-more:hover { color: var(--danger); }
+
+/* The trash, folded like Backup: somewhere to go when something went wrong, not
+ * a chore advertising itself. Nothing here needs attention — the 30-day sweep
+ * is what keeps it from becoming a task, so there is no count badge and no
+ * empty button. */
+.trash-fold > summary,
 .data-fold > summary {
   font-size: 10px;
   letter-spacing: 0.13em;
@@ -369,10 +450,69 @@ button { font: inherit; color: inherit; }
   list-style: none;
   padding: 2px 0;
 }
+.trash-fold > summary::-webkit-details-marker,
 .data-fold > summary::-webkit-details-marker { display: none; }
+.trash-fold > summary::before,
 .data-fold > summary::before { content: '▸ '; font-size: 8px; }
+.trash-fold[open] > summary::before,
 .data-fold[open] > summary::before { content: '▾ '; }
+.trash-fold > summary:hover,
 .data-fold > summary:hover { color: var(--ink-mid); }
+
+.trash-fold { margin-bottom: 14px; }
+/* Sizes set here rather than by the `.fine` class the markup carries: that rule
+   is scoped to `.filters`, so everything in this panel would otherwise render at
+   body size in a 200px column. */
+.trash-fold p { font-size: 11px; color: var(--ink-ghost); line-height: 1.45; }
+.trash-note { margin: 6px 0 8px; }
+.trash-error { margin: 6px 0; color: var(--danger); }
+/* A column, not a row: the sidebar is ~200px, and text beside two buttons
+   leaves the text about 60px — narrow enough to break one word per line. */
+.rail.trash-list li {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 3px;
+  padding: 5px 6px;
+  border-radius: 5px;
+}
+.rail.trash-list li:hover { background: var(--row-hover); }
+.trash-what { min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.trash-meta { font-size: 11px; color: var(--ink-ghost); line-height: 1.4; }
+.trash-text {
+  font-size: 12.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ink);
+}
+/* Revealed on hover, like every other row action here. Restore is the reason
+ * the trash exists, so it is the one that reads as a button; Delete-for-good
+ * stays quiet, since the sweep already does that job unprompted. */
+.trash-actions { display: flex; gap: 4px; opacity: 0; transition: opacity 0.12s ease; }
+.rail.trash-list li:hover .trash-actions,
+.rail.trash-list li:focus-within .trash-actions { opacity: 1; }
+.trash-actions button {
+  background: var(--panel);
+  border: 1px solid var(--edge);
+  border-radius: 5px;
+  cursor: pointer;
+  color: var(--ink-mid);
+  font-size: 11.5px;
+  padding: 3px 7px;
+}
+.trash-actions button:hover { border-color: var(--brass); color: var(--ink); }
+.trash-actions button.danger:hover { border-color: var(--danger); color: var(--danger); }
+.trash-more { justify-content: center; }
+.trash-more button {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--ink-faint);
+  font-size: 12px;
+  padding: 4px;
+}
+.trash-more button:hover { color: var(--ink-mid); }
 
 .data-actions { display: flex; gap: 8px; margin-top: 8px; }
 .data-actions button {
@@ -709,6 +849,47 @@ button { font: inherit; color: inherit; }
   opacity: 1;
   color: var(--ink-mid);
   background: var(--edge-lit);
+}
+
+/* Pin, sharing the trailing column with zoom.
+ *
+ * Inherits .zoom's box so the two read as one column rather than two controls
+ * that happen to be adjacent. The margin-left:auto stays on .zoom alone — it is
+ * the first of the pair, so it pushes both to the edge; repeating it here would
+ * split them apart with the label's slack between. */
+.pin-toggle {
+  flex: none;
+  padding: 3px;
+  margin-right: -1px;
+  border-radius: 5px;
+  align-self: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--ink-ghost);
+  line-height: 1;
+  opacity: 0;
+  transition: opacity 0.12s ease, color 0.12s ease, background 0.12s ease;
+}
+
+.row:hover .pin-toggle { opacity: 1; }
+.row:hover .pin-toggle:hover,
+.pin-toggle:focus-visible {
+  opacity: 1;
+  color: var(--ink-mid);
+  background: var(--edge-lit);
+}
+
+/* A pinned row keeps its mark after the pointer leaves. Without this the only
+ * way to tell a pinned task from an unpinned one is to go and look in the
+ * sidebar, which is exactly the "where was it?" the pin exists to answer. */
+.pin-toggle.on {
+  opacity: 1;
+  color: var(--brass);
+  fill: currentColor;
 }
 
 /* Vertical nesting guides, one per ancestor level, aligned under each parent
