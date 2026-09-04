@@ -242,3 +242,58 @@ export async function sendOp(op: Op): Promise<WriteResult> {
   }
   return { status: 'unreachable' }
 }
+
+/** One line of the trash list: what was deleted, when, and how big it was. */
+export interface TrashEntry {
+  id: string
+  rootId: string
+  text: string
+  deletedAt: number
+  count: number
+}
+
+/**
+ * A page of deleted subtrees, newest first.
+ *
+ * Fetched on demand rather than carried in the tree. The trash is looked at
+ * rarely and grows without bound between sweeps, and every edit already reads
+ * the whole tree — keeping it off that path is why it is stored apart.
+ *
+ * Throws rather than returning null. The caller is a panel the user just opened,
+ * so it has somewhere to put an error, unlike the fire-and-forget writes above.
+ */
+export async function fetchTrash(cursor?: number): Promise<{ entries: TrashEntry[]; nextCursor?: number }> {
+  const query = cursor === undefined ? '' : `?cursor=${cursor}`
+  const res = await fetch(`${BASE}/api/trash${query}`, { headers: await headers() })
+  if (!res.ok) throw new Error(`Could not load the trash (HTTP ${res.status}).`)
+  return (await res.json()) as { entries: TrashEntry[]; nextCursor?: number }
+}
+
+/**
+ * Put a deleted subtree back. Returns the whole tree the server now holds.
+ *
+ * The tree comes back rather than being recomputed locally: the restore's
+ * landing spot is the server's call — the original parent, or top level when
+ * that parent was deleted too — and guessing it here would be a second
+ * implementation of a rule that has to match.
+ */
+export async function restoreTrash(entryId: string): Promise<Tree> {
+  const res = await fetch(`${BASE}/api/trash/${encodeURIComponent(entryId)}/restore`, {
+    method: 'POST',
+    headers: await headers(),
+  })
+  if (res.status === 404) {
+    throw new Error('That item is no longer in the trash.')
+  }
+  if (!res.ok) throw new Error(`Could not restore that item (HTTP ${res.status}).`)
+  return ((await res.json()) as { tree: Tree }).tree
+}
+
+/** Drop one trashed subtree for good, before the sweep would. */
+export async function forgetTrash(entryId: string): Promise<void> {
+  const res = await fetch(`${BASE}/api/trash/${encodeURIComponent(entryId)}`, {
+    method: 'DELETE',
+    headers: await headers(),
+  })
+  if (!res.ok) throw new Error(`Could not delete that item (HTTP ${res.status}).`)
+}
