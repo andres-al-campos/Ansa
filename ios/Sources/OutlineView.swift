@@ -492,13 +492,12 @@ struct OutlineView: View {
                     // in. Sharing an edge put zoom one slip away from a delete
                     // that asks nothing before it fires.
                     //
-                    // The leading edge overlaps `zoomOutSwipe`, which arms below
-                    // x=32 and travels the same way. Both fired: the screen slid
-                    // out while the row underneath revealed its zoom button. The
-                    // strip belongs to going back — that is the gesture with
-                    // nowhere else to start — so `backGuard` takes the touch
-                    // there and the row never sees it.
-                    .overlay(alignment: .leading) { backGuard }
+                    // The leading edge overlaps `zoomOutSwipe` only in the
+                    // first 32pt — that gesture's `armed` test requires
+                    // `startLocation.x < 32`, so a swipe begun anywhere else on
+                    // the row never reaches it. In the strip where they do
+                    // overlap the two mean compatible things: leaving this
+                    // screen, and entering a row on it.
                     .swipeActions(edge: .trailing) {
                         // Alone on this edge, so the full swipe commits to it —
                         // which needs no confirmation because it goes to the
@@ -1666,26 +1665,6 @@ struct OutlineView: View {
     }
 
     /// How far the view must travel before letting go zooms out.
-    /// The strip along a row's leading edge where a back swipe starts.
-    ///
-    /// Drawn only when there is a scope to go back to, matching `armed`: at top
-    /// level no back swipe exists, so nothing should be taken from the row.
-    ///
-    /// Clear and non-hit-testing would defeat the point — it has to *take* the
-    /// touch, so `List` never starts a leading swipe under it. `zoomOutSwipe` is
-    /// a `simultaneousGesture` on the whole screen and still sees it.
-    @ViewBuilder private var backGuard: some View {
-        if scope != nil {
-            Color.clear
-                .contentShape(Rectangle())
-                .frame(width: backEdge)
-        }
-    }
-
-    /// How wide that strip is — the same 32pt `armed` tests against, so the
-    /// guard covers exactly where the back swipe can begin and no more.
-    private let backEdge: CGFloat = 32
-
     private let backThreshold: CGFloat = 60
 
     /// Far enough right to be clear of the screen on any phone.
@@ -1707,7 +1686,7 @@ struct OutlineView: View {
             // that is already running and the row would follow a finger that
             // is busy moving the whole screen out from under it.
             && !drag.isActive
-            && g.startLocation.x < backEdge
+            && g.startLocation.x < 32
             && goingSideways(g)
     }
 
