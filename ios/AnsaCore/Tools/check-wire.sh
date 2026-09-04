@@ -40,6 +40,9 @@ let samples: [Op] = [
     .setText(id: "a", text: "x"),
     .setDone(id: "a", done: true),
     .removeNode(id: "a"),
+    // Both forms: the flag rides on the same op kind, so a plain delete and a
+    // trashing one are two different payloads the server has to accept.
+    .removeNode(id: "a", trash: true),
     .moveNode(id: "a", parentId: nil, index: 0),
     .indent(id: "a"),
     .outdent(id: "a"),

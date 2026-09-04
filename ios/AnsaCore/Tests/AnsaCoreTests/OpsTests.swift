@@ -278,6 +278,7 @@ struct OpWireTests {
         .setText(id: "a", text: "x"),
         .setDone(id: "a", done: true),
         .removeNode(id: "a"),
+        .removeNode(id: "a", trash: true),
         .moveNode(id: "a", parentId: nil, index: 0),
         .indent(id: "a"),
         .outdent(id: "a"),
@@ -312,8 +313,14 @@ struct OpWireTests {
             "indent", "outdent", "adoptFollowing", "insertAtDepth", "toggleCollapsed",
             "setPinned", "markOpened",
         ]
+        // Set equality both ways: a kind the server accepts with no sample here,
+        // and a sample for a kind the server does not accept, are both failures.
         #expect(Set(Self.samples.map(\.kind)) == Set(opKinds))
-        #expect(Self.samples.count == opKinds.count)
+        // Not `samples.count == opKinds.count`. A kind may legitimately have more
+        // than one sample where a field changes the payload — `removeNode` has
+        // both the plain and the trashing form — and the set check above is what
+        // actually catches a kind nobody covered.
+        #expect(Self.samples.count >= opKinds.count)
     }
 
     @Test("keeps a null parentId distinct from a missing one")
@@ -329,6 +336,30 @@ struct OpWireTests {
             try JSONDecoder().decode(
                 Op.self, from: Data(#"{"op":"moveNode","id":"a","index":0}"#.utf8))
         }
+    }
+
+    @Test("a plain delete carries no trash field at all")
+    func plainDeleteOmitsTrash() throws {
+        let json = String(decoding: try JSONEncoder().encode(Op.removeNode(id: "a")), as: UTF8.self)
+        // Absent, not `false`. The server reads a missing field as false, so
+        // this keeps the payload identical to what builds before the trash sent
+        // — which is what lets an op queued by an older client still mean the
+        // same thing.
+        #expect(!json.contains("trash"))
+    }
+
+    @Test("a trashing delete says so")
+    func trashingDeleteCarriesTheFlag() throws {
+        let json = String(
+            decoding: try JSONEncoder().encode(Op.removeNode(id: "a", trash: true)), as: UTF8.self)
+        #expect(json.contains("\"trash\":true"))
+    }
+
+    @Test("a delete with no trash field decodes as not trashing")
+    func absentTrashMeansFalse() throws {
+        let op = try JSONDecoder().decode(
+            Op.self, from: Data(#"{"op":"removeNode","id":"a"}"#.utf8))
+        #expect(op == .removeNode(id: "a", trash: false))
     }
 
     @Test("a root-list op encodes parentId as an explicit null")

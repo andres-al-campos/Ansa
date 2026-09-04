@@ -31,7 +31,16 @@ public enum Op: Equatable, Sendable {
     case addSubtree(ids: [NodeId], parentId: NodeId?, nodes: [TreeOps.SubtreeSpec], at: Double)
     case setText(id: NodeId, text: String)
     case setDone(id: NodeId, done: Bool)
-    case removeNode(id: NodeId)
+    /// Remove a subtree. `trash` keeps it on the server so it can be restored.
+    ///
+    /// Defaults to false, and most callers leave it there: backspace at the
+    /// start of a line merges two rows by removing one, and an empty row
+    /// abandoned mid-edit removes itself. A trash full of blank strings and
+    /// merge artifacts is no use for the deletes that matter.
+    ///
+    /// A flag rather than a second op kind, so a `removeNode` queued offline by
+    /// an older build still means something when it reaches the server.
+    case removeNode(id: NodeId, trash: Bool = false)
     case moveNode(id: NodeId, parentId: NodeId?, index: Int)
     case indent(id: NodeId)
     case outdent(id: NodeId)
@@ -93,7 +102,7 @@ extension TreeOps.SubtreeSpec {
 /// reads the flat shape; anything else is a 400.
 extension Op: Codable {
     private enum K: String, CodingKey {
-        case op, id, ids, parentId, text, done, index, at, nodes
+        case op, id, ids, parentId, text, done, index, at, nodes, trash
         case anchorId, depth, side, scope, pinned
     }
 
@@ -117,8 +126,11 @@ extension Op: Codable {
         case let .setDone(id, done):
             try c.encode(id, forKey: .id)
             try c.encode(done, forKey: .done)
-        case let .removeNode(id):
+        case let .removeNode(id, trash):
             try c.encode(id, forKey: .id)
+            // Only when true. An absent field is what the server reads as false,
+            // so a plain delete's payload stays byte-for-byte what it was.
+            if trash { try c.encode(true, forKey: .trash) }
         case let .moveNode(id, parentId, index):
             try c.encode(id, forKey: .id)
             try c.encode(parentId, forKey: .parentId)
@@ -175,7 +187,9 @@ extension Op: Codable {
         case "setDone":
             self = .setDone(id: try id(), done: try c.decode(Bool.self, forKey: .done))
         case "removeNode":
-            self = .removeNode(id: try id())
+            self = .removeNode(
+                id: try id(),
+                trash: try c.decodeIfPresent(Bool.self, forKey: .trash) ?? false)
         case "moveNode":
             self = .moveNode(
                 id: try id(), parentId: try nullable(.parentId),
@@ -260,7 +274,10 @@ extension TreeOps {
             return (setText(tree, id, text), [])
         case let .setDone(id, done):
             return setDone(tree, id, done)
-        case let .removeNode(id):
+        case let .removeNode(id, _):
+            // `trash` is not read here. It says what the server keeps on the way
+            // out, which is a persistence question — the resulting tree is the
+            // same either way, and this stays the pure function every client runs.
             return structural(tree, removeNode(tree, id), id)
         case let .moveNode(id, parentId, index):
             return structural(tree, moveNode(tree, id, parentId, index), id, parentId)
