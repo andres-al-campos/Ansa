@@ -208,14 +208,17 @@ struct OutlineView: View {
             ) { project in
                 Button("Cancel", role: .cancel) { pendingDelete = nil }
                 Button("Delete Project", role: .destructive) {
-                    apply(.removeNode(id: project.id))
+                    apply(.removeNode(id: project.id, trash: true))
                     pendingDelete = nil
                 }
             } message: { project in
                 let count = TreeOps.subtreeOf(tree, project.id).count
+                // No longer "this cannot be undone" — it goes to the trash and
+                // can be restored for 30 days. Saying otherwise would be the
+                // scarier claim of the two, and the wrong one.
                 Text(count == 0
-                    ? "This cannot be undone."
-                    : "This deletes \(count) task\(count == 1 ? "" : "s") under it. This cannot be undone.")
+                    ? "It stays in the trash for 30 days."
+                    : "This deletes \(count) task\(count == 1 ? "" : "s") under it. They stay in the trash for 30 days.")
             }
             // Swipe right from the left edge to zoom out, the way every other
             // iOS app pops a screen. `NavigationStack` would give this for
@@ -484,15 +487,36 @@ struct OutlineView: View {
                     .background(alignment: .topLeading) {
                         guideSegments(for: row.node.id, in: rows(of: scope))
                     }
-                    // Zoom lives on a swipe rather than on the bullet.
-                    // It is one Back tap to undo but replaces the whole
-                    // screen, and a revealed action cannot fire from a
-                    // brush the way a button in the row can — it needs
-                    // a second tap, or a deliberate push past the
-                    // full-swipe threshold.
-                    // Behind the swipe there is nothing to zoom *into*
-                    // yet — the screen has not been landed on.
+                    // Both actions on the trailing edge, rather than
+                    // splitting them across the two sides.
+                    //
+                    // The leading edge is spoken for: `zoomOutSwipe` is a
+                    // left-edge gesture, and it is edge-only precisely
+                    // because a full-width recogniser races these swipe
+                    // actions — see the comment on it. A leading
+                    // `swipeActions` would be that race, on the phone,
+                    // where it is a finger rather than a clean synthesised
+                    // path that produces the contention.
+                    //
+                    // Both are safe to reveal for the same reason: a
+                    // revealed action cannot fire from a brush the way a
+                    // button in the row can — it needs a second tap, or a
+                    // deliberate push past the full-swipe threshold. Zoom
+                    // replaces the whole screen but is one Back tap to
+                    // undo; Delete goes to the trash and is restorable for
+                    // 30 days.
+                    // Behind the swipe there is nothing to act on yet —
+                    // the screen has not been landed on.
                     .swipeActions(edge: .trailing) {
+                        // Delete first, so it is the outermost button and the one
+                        // a full swipe commits to — the arrangement every iOS
+                        // list has, and the reason this does not need a
+                        // confirmation: it goes to the trash, not away.
+                        Button(role: .destructive) {
+                            if interactive { self.delete(row.node.id) }
+                        } label: {
+                            Label("Delete", systemImage: "trash")
+                        }
                         Button {
                             if interactive { self.setScope(row.node.id) }
                         } label: {
@@ -1023,8 +1047,20 @@ struct OutlineView: View {
         spareRow = nil
     }
 
+    /// A deliberate delete, so the subtree is kept and can be restored.
+    ///
+    /// `trash: true` here and on the project delete, and nowhere else. The other
+    /// `removeNode`s are editing mechanics — `dropSpare` taking back a row the
+    /// user never typed into, `commitEdit` dropping one left blank — and a trash
+    /// full of empty strings is no use for the deletes that matter.
+    /// Delete one row. The swipe knows the node; `delete(at:)` is the same thing
+    /// reached through `List`'s index-based path.
+    private func delete(_ id: NodeId) {
+        apply(.removeNode(id: id, trash: true))
+    }
+
     private func delete(at offsets: IndexSet) {
-        for index in offsets { apply(.removeNode(id: rows[index].node.id)) }
+        for index in offsets { apply(.removeNode(id: rows[index].node.id, trash: true)) }
     }
 
     /// Navigate. Every user-initiated scope change goes through here rather
