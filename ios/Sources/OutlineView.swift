@@ -487,36 +487,30 @@ struct OutlineView: View {
                     .background(alignment: .topLeading) {
                         guideSegments(for: row.node.id, in: rows(of: scope))
                     }
-                    // Both actions on the trailing edge, rather than
-                    // splitting them across the two sides.
+                    // One action per edge, each swiped in the direction of what
+                    // it does: right-to-left to delete, left-to-right to zoom
+                    // in. Sharing an edge put zoom one slip away from a delete
+                    // that asks nothing before it fires.
                     //
-                    // The leading edge is spoken for: `zoomOutSwipe` is a
-                    // left-edge gesture, and it is edge-only precisely
-                    // because a full-width recogniser races these swipe
-                    // actions — see the comment on it. A leading
-                    // `swipeActions` would be that race, on the phone,
-                    // where it is a finger rather than a clean synthesised
-                    // path that produces the contention.
-                    //
-                    // Both are safe to reveal for the same reason: a
-                    // revealed action cannot fire from a brush the way a
-                    // button in the row can — it needs a second tap, or a
-                    // deliberate push past the full-swipe threshold. Zoom
-                    // replaces the whole screen but is one Back tap to
-                    // undo; Delete goes to the trash and is restorable for
-                    // 30 days.
-                    // Behind the swipe there is nothing to act on yet —
-                    // the screen has not been landed on.
+                    // The leading edge overlaps `zoomOutSwipe` only in the
+                    // first 32pt — that gesture's `armed` test requires
+                    // `startLocation.x < 32`, so a swipe begun anywhere else on
+                    // the row never reaches it. In the strip where they do
+                    // overlap the two mean compatible things: leaving this
+                    // screen, and entering a row on it.
                     .swipeActions(edge: .trailing) {
-                        // Delete first, so it is the outermost button and the one
-                        // a full swipe commits to — the arrangement every iOS
-                        // list has, and the reason this does not need a
-                        // confirmation: it goes to the trash, not away.
+                        // Alone on this edge, so the full swipe commits to it —
+                        // which needs no confirmation because it goes to the
+                        // trash and stays restorable for 30 days.
                         Button(role: .destructive) {
                             if interactive { self.delete(row.node.id) }
                         } label: {
                             Label("Delete", systemImage: "trash")
                         }
+                    }
+                    .swipeActions(edge: .leading) {
+                        // `allowsFullSwipe` is left on: the worst a full swipe
+                        // does here is land on a screen one Back tap away.
                         Button {
                             if interactive { self.setScope(row.node.id) }
                         } label: {
