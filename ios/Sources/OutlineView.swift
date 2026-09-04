@@ -629,21 +629,22 @@ struct OutlineView: View {
             Image(systemName: adding ? "checkmark" : "plus")
                 .font(.system(size: 20, weight: .semibold))
                 .foregroundStyle(Color.primary)
+                // Flattened before the material, not after. `drawingGroup`
+                // rasterises into its own buffer, and a material inside one has
+                // no backdrop left to sample — so it stopped being glass and
+                // resolved to a flat dark disc, black against light mode.
+                //
+                // The flatten is still doing its original job. The button rides
+                // the bottom safe-area inset, which animates down as the keyboard
+                // goes; the circle travelled with that animation while the `Image`
+                // was laid out against the *final* safe area from the first frame.
+                // So the plus appeared at the bottom and waited there while the
+                // circle slid down to meet it — two images, in two coordinate
+                // spaces, inside one view. No change to the transition could reach
+                // it, because it was never a transition.
+                .drawingGroup()
                 .frame(width: 52, height: 52)
                 .background(Circle().fill(.regularMaterial))
-                // Flattened into one layer before the shadow, so the circle and
-                // the glyph cannot resolve at different times.
-                //
-                // They did. The button rides the bottom safe-area inset, which
-                // animates down as the keyboard goes; the material background
-                // travelled with that animation while the `Image` was laid out
-                // against the *final* safe area from the first frame. So the
-                // plus appeared at the bottom and waited there while the circle
-                // slid down to meet it, with the outgoing checkmark fading in
-                // the old layout — two images, in two coordinate spaces, inside
-                // one view. No change to the transition could reach it, because
-                // it was never a transition.
-                .drawingGroup()
                 .shadow(color: .black.opacity(0.12), radius: 6, y: 2)
                 // Deliberately no `.id(adding)` and no transition. Either one
                 // makes the two states separate views, so SwiftUI removes one
