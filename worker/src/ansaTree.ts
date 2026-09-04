@@ -26,10 +26,16 @@
  */
 
 import { DurableObject } from 'cloudflare:workers'
-import { RejectedWriteError, TreeStore } from './treeStore.ts'
+import { RejectedWriteError, TreeStore, type TrashEntry } from './treeStore.ts'
 import { parseOp, parseSpecs } from '../../shared/ops.ts'
 import { invalidTree, type Tree } from '../../shared/tree.ts'
 import { tutorialTree } from '../../shared/tutorial.ts'
+
+/** How long a deleted subtree is kept before the sweep drops it. */
+const RETENTION_MS = 30 * 24 * 60 * 60 * 1000
+
+/** How often the sweep runs. */
+const SWEEP_EVERY_MS = 24 * 60 * 60 * 1000
 
 export class AnsaTree extends DurableObject {
   private store: TreeStore
@@ -70,11 +76,12 @@ export class AnsaTree extends DurableObject {
    * check leaves the table untouched — the load/replace pair is two statements
    * and a failure between them would persist half a write.
    */
-  applyOp(rawOp: unknown, origin: string | null): { tree: Tree; completed: string[] } {
+  async applyOp(rawOp: unknown, origin: string | null): Promise<{ tree: Tree; completed: string[] }> {
     const parsed = parseOp(rawOp)
     if ('error' in parsed) throw new RejectedWriteError(parsed.error)
     const result = this.ctx.storage.transactionSync(() => this.store.applyOp(parsed.op))
     this.broadcast(result.tree, origin)
+    if (parsed.op.op === 'removeNode' && parsed.op.trash) await this.ensureSweepScheduled()
     return result
   }
 
@@ -121,8 +128,13 @@ export class AnsaTree extends DurableObject {
     return this.write(() => this.store.setPinned(id, pinned), origin)
   }
 
-  remove(id: string, origin: string | null): Tree {
-    return this.write(() => this.store.remove(id), origin)
+  async remove(id: string, origin: string | null, trash = false): Promise<Tree> {
+    const next = this.write(() => this.store.remove(id, trash), origin)
+    // Armed here rather than in the constructor or on every write: something
+    // was just put in the trash, so a sweep now has work to do eventually.
+    // Nothing else needs one, and an empty trash should cost no wake-ups.
+    if (trash) await this.ensureSweepScheduled()
+    return next
   }
 
   move(id: string, parentId: string | null, index: number, origin: string | null): Tree {
@@ -142,6 +154,83 @@ export class AnsaTree extends DurableObject {
     const tree = this.ctx.storage.transactionSync(mutate)
     this.broadcast(tree, origin)
     return tree
+  }
+
+  // ------------------------------------------------------------- the trash
+
+  /**
+   * A page of deleted subtrees, newest first.
+   *
+   * Its own call rather than something riding along with the tree: the trash is
+   * looked at rarely and can grow large, and `load()` already reads the whole
+   * tree on every edit. Keeping it out of that path is the point of storing it
+   * separately at all.
+   */
+  trashPage(limit?: number, cursor?: number): { entries: TrashEntry[]; nextCursor?: number } {
+    return this.store.trashPage(limit, cursor)
+  }
+
+  /**
+   * Put a trashed subtree back. Returns null if the entry is already gone.
+   *
+   * Broadcasts like any other write, so a restore on one device appears on the
+   * others by the path every edit already uses.
+   */
+  restore(entryId: string, origin: string | null): Tree | null {
+    const tree = this.ctx.storage.transactionSync(() => this.store.restore(entryId))
+    if (tree) this.broadcast(tree, origin)
+    return tree
+  }
+
+  /** Drop one trashed subtree for good. */
+  forget(entryId: string): void {
+    this.ctx.storage.transactionSync(() => this.store.forget(entryId))
+  }
+
+  /**
+   * Daily retention sweep.
+   *
+   * The trash is never something to remember to empty — there is no button for
+   * it and no badge asking to be cleared, because a tool that generates chores
+   * is the thing this app exists to avoid. This is what makes that true.
+   *
+   * Sweeping on read was the alternative and fails the same test: a trash
+   * nobody opens would never empty, and this one is expected to fill with small
+   * throwaway tasks precisely because deleting is meant to be cheap.
+   *
+   * Stops re-arming once the trash is empty, and the next delete arms it again.
+   * An object nobody deletes from should not wake daily forever.
+   */
+  async alarm(): Promise<void> {
+    // The platform clears the alarm before invoking this, so not re-arming
+    // below is what stops the wake-ups — there is nothing to delete.
+    const remaining = this.ctx.storage.transactionSync(() => {
+      this.store.sweep(Date.now() - RETENTION_MS)
+      return this.store.trashCount()
+    })
+    if (remaining > 0) await this.ctx.storage.setAlarm(Date.now() + SWEEP_EVERY_MS)
+  }
+
+  /**
+   * Make sure the sweep is scheduled, without resetting a pending one.
+   *
+   * Checked rather than set unconditionally: the delete path runs often, and
+   * `setAlarm` replaces any pending alarm, so setting it on every delete would
+   * push the sweep 24h further out each time — a trash that never expires
+   * because it keeps being added to.
+   *
+   * Awaited by the delete path rather than left to run detached. A
+   * fire-and-forget promise here would usually work and occasionally not: the
+   * object can be evicted once the response is sent, and a delete whose alarm
+   * never landed leaves a trash entry that is never swept — a leak that shows up
+   * as storage nobody can account for, months later, with nothing to trace it
+   * back to. It costs one storage read on deletes only, which is why `remove`
+   * and `applyOp` are async.
+   */
+  private async ensureSweepScheduled(): Promise<void> {
+    if ((await this.ctx.storage.getAlarm()) === null) {
+      await this.ctx.storage.setAlarm(Date.now() + SWEEP_EVERY_MS)
+    }
   }
 
   /** Whole-tree replace. Used by Import and by the migration script. */

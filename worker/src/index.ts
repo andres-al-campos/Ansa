@@ -278,8 +278,47 @@ async function route(c: Ctx): Promise<Response> {
     return json({ error: 'provide text (string), done (boolean), or pinned (boolean)' }, 400, cors)
   }
 
+  // `?trash=1` keeps the subtree so it can be restored. Opt-in rather than the
+  // default because most removals are editing mechanics — backspace merging two
+  // rows, an empty row abandoned mid-edit — and a trash full of blank strings is
+  // no use for the deletes that matter.
   if (node && method === 'DELETE') {
-    return json({ tree: await tree.remove(decodeURIComponent(node[1]), c.origin) }, 200, cors)
+    const trash = c.url.searchParams.get('trash') === '1'
+    return json({ tree: await tree.remove(decodeURIComponent(node[1]), c.origin, trash) }, 200, cors)
+  }
+
+  // ------------------------------------------------------------- the trash
+
+  // A page of deleted subtrees, newest first. `cursor` is the `deletedAt` of the
+  // last entry seen, not an offset, so the retention sweep running between two
+  // pages cannot shift the window and skip an entry.
+  if (path === '/api/trash' && method === 'GET') {
+    const rawLimit = Number(c.url.searchParams.get('limit') ?? 50)
+    const limit = Number.isFinite(rawLimit) ? Math.min(Math.max(Math.trunc(rawLimit), 1), 200) : 50
+    const rawCursor = c.url.searchParams.get('cursor')
+    const cursor = rawCursor === null ? undefined : Number(rawCursor)
+    if (cursor !== undefined && !Number.isFinite(cursor)) {
+      return json({ error: 'cursor must be a number (the deletedAt of the last entry seen)' }, 400, cors)
+    }
+    return json(await tree.trashPage(limit, cursor), 200, cors)
+  }
+
+  const restore = path.match(/^\/api\/trash\/([^/]+)\/restore$/)
+  if (restore && method === 'POST') {
+    const next = await tree.restore(decodeURIComponent(restore[1]), c.origin)
+    // 404 rather than a silent success: the entry is gone, which after 30 days
+    // it will be, and the client showing a stale list needs to know its row is
+    // no longer there rather than assume the restore worked.
+    if (!next) {
+      return json({ error: 'That deleted item is no longer in the trash.' }, 404, cors)
+    }
+    return json({ tree: next }, 200, cors)
+  }
+
+  const entry = path.match(/^\/api\/trash\/([^/]+)$/)
+  if (entry && method === 'DELETE') {
+    await tree.forget(decodeURIComponent(entry[1]))
+    return json({ ok: true }, 200, cors)
   }
 
   const move = path.match(/^\/api\/nodes\/([^/]+)\/move$/)

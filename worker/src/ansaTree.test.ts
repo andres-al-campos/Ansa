@@ -86,9 +86,19 @@ function fakeSocket(): FakeSocket {
 function fakeCtx(sql: SqlStorage & { db: Database.Database }) {
   const db = sql.db
   const sockets: FakeSocket[] = []
+  // One alarm, replaced rather than queued — the platform's own rule, and the
+  // property the scheduling logic relies on.
+  let alarm: number | null = null
   return {
     storage: {
       sql,
+      getAlarm: async () => alarm,
+      setAlarm: async (at: number) => {
+        alarm = at
+      },
+      deleteAlarm: async () => {
+        alarm = null
+      },
       transactionSync<T>(fn: () => T): T {
         db.exec('BEGIN')
         try {
@@ -102,6 +112,7 @@ function fakeCtx(sql: SqlStorage & { db: Database.Database }) {
       },
     },
     getWebSockets: () => sockets,
+    _alarmAt: () => alarm,
     acceptWebSocket: (ws: FakeSocket) => sockets.push(ws),
     _sockets: sockets,
   }
@@ -183,19 +194,19 @@ describe('writes roll back rather than landing half-done', () => {
     expect(tree.load().map((n) => n.text)).toEqual(['keep me'])
   })
 
-  it('leaves the stored tree untouched when an op is refused', () => {
-    tree.applyOp({ op: 'addChild', id: 'a', parentId: null, text: 'project', at: 1 }, null)
-    expect(() =>
+  it('leaves the stored tree untouched when an op is refused', async () => {
+    await tree.applyOp({ op: 'addChild', id: 'a', parentId: null, text: 'project', at: 1 }, null)
+    await expect(
       tree.applyOp({ op: 'moveNode', id: 'a', parentId: 'ghost', index: 0 }, null),
-    ).toThrow(RejectedWriteError)
+    ).rejects.toThrow(RejectedWriteError)
     // replace() is DELETE-then-INSERT: without the transaction, a throw between
     // the two would leave the table empty and the tree gone.
     expect(tree.load().map((n) => n.text)).toEqual(['project'])
   })
 
-  it('refuses a malformed op before touching storage', () => {
-    tree.applyOp({ op: 'addChild', id: 'a', parentId: null, text: 'project', at: 1 }, null)
-    expect(() => tree.applyOp({ op: 'notAnOp', id: 'a' }, null)).toThrow(RejectedWriteError)
+  it('refuses a malformed op before touching storage', async () => {
+    await tree.applyOp({ op: 'addChild', id: 'a', parentId: null, text: 'project', at: 1 }, null)
+    await expect(tree.applyOp({ op: 'notAnOp', id: 'a' }, null)).rejects.toThrow(RejectedWriteError)
     expect(tree.load()).toHaveLength(1)
   })
 
@@ -245,14 +256,14 @@ describe('broadcast', () => {
     expect(received(ws)[0].origin).toBe('web-123')
   })
 
-  it('does not broadcast a write that was refused', () => {
-    tree.applyOp({ op: 'addChild', id: 'a', parentId: null, text: 'project', at: 1 }, null)
+  it('does not broadcast a write that was refused', async () => {
+    await tree.applyOp({ op: 'addChild', id: 'a', parentId: null, text: 'project', at: 1 }, null)
     const ws = fakeSocket()
     ctx.acceptWebSocket(ws)
     // A move onto a parent that doesn't exist. Moving a node that doesn't exist
     // is deliberately a no-op in shared/tree.ts rather than an error, so it
     // would not exercise this.
-    expect(() => tree.applyOp({ op: 'moveNode', id: 'a', parentId: 'ghost', index: 0 }, null)).toThrow(
+    await expect(tree.applyOp({ op: 'moveNode', id: 'a', parentId: 'ghost', index: 0 }, null)).rejects.toThrow(
       RejectedWriteError,
     )
     expect(ws.sent).toEqual([])
@@ -306,5 +317,107 @@ describe('socket messages', () => {
     const ws = fakeSocket()
     tree.webSocketClose(ws as never, 1005, 'gone')
     expect(ws.closedWith).toEqual({ code: 1000, reason: 'gone' })
+  })
+})
+
+describe('the trash', () => {
+  /** A project with one child, returning both ids. */
+  async function project(): Promise<{ root: string; child: string }> {
+    await tree.applyOp({ op: 'addChild', id: 'p', parentId: null, text: 'project', at: 1 }, null)
+    await tree.applyOp({ op: 'addChild', id: 'c', parentId: 'p', text: 'child', at: 2 }, null)
+    return { root: 'p', child: 'c' }
+  }
+
+  /**
+   * Fire the alarm the way the platform does: it clears the pending alarm
+   * before invoking the handler, so re-arming is the handler's own decision.
+   */
+  async function fireAlarm(): Promise<void> {
+    await ctx.storage.deleteAlarm()
+    await tree.alarm()
+  }
+
+  it('broadcasts a restore the way it broadcasts any other write', async () => {
+    // The property the sidebar depends on: a restore on the phone appears on
+    // the web tab without a reload, because it travels the path every edit
+    // already travels rather than a special one nobody else is listening to.
+    const { root } = await project()
+    await tree.remove(root, null, true)
+
+    const ws = fakeSocket()
+    ctx.acceptWebSocket(ws as never)
+    ws.sent.length = 0
+
+    const [entry] = tree.trashPage().entries
+    const restored = tree.restore(entry.id, 'phone')
+
+    expect(restored?.map((n) => n.text).sort()).toEqual(['child', 'project'])
+    const [payload] = received(ws)
+    expect(payload.origin).toBe('phone')
+    expect(payload.tree).toHaveLength(2)
+  })
+
+  it('does not broadcast when the entry is already gone', () => {
+    // A stale list restoring twice must not push an unchanged tree at every
+    // other device, which would look like a change that never happened.
+    const ws = fakeSocket()
+    ctx.acceptWebSocket(ws as never)
+    ws.sent.length = 0
+
+    expect(tree.restore('no-such-entry', null)).toBeNull()
+    expect(ws.sent).toHaveLength(0)
+  })
+
+  it('keeps nothing when a removal is editing mechanics rather than a delete', async () => {
+    // Backspace merging two rows removes one. Filling the trash with those is
+    // how it stops being useful for the deletes that matter.
+    const { child } = await project()
+    await tree.remove(child, null)
+    expect(tree.trashPage().entries).toHaveLength(0)
+  })
+
+  it('arms the sweep on the first trashed delete and leaves the pending one alone', async () => {
+    // setAlarm replaces rather than queues, so re-arming on every delete would
+    // push the sweep 24h further out each time — a trash that never expires
+    // because it keeps being added to.
+    await project()
+    expect(ctx._alarmAt()).toBeNull()
+
+    await tree.remove('c', null, true)
+    const first = ctx._alarmAt()
+    expect(first).not.toBeNull()
+
+    await tree.remove('p', null, true)
+    expect(ctx._alarmAt()).toBe(first)
+  })
+
+  it('sweeps what is past retention and stops waking once the trash is empty', async () => {
+    await project()
+    await tree.remove('c', null, true)
+    const [old] = tree.trashPage().entries
+    // Aged by hand rather than by injecting a clock: the retention window is a
+    // constant in the object, and moving the row is the smaller lie.
+    sql.db.prepare('UPDATE trash_entries SET deletedAt = ? WHERE id = ?').run(1, old.id)
+
+    await fireAlarm()
+    expect(tree.trashPage().entries).toHaveLength(0)
+    expect(ctx._alarmAt()).toBeNull()
+  })
+
+  it('keeps waking while something in the trash is still young', async () => {
+    await project()
+    await tree.remove('c', null, true)
+    await fireAlarm()
+    expect(tree.trashPage().entries).toHaveLength(1)
+    expect(ctx._alarmAt()).not.toBeNull()
+  })
+
+  it('forgets an entry for good', async () => {
+    await project()
+    await tree.remove('c', null, true)
+    const [entry] = tree.trashPage().entries
+    tree.forget(entry.id)
+    expect(tree.trashPage().entries).toHaveLength(0)
+    expect(tree.restore(entry.id, null)).toBeNull()
   })
 })

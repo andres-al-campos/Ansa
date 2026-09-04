@@ -689,7 +689,11 @@ export default function Outliner({ initial }: { initial: Tree }) {
   // otherwise chain-delete row after row and could wipe a whole project; making
   // you re-enter to continue puts a deliberate keypress between each deletion.
   function deleteRow(id: NodeId) {
-    setTree(removeNode(tree, id), { op: 'removeNode', id })
+    // `trash: true` only here and in deleteProject. The other removeNode calls
+    // in this file are editing mechanics — backspace merging two rows, an empty
+    // row abandoned mid-edit — and a trash full of blank strings and merge
+    // artifacts is no use for the deletes that matter.
+    setTree(removeNode(tree, id), { op: 'removeNode', id, trash: true })
     setEditing(null)
   }
 
@@ -822,7 +826,7 @@ export default function Outliner({ initial }: { initial: Tree }) {
     if (scope === id) setScope(null)
     setConfirmDelete(null)
     closeMenu()
-    setTree(removeNode(tree, id), { op: 'removeNode', id })
+    setTree(removeNode(tree, id), { op: 'removeNode', id, trash: true })
   }
 
   // Land a dragged project before or after the row it was dropped on. Index is
