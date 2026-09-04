@@ -56,6 +56,18 @@ struct OutlineView: View {
     /// distance itself the feedback — the view comes back if you let go early,
     /// which is how the gesture teaches its own threshold.
     @State private var backPull: CGFloat = 0
+
+    /// Whether a back swipe currently has the touch.
+    ///
+    /// Separate from `backPull`, which is how far the screen has moved: this is
+    /// true from the first point of the gesture, while the pull stays at 0 until
+    /// the finger has proved it is going sideways. The row's leading swipe
+    /// reveals inside that gap, so `backPull` was too late to shut it out.
+    ///
+    /// Cleared when the finger lifts, so a back swipe that is abandoned gives
+    /// the row swipe straight back.
+    @State private var backHolding = false
+
     /// Which row's field holds focus, by node id rather than a bare Bool.
     ///
     /// A single shared `Bool` across the ForEach cannot express "focus the row
@@ -492,12 +504,17 @@ struct OutlineView: View {
                     // in. Sharing an edge put zoom one slip away from a delete
                     // that asks nothing before it fires.
                     //
-                    // The leading edge overlaps `zoomOutSwipe` only in the
-                    // first 32pt — that gesture's `armed` test requires
-                    // `startLocation.x < 32`, so a swipe begun anywhere else on
-                    // the row never reaches it. In the strip where they do
-                    // overlap the two mean compatible things: leaving this
-                    // screen, and entering a row on it.
+                    // The leading edge collides with `zoomOutSwipe`: both travel
+                    // left-to-right, and a thumb coming off the bezel lands past
+                    // that gesture's arming strip often enough that "they start
+                    // in different places" is not a separation at all.
+                    //
+                    // So the back swipe wins outright while it holds the touch,
+                    // and the row offers nothing until the finger lifts. An
+                    // earlier attempt put a clear view over the row's leading
+                    // edge to swallow the touch instead; that never ran, because
+                    // `swipeActions` belongs to the `List` cell and an overlay on
+                    // the row's content sits below it.
                     .swipeActions(edge: .trailing) {
                         // Alone on this edge, so the full swipe commits to it —
                         // which needs no confirmation because it goes to the
@@ -511,12 +528,19 @@ struct OutlineView: View {
                     .swipeActions(edge: .leading) {
                         // `allowsFullSwipe` is left on: the worst a full swipe
                         // does here is land on a screen one Back tap away.
-                        Button {
-                            if interactive { self.setScope(row.node.id) }
-                        } label: {
-                            Label("Zoom in", systemImage: "chevron.right")
+                        //
+                        // Empty while a back swipe holds the touch, which is how
+                        // that gesture takes this edge for as long as it is
+                        // running. `swipeActions` with no buttons reveals
+                        // nothing, so the row simply does not respond.
+                        if !backHolding {
+                            Button {
+                                if interactive { self.setScope(row.node.id) }
+                            } label: {
+                                Label("Zoom in", systemImage: "chevron.right")
+                            }
+                            .tint(.accentColor)
                         }
-                        .tint(.accentColor)
                     }
             }
             .onDelete { if interactive { delete(at: $0) } }
@@ -1579,8 +1603,19 @@ struct OutlineView: View {
     }
 
     private var zoomOutSwipe: some Gesture {
-        DragGesture(minimumDistance: 20, coordinateSpace: .local)
+        // Recognised from the first point, not 20pt in. A row's leading
+        // `swipeActions` reveals well inside 20pt, so a gesture that only
+        // announced itself at 20 announced it too late — the row had already
+        // opened its zoom button under a screen starting to slide away.
+        DragGesture(minimumDistance: 0, coordinateSpace: .local)
             .onChanged { g in
+                // Two separate questions, and the whole fix is that they are no
+                // longer one. `claims` asks only where the touch began, so it is
+                // true on the very first callback, before the finger has moved
+                // at all — which is the only moment early enough to shut the row
+                // out. `armed` additionally asks which way the finger is going,
+                // which cannot be known yet and so cannot gate the claim.
+                if claims(g) { backHolding = true }
                 guard armed(g) else { return }
                 // Rubber-banded rather than one-to-one past the threshold: the
                 // pull keeps responding so the gesture never feels dead, while
@@ -1591,6 +1626,9 @@ struct OutlineView: View {
                     : backThreshold + (d - backThreshold) * 0.35
             }
             .onEnded { g in
+                // Released, so the row swipe is available again — a cancelled
+                // back swipe hands the row back rather than leaving it inert.
+                backHolding = false
                 guard armed(g), g.translation.width > backThreshold else {
                     // Short of the threshold: back where it came from, which is
                     // what tells you the gesture was seen and declined.
@@ -1669,6 +1707,29 @@ struct OutlineView: View {
 
     /// Far enough right to be clear of the screen on any phone.
     private let slideOut: CGFloat = 700
+
+    /// How far in from the edge a touch still counts as a possible back swipe.
+    private let backClaim: CGFloat = 64
+
+    /// Whether this touch began somewhere a back swipe could start.
+    ///
+    /// Position only — no direction, because direction is not known on the first
+    /// callback and the row's leading `swipeActions` reveals before it becomes
+    /// known. Anything that waited for the direction was already too late.
+    ///
+    /// So the near edge is claimed the moment a finger lands there, and the row
+    /// swipe stays shut until the finger lifts. The cost of being early is a
+    /// scroll or a tap that starts in the strip and suppresses a row swipe
+    /// nobody was making; the cost of being late was a zoom revealing under a
+    /// screen already sliding away.
+    ///
+    /// Wider than `armed`'s 32pt on purpose. A thumb coming off the bezel
+    /// habitually lands past 32, which is exactly the swipe that reproduced the
+    /// bug — a strip that only covered where the pull *acts* left the row open
+    /// across the band where the pull is actually attempted.
+    private func claims(_ g: DragGesture.Value) -> Bool {
+        scope != nil && !drag.isActive && g.startLocation.x < backClaim
+    }
 
     /// Whether this drag is a back swipe rather than a scroll or a row action.
     ///
