@@ -15,9 +15,11 @@
  * ## Errors
  *
  * A Durable Object throwing RejectedWriteError means the request was wrong, not
- * that the server is broken, so those become 400s. Anything else is a genuine
- * failure and becomes a 500 with a generic message — the detail goes to the
- * log, not to the caller.
+ * that the server is broken, so those become 400s. Running out of daily storage
+ * quota is neither, and becomes a 503 that says so — it is temporary, it has a
+ * known reset time, and no amount of retrying moves it. Anything else is a
+ * genuine failure and becomes a 500 with a generic message — the detail goes to
+ * the log, not to the caller.
  */
 
 import { AnsaTree } from './ansaTree.ts'
@@ -47,6 +49,24 @@ export interface Env extends AuthEnv {
  */
 export function isRejectedWrite(err: unknown): boolean {
   return err instanceof Error && (err.name === 'RejectedWriteError' || err.name === 'UnknownParentError')
+}
+
+/**
+ * Whether this is the account's storage quota running out for the day.
+ *
+ * Matched on the message because there is nothing else to match on: it is
+ * raised by the runtime, not by us, so it has no distinguishing `name`, and by
+ * the time it reaches here it has crossed the RPC boundary as a plain Error
+ * anyway — see isRejectedWrite above.
+ *
+ * Worth its own case because it is the one 500 that is neither a bug nor
+ * something retrying fixes, and because it is thrown from `new TreeStore`
+ * before any request logic runs. That made it indistinguishable from a dead
+ * server: the phone saw a 500, reported "not receiving changes", and the
+ * reason — a limit with a known reset time — stayed in the Worker's logs.
+ */
+export function isOverQuota(err: unknown): boolean {
+  return err instanceof Error && /exceeded .*(limit|free tier)/i.test(err.message)
 }
 
 /** The client instance that caused a write, so it can skip its own echo. */
@@ -108,8 +128,24 @@ export default {
       if (isRejectedWrite(err)) {
         return json({ error: (err as Error).message }, 400, cors)
       }
+      if (isOverQuota(err)) {
+        console.error('Over quota', path, err)
+        return json(
+          {
+            error:
+              'This account has hit its daily storage limit on Cloudflare. ' +
+              'Editing works again after the limit resets at 00:00 UTC; ' +
+              'raise it sooner by upgrading the Workers plan.',
+          },
+          503,
+          cors,
+        )
+      }
       console.error('Unhandled error', path, err)
-      return json({ error: 'Something went wrong saving that change.' }, 500, cors)
+      // Deliberately not "saving that change": this catches reads too, and
+      // telling someone their edit failed when they were only listening sends
+      // them off to re-type work that was never at risk.
+      return json({ error: 'Something went wrong. Nothing was lost.' }, 500, cors)
     }
   },
 }

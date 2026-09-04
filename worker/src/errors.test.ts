@@ -16,7 +16,7 @@
 
 import { describe, expect, it } from 'vitest'
 import { RejectedWriteError, UnknownParentError } from './treeStore.ts'
-import { isRejectedWrite } from './index.ts'
+import { isOverQuota, isRejectedWrite } from './index.ts'
 
 /** What RPC does to a thrown error: same name and message, plain prototype. */
 function acrossRpc(err: Error): Error {
@@ -45,5 +45,30 @@ describe('classifying an error that crossed the RPC boundary', () => {
     expect(isRejectedWrite(new Error('disk full'))).toBe(false)
     expect(isRejectedWrite('not an error at all')).toBe(false)
     expect(isRejectedWrite(null)).toBe(false)
+  })
+})
+
+describe('classifying a quota failure', () => {
+  it('recognises the runtime being out of daily storage quota', () => {
+    // The real message, as it appeared in the worker log when the free tier ran
+    // out. It is thrown from `new TreeStore` — before any request logic — so
+    // every route 500s at once and the client cannot tell it from a dead
+    // server. That is what this classification exists to prevent.
+    const thrown = new Error('Exceeded allowed rows written in Durable Objects free tier.')
+    expect(isOverQuota(acrossRpc(thrown))).toBe(true)
+    expect(isRejectedWrite(acrossRpc(thrown))).toBe(false)
+  })
+
+  it('recognises the other daily limits the same way', () => {
+    expect(isOverQuota(new Error('Exceeded allowed duration limit.'))).toBe(true)
+  })
+
+  it('does not claim an ordinary failure is a quota problem', () => {
+    // The distinction has to hold in both directions: a bug reported as "wait
+    // until 00:00 UTC" is worse than a generic 500, because it tells someone to
+    // stop looking.
+    expect(isOverQuota(new Error('Cannot read properties of undefined'))).toBe(false)
+    expect(isOverQuota(new UnknownParentError('ghost'))).toBe(false)
+    expect(isOverQuota(undefined)).toBe(false)
   })
 })
