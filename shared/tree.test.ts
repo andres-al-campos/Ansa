@@ -17,6 +17,7 @@ import {
   moveNode,
   moveRow,
   outdent,
+  pinnedTasks,
   progressOf,
   reconcileDone,
   removeNode,
@@ -769,5 +770,55 @@ describe('reconcileDone re-derives a parent from its contents', () => {
     )
     expect(byId(out, 'mid')!.done).toBe(false)
     expect(byId(out, 'root')!.done).toBe(false)
+  })
+})
+
+describe('pinnedTasks — the sidebar\'s checkpoints', () => {
+  /** Pin a set of ids in one pass. */
+  const pin = (tree: Tree, ...ids: string[]) =>
+    tree.map((n) => (ids.includes(n.id) ? { ...n, pinned: true } : n))
+
+  it('returns pinned tasks with the trail that makes them legible', () => {
+    // "Total the invoices" means nothing on its own. The trail is what makes a
+    // pinned task readable in a sidebar, so it comes back with the node.
+    const [{ node, trail }] = pinnedTasks(pin(fixture(), 'p2b1'))
+    expect(node.id).toBe('p2b1')
+    expect(trail.map((n) => n.text)).toEqual([
+      'File the tax return',
+      'Fill the forms',
+      'Page 2',
+      'Freelance income',
+    ])
+  })
+
+  it('leaves projects out — those are their own section', () => {
+    // A pinned project is a place you go; a pinned task is a thing to do. The
+    // sidebar shows them apart, so the selectors keep them apart.
+    const tree = pin(fixture(), 'taxes', 'g2')
+    expect(pinnedTasks(tree).map((p) => p.node.id)).toEqual(['g2'])
+  })
+
+  it('puts shallower pins first', () => {
+    // A pin nearer a project is more likely to be a checkpoint than a leaf, and
+    // reads better at the top of the list.
+    const tree = pin(fixture(), 'p2b1', 'gather')
+    expect(pinnedTasks(tree).map((p) => p.node.id)).toEqual(['gather', 'p2b1'])
+  })
+
+  it('follows a pinned task when it moves', () => {
+    // The pin is a flag on the node and the trail is recomputed on read, so a
+    // move needs no bookkeeping — it just reads differently afterwards.
+    const moved = moveNode(pin(fixture(), 'g2'), 'g2', 'flat', 0)
+    const [{ trail }] = pinnedTasks(moved)
+    expect(trail.map((n) => n.text)).toEqual(['Sort out the flat'])
+  })
+
+  it('drops a pinned task when it is deleted', () => {
+    const tree = removeNode(pin(fixture(), 'p2b1'), 'p2b')
+    expect(pinnedTasks(tree)).toEqual([])
+  })
+
+  it('has nothing to show when nothing is pinned', () => {
+    expect(pinnedTasks(fixture())).toEqual([])
   })
 })
