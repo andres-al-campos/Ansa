@@ -174,11 +174,18 @@ function ZoomIcon() {
 
 /**
  * The pin, drawn as the action the click performs rather than the state it is
- * in: a plain pin when clicking will pin, a struck pin when clicking will
+ * in: a pin standing up when clicking will pin, lying over when clicking will
  * unpin. It used to be one shape that filled in when pinned, which said "this
  * is pinned" — true, but the button's job is to say what pressing it does, and
  * the state is already carried by the brass and by the row's presence in the
  * sidebar.
+ *
+ * The rotation rather than a slash through it. A slash is the more universal
+ * negation mark, but it negates a *state* — you are muted, the layer is hidden
+ * — and on a button that says what the click does, "pin, negated" reads as
+ * "this is not pinned" about as easily as "unpin this", which is backwards. A
+ * pin lying down is not a state you could mistake for the current one, and it
+ * depicts the action instead of borrowing a general-purpose no.
  *
  * `size` because this sits in two places at two scales: beside a 12.5px row
  * label and beside the 26px serif page title.
@@ -197,10 +204,11 @@ function PinIcon({ pinned = false, size = 16 }: { pinned?: boolean; size?: numbe
       aria-hidden
       focusable="false"
     >
-      <path d="M7 8.5V12M4.2 2h5.6l-.8 3.2 1.4 1.6H3.6l1.4-1.6L4.2 2z" />
-      {/* The slash reads as "undo this" the way it does on a muted mic or a
-          hidden eye — the same pin, cancelled. */}
-      {pinned && <path d="M2.4 11.6L11.6 2.4" />}
+      {/* One path, turned. Rotating about the centre keeps it inside the same
+          box at every size, so the two states never shift the layout. */}
+      <g transform={pinned ? 'rotate(45 7 7)' : undefined}>
+        <path d="M7 8.5V12M4.2 2h5.6l-.8 3.2 1.4 1.6H3.6l1.4-1.6L4.2 2z" />
+      </g>
     </svg>
   )
 }
