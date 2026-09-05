@@ -163,6 +163,67 @@ public actor AnsaAPI {
         return (response as? HTTPURLResponse)?.statusCode == 200
     }
 
+    // ------------------------------------------------------------ the trash
+
+    /// A page of deleted subtrees, newest first.
+    ///
+    /// Fetched on demand rather than carried in the tree, matching the web:
+    /// the trash is opened rarely and grows without bound between sweeps, while
+    /// every edit already reads the whole tree.
+    ///
+    /// Throws rather than returning nil. The caller is a screen the user just
+    /// opened, so it has somewhere to put an error — unlike the writes above,
+    /// which are queued and retried out of sight.
+    public func fetchTrash(cursor: Int? = nil) async throws -> TrashPage {
+        let query = cursor.map { "?cursor=\($0)" } ?? ""
+        let req = await request("/api/trash" + query, method: "GET")
+        let (data, response) = try await session.data(for: req)
+        guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
+            throw TrashError.message("Could not load the trash.")
+        }
+        return try JSONDecoder().decode(TrashPage.self, from: data)
+    }
+
+    /// Put a deleted subtree back. Returns the whole tree the server now holds.
+    ///
+    /// The tree comes back rather than being recomputed here: where a restore
+    /// lands is the server's call — the original parent, or top level when that
+    /// parent was deleted too — and guessing it locally would be a second
+    /// implementation of a rule that has to match.
+    public func restoreTrash(_ entryId: String) async throws -> Tree {
+        let path = "/api/trash/\(percent(entryId))/restore"
+        let req = await request(path, method: "POST")
+        let (data, response) = try await session.data(for: req)
+        guard let http = response as? HTTPURLResponse else {
+            throw TrashError.message("Could not restore that item.")
+        }
+        // 404 is the entry ageing out while the list sat open, which after 30
+        // days it will. Its own message so the screen can drop the row rather
+        // than leave a button that fails the same way again.
+        if http.statusCode == 404 {
+            throw TrashError.gone
+        }
+        guard http.statusCode == 200 else {
+            throw TrashError.message("Could not restore that item.")
+        }
+        return try JSONDecoder().decode(TreeEnvelope.self, from: data).tree
+    }
+
+    /// Delete one entry for good, now, rather than waiting out its 30 days.
+    public func forgetTrash(_ entryId: String) async throws {
+        let req = await request("/api/trash/\(percent(entryId))", method: "DELETE")
+        let (_, response) = try await session.data(for: req)
+        guard (response as? HTTPURLResponse)?.statusCode == 200 else {
+            throw TrashError.message("Could not delete that item.")
+        }
+    }
+
+    /// Ids come from the server and are UUIDs today, but the path is built by
+    /// string interpolation — so escape rather than trust that.
+    private func percent(_ id: String) -> String {
+        id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? id
+    }
+
     /// The live stream's URL, carrying a credential in the query string.
     ///
     /// The query string is forced, not chosen: a WebSocket handshake cannot set
@@ -210,6 +271,38 @@ struct TreeEnvelope: Decodable {
 /// `{"op": {...}}`, the body `POST /api/ops` expects.
 struct OpEnvelope: Encodable {
     let op: Op
+}
+
+/// One line of the trash list: what was deleted, when, and how big it was.
+public struct TrashEntry: Decodable, Identifiable, Sendable {
+    public let id: String
+    public let rootId: String
+    public let text: String
+    public let deletedAt: Int
+    /// Includes the deleted node itself, so a subtree of one is a plain task.
+    public let count: Int
+}
+
+/// A page of the trash. `nextCursor` is the `deletedAt` of the last entry
+/// rather than an offset, so the retention sweep running between two pages
+/// cannot shift the window and skip an entry.
+public struct TrashPage: Decodable, Sendable {
+    public let entries: [TrashEntry]
+    public let nextCursor: Int?
+}
+
+/// What can go wrong reading or changing the trash.
+public enum TrashError: Error, LocalizedError {
+    /// The entry aged out while the list was open.
+    case gone
+    case message(String)
+
+    public var errorDescription: String? {
+        switch self {
+        case .gone: return "That item is no longer in the trash."
+        case .message(let text): return text
+        }
+    }
 }
 
 /// `{"error": "..."}` — how the server explains a 4xx.

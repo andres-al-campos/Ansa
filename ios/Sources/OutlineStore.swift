@@ -128,6 +128,28 @@ final class OutlineStore {
         sync?.adoptInitial(served)
     }
 
+    // ------------------------------------------------------------ the trash
+
+    /// A page of deleted subtrees. Forwarded rather than exposing `api`, so
+    /// every path from a screen to the server still runs through this one type.
+    func fetchTrash(cursor: Int? = nil) async throws -> TrashPage {
+        try await api.fetchTrash(cursor: cursor)
+    }
+
+    /// Put a deleted subtree back, and take the tree the server returns.
+    ///
+    /// Assigned rather than applied as an op: a restore has no op — the server
+    /// decides where the subtree lands, which is why the whole tree comes back.
+    func restoreTrash(_ entryId: String) async throws {
+        tree = try await api.restoreTrash(entryId)
+    }
+
+    /// Delete one entry for good, now. The tree is unchanged either way — a
+    /// trashed subtree was never in it.
+    func forgetTrash(_ entryId: String) async throws {
+        try await api.forgetTrash(entryId)
+    }
+
     /// Beside the queue, in Application Support: this is recoverable state the
     /// user did not create, so it does not belong in Documents, and it must not
     /// be in Caches, which the OS may delete under pressure — losing exactly
