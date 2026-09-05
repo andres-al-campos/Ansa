@@ -2579,6 +2579,16 @@ private struct ProjectGrid: View {
             }
         } else {
             List {
+                // Projects first: the whole list is what you have, and the
+                // shelf below is what you have singled out of it.
+                Section(isExpanded: $projectsOpen) {
+                    ForEach(projects) { project in
+                        projectRow(project)
+                    }
+                } header: {
+                    Text("Projects")
+                }
+
                 if !nothingPinned {
                     Section(isExpanded: $pinnedOpen) {
                         // Pinned projects first: a project is a place you go, so
@@ -2596,14 +2606,6 @@ private struct ProjectGrid: View {
                     } header: {
                         Text("Pinned")
                     }
-                }
-
-                Section(isExpanded: $projectsOpen) {
-                    ForEach(projects) { project in
-                        projectRow(project)
-                    }
-                } header: {
-                    Text("Projects")
                 }
 
                 // Its own section with no header, so it reads as a place of its
@@ -2684,9 +2686,9 @@ private struct PinnedTaskRow: View {
                     .font(.caption2)
                     .foregroundStyle(.tint)
 
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: 0) {
                     Text(node.text.isEmpty ? "Untitled" : node.text)
-                        .font(.body.weight(.medium))
+                        .font(.subheadline.weight(.medium))
                         .foregroundStyle(.primary)
                         .lineLimit(1)
 
@@ -2709,7 +2711,11 @@ private struct PinnedTaskRow: View {
                         .foregroundStyle(.secondary)
                 }
             }
-            .padding(.vertical, 6)
+            // Tighter than a project card, deliberately. A card carries a
+            // progress bar and the vertical room that needs; a checkpoint is
+            // two lines of text, and giving it the same height made a shelf of
+            // them read heavier than the projects they hang off.
+            .padding(.vertical, 2)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
