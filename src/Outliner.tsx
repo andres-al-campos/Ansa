@@ -1212,9 +1212,11 @@ export default function Outliner({ initial }: { initial: Tree }) {
           // One crumb back to the grid. The trash has no lineage — it is one
           // step above the project list however deep you were before it.
           <nav className="scope-meta crumbs" aria-label="Breadcrumb">
-            <button onClick={() => setScope(null)}>Projects</button>
-            <span className="sep">›</span>
-            <button className="cur">Trash</button>
+            {/* No "Projects ›" ahead of it. A crumb trail names the path down to
+                where you are, and the trash is not under Projects — it sits
+                beside them, which is what the rule in the sidebar says too. The
+                one thing this row still owes you is the way out. */}
+            <button onClick={() => setScope(null)}>← Projects</button>
           </nav>
         ) : scope === null ? null : (
           <nav className="scope-meta crumbs" aria-label="Breadcrumb">
