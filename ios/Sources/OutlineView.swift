@@ -44,6 +44,11 @@ struct OutlineView: View {
     /// the row whose `TextField` exists. The scope has no row — zooming in is
     /// what turns its row into the header — so its rename is a state of its
     /// own, and the two cannot overwrite each other.
+    /// The trash row was tapped. There is no trash screen on the phone yet, so
+    /// this says so rather than letting the row do nothing — a row that
+    /// swallows a tap reads as broken.
+    @State private var trashNotBuilt = false
+
     @State private var renamingScope: NodeId?
     @State private var renameText = ""
     @FocusState private var renamingFocus: Bool
@@ -251,6 +256,15 @@ struct OutlineView: View {
                     ? "It stays in the trash for 30 days."
                     : "This deletes \(count) task\(count == 1 ? "" : "s") under it. They stay in the trash for 30 days.")
             }
+            // Says what is true rather than doing nothing. Deleting already
+            // promises 30 days in the trash, so a row that goes nowhere would
+            // read as the promise being broken.
+            .alert("No trash view yet", isPresented: $trashNotBuilt) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(
+                    "Deleted tasks are kept for 30 days, but the phone cannot show them yet. Open Ansa in a browser to restore something.")
+            }
             // Swipe right from the left edge to zoom out, the way every other
             // iOS app pops a screen. `NavigationStack` would give this for
             // free on a pushed view, but zooming is a change of `scope` in
@@ -437,7 +451,8 @@ struct OutlineView: View {
                         // "next project" — a run of projects is not a thing
                         // people do, so this is a plain commit either way.
                         onSubmit: submitProjectName,
-                        onDelete: confirmDeleteProject)
+                        onDelete: confirmDeleteProject,
+                        onOpenTrash: { trashNotBuilt = true })
                 } else {
                     outline(for: scope, interactive: interactive)
                 }
@@ -2523,10 +2538,31 @@ private struct ProjectGrid: View {
     let onSubmit: () -> Void
     let onDelete: (NodeId) -> Void
 
-    private var projects: [Node] { TreeOps.projectList(tree) }
+    /// Whether the trash row was tapped. The trash view does not exist yet, so
+    /// this only drives the "nothing to show you" note.
+    let onOpenTrash: () -> Void
+
+    /// The unpinned roots. Pinned ones move up to their own section rather than
+    /// showing twice — the same rule the web's sidebar follows.
+    private var projects: [Node] { TreeOps.projectSections(tree).unpinned }
+    private var pinnedProjects: [Node] { TreeOps.projectSections(tree).pinned }
+    private var pinnedTasks: [(node: Node, trail: [Node])] { TreeOps.pinnedTasks(tree) }
+
+    /// Collapse state, per device rather than per tree: which sections you keep
+    /// shut is a preference about this phone's screen, not a fact about the
+    /// projects, so it does not belong in the synced tree.
+    @AppStorage("home.projectsOpen") private var projectsOpen = true
+    @AppStorage("home.pinnedOpen") private var pinnedOpen = true
+
+    /// Nothing pinned at all — neither a project nor a task. The section is
+    /// hidden entirely then rather than shown empty, so a phone that has never
+    /// pinned anything sees the list it used to see.
+    private var nothingPinned: Bool {
+        pinnedProjects.isEmpty && pinnedTasks.isEmpty
+    }
 
     var body: some View {
-        if projects.isEmpty {
+        if projects.isEmpty && nothingPinned {
             if loaded {
                 ContentUnavailableView(
                     "No projects yet",
@@ -2543,43 +2579,140 @@ private struct ProjectGrid: View {
             }
         } else {
             List {
-                ForEach(projects) { project in
-                    ProjectRow(
-                        project: project,
-                        progress: TreeOps.progressOf(tree, project.id),
-                        editing: editing == project.id,
-                        editText: $editText,
-                        focused: focused,
-                        onOpen: { onOpen(project.id) },
-                        onSubmit: onSubmit)
-                        // Long-press rather than tap-the-title. A tap on a card
-                        // already means open, and a tap that sometimes opens
-                        // and sometimes edits is the overloading this whole
-                        // redesign was about removing.
-                        .contextMenu {
-                            Button("Rename", systemImage: "pencil") {
-                                onBeginEdit(project)
-                            }
-                            Button("Delete", systemImage: "trash", role: .destructive) {
-                                onDelete(project.id)
-                            }
+                if !nothingPinned {
+                    Section(isExpanded: $pinnedOpen) {
+                        // Pinned projects first: a project is a place you go, so
+                        // it sits above the specific things to do inside one.
+                        ForEach(pinnedProjects) { project in
+                            projectRow(project)
                         }
-                        // Deleting a project takes everything under it, so this
-                        // is not the same weight of action as deleting a task.
-                        // `role: .destructive` alone would fire on a full swipe
-                        // — the confirmation is what stops a project vanishing
-                        // from a gesture aimed at the row below.
-                        .swipeActions(edge: .trailing) {
-                            Button(role: .destructive) {
-                                onDelete(project.id)
-                            } label: {
-                                Label("Delete", systemImage: "trash")
-                            }
+                        ForEach(pinnedTasks, id: \.node.id) { pin in
+                            PinnedTaskRow(
+                                node: pin.node,
+                                trail: pin.trail,
+                                progress: TreeOps.progressOf(tree, pin.node.id),
+                                onOpen: { onOpen(pin.node.id) })
                         }
+                    } header: {
+                        Text("Pinned")
+                    }
+                }
+
+                Section(isExpanded: $projectsOpen) {
+                    ForEach(projects) { project in
+                        projectRow(project)
+                    }
+                } header: {
+                    Text("Projects")
+                }
+
+                // Its own section with no header, so it reads as a place of its
+                // own rather than the last project in the list.
+                Section {
+                    // `.plain` and an explicit shape, the same as a project row:
+                    // the default button style in a sidebar list only takes a
+                    // tap on the label's own glyph and text, so the rest of the
+                    // row swallowed it.
+                    Button(action: onOpenTrash) {
+                        Label("Trash", systemImage: "trash")
+                            .foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.vertical, 6)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
                 }
             }
-            .listStyle(.plain)
+            .listStyle(.sidebar)
         }
+    }
+
+    /// One project row, with the handles that were on every card before the
+    /// sections split them in two. Shared so a pinned project keeps them.
+    private func projectRow(_ project: Node) -> some View {
+        ProjectRow(
+            project: project,
+            progress: TreeOps.progressOf(tree, project.id),
+            editing: editing == project.id,
+            editText: $editText,
+            focused: focused,
+            onOpen: { onOpen(project.id) },
+            onSubmit: onSubmit)
+            // Long-press rather than tap-the-title. A tap on a card
+            // already means open, and a tap that sometimes opens
+            // and sometimes edits is the overloading this whole
+            // redesign was about removing.
+            .contextMenu {
+                Button("Rename", systemImage: "pencil") {
+                    onBeginEdit(project)
+                }
+                Button("Delete", systemImage: "trash", role: .destructive) {
+                    onDelete(project.id)
+                }
+            }
+            // Deleting a project takes everything under it, so this
+            // is not the same weight of action as deleting a task.
+            // `role: .destructive` alone would fire on a full swipe
+            // — the confirmation is what stops a project vanishing
+            // from a gesture aimed at the row below.
+            .swipeActions(edge: .trailing) {
+                Button(role: .destructive) {
+                    onDelete(project.id)
+                } label: {
+                    Label("Delete", systemImage: "trash")
+                }
+            }
+    }
+}
+
+/// A pinned task on the home screen: the thing to do, and the path that says
+/// where it lives.
+///
+/// Not a `ProjectRow`. A project's row is a card with a progress bar because a
+/// project is a body of work you are tracking; a checkpoint is a specific place
+/// partway down one, and what it needs said about it is where it is.
+private struct PinnedTaskRow: View {
+    let node: Node
+    let trail: [Node]
+    let progress: TreeOps.Progress
+    let onOpen: () -> Void
+
+    var body: some View {
+        Button(action: onOpen) {
+            HStack(spacing: 6) {
+                Image(systemName: "pin.fill")
+                    .font(.caption2)
+                    .foregroundStyle(.tint)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(node.text.isEmpty ? "Untitled" : node.text)
+                        .font(.body.weight(.medium))
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+
+                    // The trail is what makes the name mean anything: "Total the
+                    // receipts" names nothing without "Taxes › Forms".
+                    Text(trail.map { $0.text.isEmpty ? "Untitled" : $0.text }
+                        .joined(separator: " › "))
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(1)
+                }
+
+                Spacer(minLength: 8)
+
+                // Only when it leads somewhere. A checkpoint with no children
+                // is one task, and "0/0" says less than nothing about it.
+                if progress.total > 0 {
+                    Text("\(progress.done)/\(progress.total)")
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .padding(.vertical, 6)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 }
 
