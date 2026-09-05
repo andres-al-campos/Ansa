@@ -78,8 +78,19 @@ struct TrashView: View {
                                 // actions are destructive-shaped — one undoes a
                                 // delete, the other finishes it — and a row with
                                 // two buttons on it invites the wrong one.
+                                // Words, no glyphs, on both. A swipe button
+                                // given a title *and* an image shows only the
+                                // image when the row is too short for both, so
+                                // "Restore" was on screen as a bare undo arrow
+                                // — and that arrow means "undo the last thing"
+                                // rather than "put this one back".
+                                //
+                                // The trash is somewhere you arrive twice a
+                                // year, with no muscle memory built up, about
+                                // to act on something you thought was gone.
+                                // Nothing to be saved by making it a rebus.
                                 .swipeActions(edge: .leading) {
-                                    Button("Restore", systemImage: "arrow.uturn.backward") {
+                                    Button("Restore") {
                                         Task { await restore(entry) }
                                     }
                                     .tint(.blue)
@@ -89,7 +100,7 @@ struct TrashView: View {
                                     // button red *and* makes a full swipe fire
                                     // it. `tint` keeps the red without the
                                     // gesture that skips the question.
-                                    Button("Delete", systemImage: "trash") {
+                                    Button("Delete") {
                                         confirming = entry
                                     }
                                     .tint(.red)
