@@ -615,7 +615,7 @@ button { font: inherit; color: inherit; }
  * them identically — without it a short heading centres its own shrunk width
  * and drifts out of line with the rows. */
 .crumbs,
-.scope-title,
+.scope-head,
 .scope-meta,
 .scope-progress,
 .landing,
@@ -651,6 +651,16 @@ button { font: inherit; color: inherit; }
    edge. The crumb buttons carry 5px of horizontal padding for their hover
    target, so the title, its edit input, and the bar match that inset and every
    line starts at the same x. */
+/* Title and pin on one line. The pin is baseline-ish rather than centred on the
+   26px serif: aligned to the title's first line so it stays put when a long
+   project name wraps to two. */
+.scope-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+}
+.scope-head .scope-title { flex: 1 1 auto; min-width: 0; }
+
 .scope-title {
   font-family: Georgia, 'Iowan Old Style', serif;
   font-weight: 400;
@@ -927,6 +937,20 @@ button { font: inherit; color: inherit; }
   color: var(--brass);
   fill: currentColor;
 }
+
+/* The header pin does not hide. There is no row to hover here, so the
+   `opacity: 0` above would make it unreachable — it rests at the ghost grey the
+   rows' pin rests at once revealed, and brightens on hover like the rest. This
+   sits below .pin-toggle rather than up with .scope-head because both are
+   single-class selectors: equal specificity, so source order decides. The 6px
+   top margin drops it onto the title's optical centre. */
+.scope-pin {
+  opacity: 1;
+  align-self: flex-start;
+  margin-top: 6px;
+  padding: 4px;
+}
+.scope-pin:hover { color: var(--ink-mid); background: var(--edge-lit); }
 
 /* Vertical nesting guides, one per ancestor level, aligned under each parent
  * bullet. Calm but readable at rest; the segments on the hovered row's lineage

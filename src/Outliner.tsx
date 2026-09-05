@@ -1162,6 +1162,10 @@ export default function Outliner({ initial }: { initial: Tree }) {
       </aside>
 
       <main className="main">
+        {/* The title and its pin. A wrapper rather than a control inside the
+            <h1>, which is contentEditable — anything in there becomes part of
+            the text you are renaming. */}
+        <div className="scope-head">
         <h1
           className={'scope-title' + (scopeNode && !inTrash ? ' editable' : '')}
           contentEditable={scopeNode && !inTrash ? editing === scopeNode.id : false}
@@ -1207,6 +1211,25 @@ export default function Outliner({ initial }: { initial: Tree }) {
               placeholder comes from CSS instead, so it's never in the text. */}
           {inTrash ? 'Trash' : scopeNode ? (editing === scopeNode.id ? scopeNode.text : scopeNode.text || 'Untitled') : 'Projects'}
         </h1>
+
+          {/* Pin, on the thing the page *is* rather than on any row in it. The
+              pinnable unit is a whole task with its subtree under it, so the
+              gesture belongs to whatever you have zoomed into — a project page
+              pins the project, a task's page pins that task. Putting it on the
+              rows asked you to pin a child while looking at the parent, which
+              is the one thing you can't see from here. */}
+          {scopeNode && !inTrash && (
+            <button
+              className={'pin-toggle scope-pin' + (scopeNode.pinned ? ' on' : '')}
+              onClick={() => togglePin(scopeNode.id)}
+              aria-pressed={!!scopeNode.pinned}
+              aria-label={scopeNode.pinned ? `Unpin ${scopeNode.text}` : `Pin ${scopeNode.text}`}
+              title={scopeNode.pinned ? 'Unpin' : 'Pin to the sidebar'}
+            >
+              <PinIcon />
+            </button>
+          )}
+        </div>
 
         {inTrash ? (
           // One crumb back to the grid. The trash has no lineage — it is one
@@ -1590,19 +1613,6 @@ export default function Outliner({ initial }: { initial: Tree }) {
                   <ZoomIcon />
                 </button>
 
-                {/* Pin, in the same hover-revealed column as zoom. A pinned row
-                    keeps its mark visible after the pointer leaves — otherwise
-                    the only way to tell a pinned task from an unpinned one is to
-                    go and look in the sidebar. */}
-                <button
-                  className={'pin-toggle trailing' + (node.pinned ? ' on' : '')}
-                  onClick={() => togglePin(id)}
-                  aria-pressed={!!node.pinned}
-                  aria-label={node.pinned ? `Unpin ${node.text}` : `Pin ${node.text}`}
-                  title={node.pinned ? 'Unpin' : 'Pin to the sidebar'}
-                >
-                  <PinIcon />
-                </button>
               </div>
             )
           })}
