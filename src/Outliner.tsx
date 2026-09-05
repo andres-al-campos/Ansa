@@ -1099,7 +1099,12 @@ export default function Outliner({ initial }: { initial: Tree }) {
                 setInTrash(true)
               }}
             >
-              Trash
+              <span>Trash</span>
+              {/* At the right rather than leading the label. It is the only row
+                  in the sidebar carrying an icon, so there is nothing for it to
+                  be mistaken for — the project rows' ⋯ sits in this column but
+                  only on hover, so the two are never in it at once. */}
+              <TrashIcon />
             </button>
           </li>
         </ol>

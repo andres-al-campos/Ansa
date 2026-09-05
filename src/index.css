@@ -524,19 +524,34 @@ button { font: inherit; color: inherit; }
   padding-top: 14px;
   border-top: 1px solid var(--edge-soft);
 }
-.rail.trash-rail button {
-  background: none;
-  border: none;
-  cursor: pointer;
-  color: var(--ink-faint);
-  font-size: 12.5px;
-  padding: 4px 6px;
-  width: 100%;
-  text-align: left;
+/* The row itself takes `.rail button` wholesale — same padding, same size, same
+   hover, same brass when it is the open page. It used to re-declare all of that
+   a couple of pixels off, left over from when it was a fold in the settings, so
+   it sat visibly tighter than a project directly above it. The rule above the
+   rail is doing the work of saying this is not a project; the row does not also
+   need to be a different shape. */
+.rail.trash-rail li {
+  display: flex;
+  align-items: center;
   border-radius: 5px;
 }
-.rail.trash-rail button:hover { color: var(--ink-mid); background: var(--row-hover); }
-.rail.trash-rail li.here button { color: var(--ink); background: var(--row-hover); }
+.rail.trash-rail li.here { background: var(--brass-soft); }
+/* Label left, can right. `.rail button` is display:block, so the button becomes
+   the flex row rather than the li — the whole row stays one click target. */
+.rail.trash-rail button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+/* The can rests dimmer than the label and comes up with it, so the row reads as
+   one thing rather than a label with a control stuck on the end. */
+/* -2px pulls the can into the same column the projects' ⋯ occupies (which is
+   26px wide and reserved even at rest), so the two line up vertically instead of
+   sitting 8px apart. */
+.rail.trash-rail button svg { flex: none; color: var(--ink-faint); margin-right: -2px; }
+.rail.trash-rail button:hover svg,
+.rail.trash-rail li.here svg { color: inherit; }
 
 .trash-more { justify-content: center; }
 .trash-more button {
