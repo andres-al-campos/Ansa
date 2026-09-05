@@ -503,15 +503,27 @@ button { font: inherit; color: inherit; }
 .trash-page .trash-actions button { font-size: 13px; padding: 4px 9px; }
 .trash-actions button:hover { border-color: var(--brass); color: var(--ink); }
 .trash-actions button.danger:hover { border-color: var(--danger); color: var(--danger); }
-/* The page. Its own width rather than the sidebar's, and the note reads as
-   prose rather than the fine print it was in a 200px column. */
+/* The page. Shares the outline's centred column — see the rule above — rather
+   than spanning the pane: a trash row is the same kind of line as an outline
+   row and reading it should not mean crossing the whole screen. The note reads
+   as prose here rather than the fine print it was in a 200px column. */
 .trash-page { margin-top: 4px; }
 .trash-page .trash-note { font-size: 13px; margin: 0 0 14px; max-width: 60ch; }
 .trash-page .trash-status,
 .trash-page .trash-error { font-size: 13px; }
 
-/* A row beside the projects, not a fold among the settings. */
-.rail.trash-rail { margin-top: 14px; }
+/* A row beside the projects, not a fold among the settings.
+ *
+ * The rule above it is the whole distinction: projects are things you made,
+ * the trash is a fixture of the app, and a row that looks exactly like a
+ * project reads as one. A separator says "below this is not your content"
+ * without inventing a vocabulary — no icon, no second type size — and it still
+ * works if anything else fixture-shaped lands beside it later. */
+.rail.trash-rail {
+  margin-top: 0;
+  padding-top: 14px;
+  border-top: 1px solid var(--edge-soft);
+}
 .rail.trash-rail button {
   background: none;
   border: none;
@@ -607,6 +619,7 @@ button { font: inherit; color: inherit; }
 .scope-meta,
 .scope-progress,
 .landing,
+.trash-page,
 .rows {
   width: 100%;
   max-width: var(--col-w);
