@@ -10,7 +10,7 @@
  * no requests.
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { fetchTrash, forgetTrash, restoreTrash, type TrashEntry } from './api'
 import type { Tree } from '@shared/tree'
 
@@ -39,7 +39,6 @@ export default function TrashPanel({
   onRestored: (tree: Tree) => void
 }) {
   const [entries, setEntries] = useState<TrashEntry[] | null>(null)
-  const details = useRef<HTMLDetailsElement>(null)
   const [cursor, setCursor] = useState<number | undefined>(undefined)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -85,27 +84,20 @@ export default function TrashPanel({
     }
   }
 
-  // Refetch when the tree changes while the panel is open. A delete made with
-  // the panel already expanded would otherwise leave it showing the list from
-  // whenever it was opened — an empty trash sitting next to a row that just
-  // disappeared, which reads as the feature not working. Skipped while closed,
-  // so the "costs nothing unless expanded" property still holds.
+  // Loads on mount, and again whenever the tree changes underneath it. Being
+  // mounted is being open now that this is a page rather than a fold, so the
+  // "costs nothing unless expanded" property is carried by the route instead:
+  // nothing here runs until you go to the trash.
+  //
+  // The tree dependency is what keeps the list honest. A permanent delete on
+  // another device broadcasts the tree, so this refetches and the row it
+  // removed goes — the stale-list case the buttons would otherwise fail on.
   useEffect(() => {
-    if (details.current?.open) void load()
+    void load()
   }, [tree, load])
 
   return (
-    <details
-      ref={details}
-      className="trash-fold"
-      onToggle={(e) => {
-        // Refetched on every open rather than cached: another device may have
-        // deleted or restored something since, and a stale list here offers
-        // buttons that fail.
-        if ((e.currentTarget as HTMLDetailsElement).open) void load()
-      }}
-    >
-      <summary>Trash</summary>
+    <section className="trash-page">
       <p className="trash-note">
         Deleted tasks and projects stay here for 30 days, then go on their own.
       </p>
@@ -152,6 +144,6 @@ export default function TrashPanel({
           )}
         </ol>
       )}
-    </details>
+    </section>
   )
 }

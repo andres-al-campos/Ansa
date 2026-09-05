@@ -435,11 +435,10 @@ button { font: inherit; color: inherit; }
 .rail.pins li:hover .row-more { opacity: 1; }
 .rail.pins .row-more:hover { color: var(--danger); }
 
-/* The trash, folded like Backup: somewhere to go when something went wrong, not
- * a chore advertising itself. Nothing here needs attention — the 30-day sweep
- * is what keeps it from becoming a task, so there is no count badge and no
- * empty button. */
-.trash-fold > summary,
+/* Nothing in the trash needs attention — the 30-day sweep is what keeps it from
+ * becoming a task, so there is no count badge and no empty button. It used to
+ * be folded here like Backup; it is a page now, and what is left of these rules
+ * belongs to Backup alone. */
 .data-fold > summary {
   font-size: 10px;
   letter-spacing: 0.13em;
@@ -450,37 +449,30 @@ button { font: inherit; color: inherit; }
   list-style: none;
   padding: 2px 0;
 }
-.trash-fold > summary::-webkit-details-marker,
 .data-fold > summary::-webkit-details-marker { display: none; }
-.trash-fold > summary::before,
 .data-fold > summary::before { content: '▸ '; font-size: 8px; }
-.trash-fold[open] > summary::before,
 .data-fold[open] > summary::before { content: '▾ '; }
-.trash-fold > summary:hover,
 .data-fold > summary:hover { color: var(--ink-mid); }
 
-.trash-fold { margin-bottom: 14px; }
-/* Sizes set here rather than by the `.fine` class the markup carries: that rule
-   is scoped to `.filters`, so everything in this panel would otherwise render at
-   body size in a 200px column. */
-.trash-fold p { font-size: 11px; color: var(--ink-ghost); line-height: 1.45; }
 .trash-note { margin: 6px 0 8px; }
 .trash-error { margin: 6px 0; color: var(--danger); }
-/* A column, not a row: the sidebar is ~200px, and text beside two buttons
-   leaves the text about 60px — narrow enough to break one word per line. */
+/* A row now, not a column. Stacking the text above the buttons was forced by
+   the 200px sidebar this list used to live in; on its own page there is room
+   for the name and its two actions on one line, which is also where the eye
+   expects a row action to be. */
 .rail.trash-list li {
   display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 3px;
-  padding: 5px 6px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 10px;
   border-radius: 5px;
 }
 .rail.trash-list li:hover { background: var(--row-hover); }
-.trash-what { min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.trash-what { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 1px; }
 .trash-meta { font-size: 11px; color: var(--ink-ghost); line-height: 1.4; }
 .trash-text {
-  font-size: 12.5px;
+  font-size: 14px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -501,8 +493,35 @@ button { font: inherit; color: inherit; }
   font-size: 11.5px;
   padding: 3px 7px;
 }
+/* On the page the buttons sit in open space rather than a 200px column, and
+   11.5px dim grey out here reads as disabled rather than quiet. Match the row's
+   own text; the hover-reveal is already doing the work of keeping them back. */
+.trash-page .trash-actions button { font-size: 13px; padding: 4px 9px; }
 .trash-actions button:hover { border-color: var(--brass); color: var(--ink); }
 .trash-actions button.danger:hover { border-color: var(--danger); color: var(--danger); }
+/* The page. Its own width rather than the sidebar's, and the note reads as
+   prose rather than the fine print it was in a 200px column. */
+.trash-page { margin-top: 4px; }
+.trash-page .trash-note { font-size: 13px; margin: 0 0 14px; max-width: 60ch; }
+.trash-page .trash-status,
+.trash-page .trash-error { font-size: 13px; }
+
+/* A row beside the projects, not a fold among the settings. */
+.rail.trash-rail { margin-top: 14px; }
+.rail.trash-rail button {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--ink-faint);
+  font-size: 12.5px;
+  padding: 4px 6px;
+  width: 100%;
+  text-align: left;
+  border-radius: 5px;
+}
+.rail.trash-rail button:hover { color: var(--ink-mid); background: var(--row-hover); }
+.rail.trash-rail li.here button { color: var(--ink); background: var(--row-hover); }
+
 .trash-more { justify-content: center; }
 .trash-more button {
   background: none;

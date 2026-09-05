@@ -266,8 +266,15 @@ export default function Outliner({ initial }: { initial: Tree }) {
   // touching the setter, so that "the user has chosen where they are" is
   // recorded in one place instead of at a dozen call sites that a new one could
   // forget to join. The resume path deliberately doesn't use this.
+  // Whether the trash is the screen showing. A second axis beside `scope`
+  // rather than a value of it: scope is a node id, and the trash has no node to
+  // be. Any navigation clears it, so there is no way to be in the trash and
+  // somewhere else at once.
+  const [inTrash, setInTrash] = useState(false)
+
   const setScope = useCallback((id: NodeId | null) => {
     autoScope.current = false
+    setInTrash(false)
     setScopeRaw(id)
   }, [])
 
@@ -1080,6 +1087,22 @@ export default function Outliner({ initial }: { initial: Tree }) {
           </li>
         </ol>
 
+        {/* A row, not a fold in the settings. The trash sat between "Hide
+            completed tasks" and "Backup & transfer", which made it read as a
+            setting — the same thing that was wrong with it on the phone. It is
+            somewhere you go. */}
+        <ol className="rail trash-rail">
+          <li className={inTrash ? 'here' : ''}>
+            <button
+              onClick={() => {
+                setScopeRaw(null)
+                setInTrash(true)
+              }}
+            >
+              Trash
+            </button>
+          </li>
+        </ol>
         <p className="sect">View</p>
         <div className="filters">
           <label>
@@ -1112,16 +1135,6 @@ export default function Outliner({ initial }: { initial: Tree }) {
           </button>
         </div>
 
-        <TrashPanel
-          tree={tree}
-          onRestored={(next) => {
-            // The server's tree, adopted wholesale. A restore's landing spot is
-            // the server's call — the original parent, or top level when that
-            // parent was deleted too — so recomputing it here would be a second
-            // implementation of a rule that has to match.
-            setTree(next)
-          }}
-        />
 
         <details className="data-fold">
           <summary>Backup &amp; transfer</summary>
@@ -1150,8 +1163,8 @@ export default function Outliner({ initial }: { initial: Tree }) {
 
       <main className="main">
         <h1
-          className={'scope-title' + (scopeNode ? ' editable' : '')}
-          contentEditable={scopeNode ? editing === scopeNode.id : false}
+          className={'scope-title' + (scopeNode && !inTrash ? ' editable' : '')}
+          contentEditable={scopeNode && !inTrash ? editing === scopeNode.id : false}
           suppressContentEditableWarning
           ref={(el) => {
             // On entering edit, drop the caret at the end of the existing text.
@@ -1192,10 +1205,18 @@ export default function Outliner({ initial }: { initial: Tree }) {
               couldn't tell a name nobody typed from one somebody did — and a
               project you meant to call Untitled would be thrown away. The
               placeholder comes from CSS instead, so it's never in the text. */}
-          {scopeNode ? (editing === scopeNode.id ? scopeNode.text : scopeNode.text || 'Untitled') : 'Projects'}
+          {inTrash ? 'Trash' : scopeNode ? (editing === scopeNode.id ? scopeNode.text : scopeNode.text || 'Untitled') : 'Projects'}
         </h1>
 
-        {scope === null ? null : (
+        {inTrash ? (
+          // One crumb back to the grid. The trash has no lineage — it is one
+          // step above the project list however deep you were before it.
+          <nav className="scope-meta crumbs" aria-label="Breadcrumb">
+            <button onClick={() => setScope(null)}>Projects</button>
+            <span className="sep">›</span>
+            <button className="cur">Trash</button>
+          </nav>
+        ) : scope === null ? null : (
           <nav className="scope-meta crumbs" aria-label="Breadcrumb">
             <button onClick={() => setScope(null)}>Projects</button>
             {lineage.map((node) => (
@@ -1214,7 +1235,7 @@ export default function Outliner({ initial }: { initial: Tree }) {
           </nav>
         )}
 
-        {scope !== null && scopeProgress.total > 0 && (
+        {!inTrash && scope !== null && scopeProgress.total > 0 && (
           <div className={'scope-progress' + (scopeProgress.pct === 100 ? ' complete' : '')}>
             <div className="pbar">
               <i style={{ width: `${scopeProgress.pct}%` }} />
@@ -1223,7 +1244,18 @@ export default function Outliner({ initial }: { initial: Tree }) {
           </div>
         )}
 
-        {scope === null ? (
+        {inTrash ? (
+          <TrashPanel
+            tree={tree}
+            onRestored={(next) => {
+              // The server's tree, adopted wholesale. A restore's landing spot
+              // is the server's call — the original parent, or top level when
+              // that parent was deleted too — so recomputing it here would be a
+              // second implementation of a rule that has to match.
+              setTree(next)
+            }}
+          />
+        ) : scope === null ? (
           <div className="landing">
             {projectList(tree).length === 0 && (
               <p className="empty">No projects yet — start one below.</p>
