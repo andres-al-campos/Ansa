@@ -1241,7 +1241,7 @@ export default function Outliner({ initial }: { initial: Tree }) {
               aria-label={scopeNode.pinned ? `Unpin ${scopeNode.text}` : `Pin ${scopeNode.text}`}
               title={scopeNode.pinned ? 'Unpin' : 'Pin to the sidebar'}
             >
-              <PinIcon pinned={!!scopeNode.pinned} size={20} />
+              <PinIcon pinned={!!scopeNode.pinned} size={17} />
             </button>
           )}
         </div>

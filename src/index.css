@@ -959,10 +959,12 @@ button { font: inherit; color: inherit; }
    sits below .pin-toggle rather than up with .scope-head because both are
    single-class selectors: equal specificity, so source order decides.
    
-   The height is the title's own line box (26px × 1.25 = 32.5px), not a nudge:
-   two things sharing a row should be the same height, so the button matches the
-   line it sits on and centres its glyph inside that. A hand-tuned margin got it
-   looking right at one font size and would drift at any other. */
+   The box is the title's own line box (26px × 1.25 = 32.5px) so the two things
+   sharing the row are the same height by construction, rather than by a nudge
+   that would drift at any other font size. The glyph inside it is sized to the
+   title's cap height instead — about 0.66em on this serif — because that is the
+   height the eye reads the text as. Matching the glyph to the full line box put
+   a pin taller than the capital T beside it. */
 .scope-pin {
   opacity: 1;
   align-self: flex-start;
