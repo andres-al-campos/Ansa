@@ -2619,6 +2619,14 @@ private struct ProjectGrid: View {
                                 trail: pin.trail,
                                 progress: TreeOps.progressOf(tree, pin.node.id),
                                 onOpen: { onOpen(pin.node.id) })
+                                // The sidebar style's own row padding sits on
+                                // top of the row's, and the two together made a
+                                // two-line row as tall as a project card. Set
+                                // explicitly so the row's own padding is the
+                                // only thing deciding its height.
+                                .listRowInsets(
+                                    EdgeInsets(
+                                        top: 4, leading: 16, bottom: 4, trailing: 16))
                         }
 
                         // A row rather than an inner scroll view. Nesting one
@@ -2755,7 +2763,7 @@ private struct PinnedTaskRow: View {
             // Still tighter than a project card, which carries a progress bar
             // and the room that needs. No pin glyph: every row in this section
             // is pinned, so the marker said only what the header already said.
-            .padding(.vertical, 5)
+            .padding(.vertical, 1)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
