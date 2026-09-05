@@ -941,12 +941,14 @@ button { font: inherit; color: inherit; }
 }
 
 .row:hover .pin-toggle { opacity: 1; }
-.row:hover .pin-toggle:hover,
-.pin-toggle:focus-visible {
+.row:hover .pin-toggle:hover {
   opacity: 1;
   color: var(--ink-mid);
   background: var(--edge-lit);
 }
+/* Focus lights the background only, for the same reason hover does: recolouring
+   would turn a pinned pin's brass grey the moment it took focus. */
+.pin-toggle:focus-visible { opacity: 1; background: var(--edge-lit); }
 
 /* A pinned row keeps its mark after the pointer leaves. Without this the only
  * way to tell a pinned task from an unpinned one is to go and look in the
@@ -971,12 +973,23 @@ button { font: inherit; color: inherit; }
    a pin taller than the capital T beside it. */
 .scope-pin {
   opacity: 1;
+  /* --ink-faint, not the --ink-ghost the row pin rests at. Ghost is the colour
+     of something that only appears on hover; this one is always on screen, and
+     at ghost it sat a step dimmer than the breadcrumb, the percentage and the
+     trash icon it shares the header with. */
+  color: var(--ink-faint);
   align-self: flex-start;
   height: calc(var(--title-size) * 1.25);
   width: calc(var(--title-size) * 1.25);
   padding: 0;
 }
-.scope-pin:hover { color: var(--ink-mid); background: var(--edge-lit); }
+/* Hover lights the background and leaves the colour alone. Inherited from the
+   row pin, this also set `color: --ink-mid`, which was right there — the icon
+   rests at opacity 0 and hover is what reveals it — and wrong here: a pinned
+   pin is brass, so hovering it turned the brass grey while hovering an unpinned
+   one went grey to grey. The same gesture did two different things depending on
+   state. The colour is the state; the background is the target. */
+.scope-pin:hover { background: var(--edge-lit); }
 
 /* Vertical nesting guides, one per ancestor level, aligned under each parent
  * bullet. Calm but readable at rest; the segments on the hovered row's lineage
