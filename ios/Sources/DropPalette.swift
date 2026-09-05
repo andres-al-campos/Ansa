@@ -50,6 +50,18 @@ enum DonePalette {
 }
 
 extension Color {
+    /// "Done", dark enough to read on white.
+    ///
+    /// `Color.green` is the system's, tuned for a dark ground — on white it
+    /// lands near 2.3:1, well under the 4.5:1 text this size needs. Dark mode
+    /// keeps the bright one, which is what that colour is for.
+    ///
+    /// Here rather than beside its first use because both the project card and
+    /// the scope title say "All done", and two greens drifting apart is how the
+    /// same state ends up looking like two states.
+    static let done = Color(
+        light: Color(red: 0.10, green: 0.45, blue: 0.20), dark: .green)
+
     /// A colour that follows the interface style.
     ///
     /// SwiftUI has no literal for this the way CSS has a media query, so the

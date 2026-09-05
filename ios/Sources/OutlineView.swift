@@ -2054,6 +2054,13 @@ private struct ScopeTitle: View {
         } label: {
             titleLabel
         }
+        // A `Menu` tints its label with the accent colour, and that tint is
+        // what the label's own `.primary`/`.secondary` then resolve against —
+        // so the title came out blue and the status line a pale blue at about
+        // 1.8:1. `.tint(.primary)` puts the stack back on the label palette;
+        // `titleLabel` still paints itself, and `lit` still overrides for a
+        // drop.
+        .tint(.primary)
         // Off on the grid, where the path is empty and there is nowhere to go.
         .disabled(path.isEmpty)
     }
@@ -2079,8 +2086,13 @@ private struct ScopeTitle: View {
     private var statusLine: some View {
         Text(status)
             .font(.caption2)
+            // `.secondary`, not `.tertiary`. Tertiary is 26% opacity — about
+            // 1.8:1 against the bar in light mode and 2.2:1 in dark, against
+            // the 4.5:1 text this size needs. It is Apple's tint for
+            // decoration, and this is a figure meant to be read. Secondary is
+            // 60%, clears the bar in both, and still sits under the name.
             .foregroundStyle(
-                complete ? AnyShapeStyle(Color.green) : AnyShapeStyle(.tertiary))
+                complete ? AnyShapeStyle(Color.done) : AnyShapeStyle(.secondary))
             .monospacedDigit()
             .contentTransition(.numericText())
     }
@@ -2870,7 +2882,7 @@ private struct ProjectRow: View {
                     Text(complete ? "All done" : "\(progress.done)/\(progress.total)")
                         .font(.caption.monospacedDigit())
                         .foregroundStyle(
-                            complete ? AnyShapeStyle(Color.green) : AnyShapeStyle(.secondary))
+                            complete ? AnyShapeStyle(Color.done) : AnyShapeStyle(.secondary))
                 }
 
                 Capsule()
@@ -2879,7 +2891,7 @@ private struct ProjectRow: View {
                     .overlay(alignment: .leading) {
                         GeometryReader { geo in
                             Capsule()
-                                .fill(complete ? Color.green : Color.accentColor)
+                                .fill(complete ? Color.done : Color.accentColor)
                                 .frame(width: geo.size.width * CGFloat(progress.pct) / 100)
                         }
                     }
