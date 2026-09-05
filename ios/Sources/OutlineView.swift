@@ -1852,27 +1852,27 @@ private struct ScopeTitle: View {
         // one was easy. Opening the menu is deliberate, and every row in it is
         // full width.
         Menu {
-            // Nearest first. The menu opens under the title, so the steps you
-            // are most likely to want are the ones closest to the finger — and
-            // "one back" is by far the most common, which is why Back exists at
-            // all.
-            ForEach(ancestors.reversed()) { node in
-                Button {
-                    onTap(node.id)
-                } label: {
-                    Label(node.text.isEmpty ? "Untitled" : node.text,
-                          systemImage: "chevron.up")
-                }
-            }
-
-            // Always last, always present. The house button does the same
-            // thing in one tap, but this is where you are already looking when
-            // the question is "get me out of here".
-            Divider()
+            // Top down, outermost first — the path read the way it is written,
+            // and the way the crumb trail read left to right. Nearest-first
+            // puts the commonest jump under the finger, but it also inverts
+            // the one thing the menu is for: showing where you are in a
+            // hierarchy. Back already covers one step up.
+            //
+            // Projects heads the list because it is the top of the path, not
+            // an escape bolted to the end.
             Button {
                 onTap(nil)
             } label: {
                 Label("Projects", systemImage: "house")
+            }
+
+            ForEach(ancestors) { node in
+                Button {
+                    onTap(node.id)
+                } label: {
+                    Label(node.text.isEmpty ? "Untitled" : node.text,
+                          systemImage: "chevron.down")
+                }
             }
         } label: {
             titleLabel
@@ -1886,6 +1886,18 @@ private struct ScopeTitle: View {
     private var ancestors: [Node] {
         path.dropLast()
     }
+
+    /// How wide the title may be: the screen less the space the leading and
+    /// trailing buttons occupy. Back is a chevron and the exit is a house, so
+    /// the reserve is the same on both sides and the title stays centred.
+    private var titleWidth: CGFloat {
+        UIScreen.main.bounds.width - buttonZone * 2
+    }
+
+    /// A toolbar button's tap target plus the bar's own edge inset. Nothing
+    /// exposes this, so it is measured: the chevron sits ~16pt from the edge
+    /// and is ~44pt wide.
+    private let buttonZone: CGFloat = 60
 
     private var titleLabel: some View {
         VStack(spacing: 1) {
@@ -1913,9 +1925,15 @@ private struct ScopeTitle: View {
                 .monospacedDigit()
                 .contentTransition(.numericText())
         }
-        // The tint hugs the words rather than the whole centring track, so the
-        // highlight reads as "this title" and not "this row of the toolbar".
-        .padding(.horizontal, 10)
+        // As wide as the bar allows. A drop on the header is easy to miss when
+        // the target is only as wide as the name — "Fds" lit up is a thumbnail
+        // — and a target that changes size with the title is one you have to
+        // look at to aim. This is the same rectangle every time.
+        //
+        // `.principal` sizes to its content, so the width is asked for rather
+        // than filled: the screen less the two button zones. `maxWidth` and not
+        // `width`, so a bar too narrow for it shrinks instead of colliding.
+        .frame(maxWidth: max(titleWidth, 0))
         .padding(.vertical, 3)
         .background {
             if lit {
