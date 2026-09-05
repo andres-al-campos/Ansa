@@ -288,17 +288,19 @@ struct OutlineView: View {
                     // in; the name was on screen twice and the two bands cost
                     // ~104pt between them. This is one band at ~54pt.
                     //
-                    // The trail is still reachable — Back walks it a step at a
-                    // time, and the house button leaves in one tap. What is
-                    // gone is the horizontal path, which spent width to answer
-                    // a question asked far less often than "how far in am I".
+                    // The trail is still here, just folded into the title:
+                    // tapping the name opens the path as a menu. What is gone
+                    // is the horizontal path, which spent width to answer a
+                    // question asked far less often than "how far in am I".
                     if scope != nil {
                         ScopeTitle(
                             title: title(of: scope),
                             progress: adjusted(TreeOps.scopeProgress(tree, scope)),
                             // Only the live copy can be a drop target; a drag
                             // and a back swipe cannot both be running.
-                            lit: litRoot)
+                            lit: litRoot,
+                            path: scope.map { TreeOps.lineageOf(tree, $0) } ?? [],
+                            onTap: setScope)
                     }
                 }
                 if scope != nil {
@@ -1816,6 +1818,10 @@ private struct ScopeTitle: View {
     /// project is the list, not a task in it — but it is the same question a
     /// drag is asking, so it gets the same answer.
     let lit: Bool
+    /// Root-first, current scope last, as `TreeOps.lineageOf` gives it.
+    /// Empty on the project grid, where there is no path.
+    let path: [Node]
+    let onTap: (NodeId?) -> Void
 
     private var complete: Bool { progress?.pct == 100 }
 
@@ -1834,13 +1840,71 @@ private struct ScopeTitle: View {
     }
 
     var body: some View {
+        // The path vertically, on demand, rather than horizontally and always.
+        //
+        // The crumb trail this replaces spent the width of the bar on a route
+        // you mostly already know, and elided its middle exactly when the trail
+        // got long enough to be worth reading. A menu has as many lines as the
+        // path has steps.
+        //
+        // It also fixes what the width was costing: a crumb is a small target
+        // beside other small targets, so leaving a scope by tapping the wrong
+        // one was easy. Opening the menu is deliberate, and every row in it is
+        // full width.
+        Menu {
+            // Nearest first. The menu opens under the title, so the steps you
+            // are most likely to want are the ones closest to the finger — and
+            // "one back" is by far the most common, which is why Back exists at
+            // all.
+            ForEach(ancestors.reversed()) { node in
+                Button {
+                    onTap(node.id)
+                } label: {
+                    Label(node.text.isEmpty ? "Untitled" : node.text,
+                          systemImage: "chevron.up")
+                }
+            }
+
+            // Always last, always present. The house button does the same
+            // thing in one tap, but this is where you are already looking when
+            // the question is "get me out of here".
+            Divider()
+            Button {
+                onTap(nil)
+            } label: {
+                Label("Projects", systemImage: "house")
+            }
+        } label: {
+            titleLabel
+        }
+        // Off on the grid, where the path is empty and there is nowhere to go.
+        .disabled(path.isEmpty)
+    }
+
+    /// The path above the current scope. The scope itself is the title, and
+    /// offering it would be a row that navigates nowhere.
+    private var ancestors: [Node] {
+        path.dropLast()
+    }
+
+    private var titleLabel: some View {
         VStack(spacing: 1) {
-            Text(title)
-                .font(.headline)
-                .lineLimit(1)
-                .truncationMode(.tail)
-                .foregroundStyle(
-                    lit ? AnyShapeStyle(DropPalette.nest) : AnyShapeStyle(.primary))
+            HStack(spacing: 4) {
+                Text(title)
+                    .font(.headline)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+
+                // The mark that says the name is a control. Without it the
+                // title reads as a label and the menu never gets found.
+                if !path.isEmpty {
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(.tertiary)
+                }
+            }
+            .foregroundStyle(
+                lit ? AnyShapeStyle(DropPalette.nest) : AnyShapeStyle(.primary))
 
             Text(status)
                 .font(.caption2)
@@ -2457,85 +2521,5 @@ private struct RowFramesKey: PreferenceKey {
     static var defaultValue: [NodeId: CGRect] { [:] }
     static func reduce(value: inout [NodeId: CGRect], nextValue: () -> [NodeId: CGRect]) {
         value.merge(nextValue()) { _, new in new }
-    }
-}
-
-/// The path to the current scope, as tappable crumbs.
-///
-/// This replaces a plain title because the title only ever said where you are,
-/// and the question that costs you taps is how to get somewhere else. Every
-/// crumb is a jump, so leaving a deep scope is one tap rather than one swipe
-/// per level.
-///
-/// Currently unused: the nav bar shows `ScopeTitle` instead, which spends the
-/// width on the scope's own name and progress. Kept because the jump is a real
-/// capability and nothing has replaced it yet — the intended successor is a
-/// menu hung off the title, showing the same path vertically. Delete this once
-/// that exists, not before.
-private struct Crumbs: View {
-    /// Root-first, current scope last. Empty on the project grid.
-    let path: [Node]
-    let onTap: (NodeId?) -> Void
-
-    /// How many crumbs to show before eliding the middle.
-    ///
-    /// The two that matter are the ends: the root says which project, the last
-    /// says where in it. Anything between is context you can already see by
-    /// looking at the screen, so it is the first thing to go.
-    private let visible = 3
-
-    var body: some View {
-        HStack(spacing: 4) {
-            crumb("Projects", id: nil, current: path.isEmpty)
-            ForEach(Array(shown.enumerated()), id: \.offset) { index, entry in
-                separator
-                switch entry {
-                case .elision:
-                    // Not tappable: it stands for several scopes at once, so
-                    // there is no single place a tap could mean.
-                    Text("…").foregroundStyle(.secondary)
-                case .node(let node):
-                    crumb(node.text.isEmpty ? "Untitled" : node.text,
-                          id: node.id,
-                          current: node.id == path.last?.id)
-                }
-            }
-        }
-        .font(.subheadline)
-        // The last crumb is the one being read, so it is the one that keeps its
-        // full width when the bar runs out of room.
-        .lineLimit(1)
-        .truncationMode(.tail)
-    }
-
-    private enum Entry {
-        case node(Node)
-        case elision
-    }
-
-    /// The path with its middle collapsed once it outgrows the bar.
-    ///
-    /// Elides rather than scrolls: a marquee only reads while it is moving, so
-    /// you have to wait for the crumb you want before you can tap it.
-    private var shown: [Entry] {
-        guard path.count > visible else { return path.map(Entry.node) }
-        guard let first = path.first, let last = path.last else { return [] }
-        return [.node(first), .elision, .node(last)]
-    }
-
-    private var separator: some View {
-        Text("›").foregroundStyle(.tertiary)
-    }
-
-    @ViewBuilder private func crumb(_ text: String, id: NodeId?, current: Bool) -> some View {
-        if current {
-            // The scope you are already in: shown, not offered, since tapping
-            // it would do nothing and looking tappable promises otherwise.
-            Text(text).fontWeight(.semibold)
-        } else {
-            Button(text) { onTap(id) }
-                .buttonStyle(.plain)
-                .foregroundStyle(.secondary)
-        }
     }
 }
