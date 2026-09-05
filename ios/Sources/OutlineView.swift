@@ -49,10 +49,6 @@ struct OutlineView: View {
     /// swallows a tap reads as broken.
     @State private var trashNotBuilt = false
 
-    /// Same for search. Both live in the home bar, so both need to say what
-    /// they are rather than absorb a tap.
-    @State private var searchNotBuilt = false
-
     @State private var renamingScope: NodeId?
     @State private var renameText = ""
     @FocusState private var renamingFocus: Bool
@@ -269,11 +265,6 @@ struct OutlineView: View {
                 Text(
                     "Deleted tasks are kept for 30 days, but the phone cannot show them yet. Open Ansa in a browser to restore something.")
             }
-            .alert("No search yet", isPresented: $searchNotBuilt) {
-                Button("OK", role: .cancel) {}
-            } message: {
-                Text("Searching across projects is not built on the phone yet.")
-            }
             // Swipe right from the left edge to zoom out, the way every other
             // iOS app pops a screen. `NavigationStack` would give this for
             // free on a pushed view, but zooming is a change of `scope` in
@@ -460,7 +451,8 @@ struct OutlineView: View {
                         // "next project" — a run of projects is not a thing
                         // people do, so this is a plain commit either way.
                         onSubmit: submitProjectName,
-                        onDelete: confirmDeleteProject)
+                        onDelete: confirmDeleteProject,
+                        onOpenTrash: { trashNotBuilt = true })
                 } else {
                     outline(for: scope, interactive: interactive)
                 }
@@ -477,16 +469,7 @@ struct OutlineView: View {
         // one below a field that no longer exists, with no way to make a first
         // project at all.
         .safeAreaInset(edge: .bottom, alignment: .trailing, spacing: 0) {
-            HStack(spacing: 12) {
-                // Home only. Inside a project the bar's two destinations are
-                // both about leaving, and the screen already has a back button
-                // and a breadcrumb for that.
-                if scope == nil {
-                    homeBar
-                }
-                Spacer(minLength: 0)
-                captureButton(interactive: interactive)
-            }
+            captureButton(interactive: interactive)
         }
         // Opaque, so the rows behind cannot show through the slab as it
         // moves. A `VStack` paints only what its children paint, and the
@@ -726,43 +709,6 @@ struct OutlineView: View {
         // that is on its way off screen.
         .onAppear { if interactive { scroller = proxy } }
         }
-    }
-
-    /// Trash and search, on the bottom edge of the home screen.
-    ///
-    /// Both are destinations rather than things in the list, and the trash was
-    /// a row at the end of one — so it moved further down every time a project
-    /// was added, which is exactly backwards for the place you go to undo a
-    /// delete. On the edge it costs no scrolling at any list length.
-    ///
-    /// Beside the capture button rather than replacing it: a bar of equal
-    /// buttons would say these three are the same kind of thing, and adding is
-    /// the primary action while these two are ways out.
-    private var homeBar: some View {
-        HStack(spacing: 4) {
-            barButton("trash", label: "Trash") { trashNotBuilt = true }
-            barButton("magnifyingglass", label: "Search") { searchNotBuilt = true }
-        }
-        // The same glass and shadow as the capture button, so the edge reads as
-        // one layer floating over the list rather than two unrelated controls.
-        .background(Capsule().fill(.regularMaterial))
-        .shadow(color: .black.opacity(0.12), radius: 6, y: 2)
-        .padding(.leading, OutlineRow.railInset)
-        .padding(.bottom, 12)
-    }
-
-    private func barButton(
-        _ symbol: String, label: String, action: @escaping () -> Void
-    ) -> some View {
-        Button(action: action) {
-            Image(systemName: symbol)
-                .font(.system(size: 18, weight: .medium))
-                .foregroundStyle(Color.primary)
-                .frame(width: 52, height: 52)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(label)
     }
 
     /// The one control: plus at rest, checkmark while adding.
@@ -2592,6 +2538,10 @@ private struct ProjectGrid: View {
     let onSubmit: () -> Void
     let onDelete: (NodeId) -> Void
 
+    /// Whether the trash row was tapped. The trash view does not exist yet, so
+    /// this only drives the "nothing to show you" note.
+    let onOpenTrash: () -> Void
+
     /// The unpinned roots. Pinned ones move up to their own section rather than
     /// showing twice — the same rule the web's sidebar follows.
     private var projects: [Node] { TreeOps.projectSections(tree).unpinned }
@@ -2699,6 +2649,23 @@ private struct ProjectGrid: View {
                     }
                 } header: {
                     Text("Projects")
+                }
+
+                // Its own section with no header, so it reads as a place of its
+                // own rather than the last project in the list.
+                Section {
+                    // `.plain` and an explicit shape, the same as a project row:
+                    // the default button style in a sidebar list only takes a
+                    // tap on the label's own glyph and text, so the rest of the
+                    // row swallowed it.
+                    Button(action: onOpenTrash) {
+                        Label("Trash", systemImage: "trash")
+                            .foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.vertical, 6)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
                 }
             }
             .listStyle(.sidebar)
