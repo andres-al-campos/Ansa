@@ -182,9 +182,27 @@ export class AnsaTree extends DurableObject {
     return tree
   }
 
-  /** Drop one trashed subtree for good. */
-  forget(entryId: string): void {
-    this.ctx.storage.transactionSync(() => this.store.forget(entryId))
+  /**
+   * Drop one trashed subtree for good.
+   *
+   * Broadcasts even though the tree does not change. Forgetting only touches
+   * `trash_nodes` — the node left `nodes` when it was deleted — so there was no
+   * new tree to send and this was the one trash mutation that sent nothing.
+   * Deleting synced and permanently deleting did not.
+   *
+   * The tree is what the socket carries, so an unchanged one is what there is
+   * to send: it costs a redundant payload on an action taken rarely, and it
+   * wakes the other device's sync so a trash opened after this sees the row
+   * gone. A device with the trash already open still shows the stale row —
+   * that needs a message type of its own, which is a protocol change for a
+   * case that has not come up yet.
+   */
+  forget(entryId: string, origin: string | null = null): void {
+    const tree = this.ctx.storage.transactionSync(() => {
+      this.store.forget(entryId)
+      return this.store.load()
+    })
+    this.broadcast(tree, origin)
   }
 
   /**

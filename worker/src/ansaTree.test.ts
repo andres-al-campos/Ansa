@@ -357,6 +357,29 @@ describe('the trash', () => {
     expect(payload.tree).toHaveLength(2)
   })
 
+  it('broadcasts a permanent delete, though the tree is unchanged', async () => {
+    // The gap that shipped: deleting synced and permanently deleting did not.
+    // `forget` only touches the trash tables, so there was no new tree to send
+    // and it sent nothing — leaving the other device's trash showing a row that
+    // was gone. The tree is what the socket carries, so an unchanged one is
+    // what there is to send.
+    const { root } = await project()
+    await tree.remove(root, null, true)
+
+    const ws = fakeSocket()
+    ctx.acceptWebSocket(ws as never)
+    ws.sent.length = 0
+
+    const [entry] = tree.trashPage().entries
+    tree.forget(entry.id, 'phone')
+
+    expect(tree.trashPage().entries).toHaveLength(0)
+    const [payload] = received(ws)
+    expect(payload.origin).toBe('phone')
+    // Unchanged: the node left `nodes` when it was deleted, not now.
+    expect(payload.tree).toHaveLength(0)
+  })
+
   it('does not broadcast when the entry is already gone', () => {
     // A stale list restoring twice must not push an unchanged tree at every
     // other device, which would look like a change that never happened.

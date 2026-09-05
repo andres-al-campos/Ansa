@@ -317,7 +317,7 @@ async function route(c: Ctx): Promise<Response> {
 
   const entry = path.match(/^\/api\/trash\/([^/]+)$/)
   if (entry && method === 'DELETE') {
-    await tree.forget(decodeURIComponent(entry[1]))
+    await tree.forget(decodeURIComponent(entry[1]), c.origin)
     return json({ ok: true }, 200, cors)
   }
 
