@@ -40,16 +40,13 @@ struct OutlineView: View {
 
     /// The scope being renamed, and the name being typed for it.
     ///
-    /// An alert rather than editing the title in place. The scope has no row of
-    /// its own — zooming in is what turns its row into the header — so the
-    /// obvious move was to make the header a field. A `.principal` toolbar item
-    /// will not host one: its content is built in a pass of its own, so a
-    /// `@FocusState` aimed at it reads straight back as nil, the field never
-    /// becomes first responder, and every rename is discarded silently. An
-    /// alert brings its own field and its own focus, and it is the same shape
-    /// iOS uses for "name this thing" everywhere else.
-    @State private var renamingScope: Node?
+    /// Deliberately not `EditController`: that one is the row path's, keyed by
+    /// the row whose `TextField` exists. The scope has no row — zooming in is
+    /// what turns its row into the header — so its rename is a state of its
+    /// own, and the two cannot overwrite each other.
+    @State private var renamingScope: NodeId?
     @State private var renameText = ""
+    @FocusState private var renamingFocus: Bool
     /// The outline's scroll proxy, kept so paths outside the `ScrollViewReader`
     /// can drive it.
     ///
@@ -230,10 +227,19 @@ struct OutlineView: View {
                     get: { pendingDelete != nil },
                     set: { if !$0 { pendingDelete = nil } }),
                 presenting: pendingDelete
-            ) { project in
+            ) { target in
                 Button("Cancel", role: .cancel) { pendingDelete = nil }
-                Button("Delete Project", role: .destructive) {
-                    apply(.removeNode(id: project.id, trash: true))
+                // "Delete" plainly: this now guards a task in the outline as
+                // well as a project on the grid, and the alert's own title
+                // already names which one.
+                Button("Delete", role: .destructive) {
+                    // Out first when it is the screen you are standing on —
+                    // to the parent, not through `zoomOut`, which walks the
+                    // back trail and would land you on whatever scope you
+                    // happened to visit before. The place to be after
+                    // deleting something is where it used to be listed.
+                    if scope == target.id { setScope(target.parentId) }
+                    apply(.removeNode(id: target.id, trash: true))
                     pendingDelete = nil
                 }
             } message: { project in
@@ -244,31 +250,6 @@ struct OutlineView: View {
                 Text(count == 0
                     ? "It stays in the trash for 30 days."
                     : "This deletes \(count) task\(count == 1 ? "" : "s") under it. They stay in the trash for 30 days.")
-            }
-            .alert(
-                "Rename",
-                isPresented: Binding(
-                    get: { renamingScope != nil },
-                    set: { if !$0 { renamingScope = nil } }),
-                presenting: renamingScope
-            ) { node in
-                TextField("Name", text: $renameText)
-                Button("Cancel", role: .cancel) { renamingScope = nil }
-                Button("Save") {
-                    // Through `TreeOps.commitEdit`, the same rule a row uses:
-                    // an emptied name deletes the node, an unchanged one is no
-                    // op. Renaming the scope should not mean something
-                    // different from renaming a row.
-                    let op = TreeOps.commitEdit(tree, node.id, renameText)
-                    // Leave before it goes. Emptying the name deletes the node,
-                    // and the node here is the screen you are standing on — the
-                    // header would keep naming something the tree no longer
-                    // has. The parent, not `zoomOut`, for the same reason
-                    // Delete uses it: where the thing used to be listed.
-                    if case .removeNode = op { setScope(node.parentId) }
-                    if let op { apply(op) }
-                    renamingScope = nil
-                }
             }
             // Swipe right from the left edge to zoom out, the way every other
             // iOS app pops a screen. `NavigationStack` would give this for
@@ -338,7 +319,11 @@ struct OutlineView: View {
                             // and a back swipe cannot both be running.
                             lit: litRoot,
                             path: scope.map { TreeOps.lineageOf(tree, $0) } ?? [],
-                            onTap: setScope)
+                            onTap: setScope,
+                            editing: renamingScope != nil && renamingScope == scope,
+                            editText: $renameText,
+                            typing: $renamingFocus,
+                            onCommit: commitScopeRename)
                     }
                 }
                 if scope != nil {
@@ -364,6 +349,23 @@ struct OutlineView: View {
         }
     }
 
+    /// Finish renaming the scope.
+    ///
+    /// Through `TreeOps.commitEdit`, the same rule a row uses: an emptied name
+    /// deletes the node, an unchanged one is no op. Renaming the scope should
+    /// not mean something different from renaming a row.
+    private func commitScopeRename() {
+        guard let id = renamingScope else { return }
+        renamingScope = nil
+        let op = TreeOps.commitEdit(tree, id, renameText)
+        // Leave before it goes. Emptying the name deletes the node, and that
+        // node is the screen you are standing on — the header would go on
+        // naming something the tree no longer has. To the parent, where it
+        // used to be listed, not through `zoomOut` and its back trail.
+        if case .removeNode = op { setScope(TreeOps.byId(tree, id)?.parentId) }
+        if let op { apply(op) }
+    }
+
     /// Rename, pin and delete, aimed at the scope itself.
     ///
     /// Ellipsis rather than a named glyph: the three actions have nothing in
@@ -374,7 +376,7 @@ struct OutlineView: View {
             Menu {
                 Button("Rename", systemImage: "pencil") {
                     renameText = node.text
-                    renamingScope = node
+                    renamingScope = id
                 }
 
                 // The web calls a pinned project a place you go and a pinned
@@ -388,25 +390,18 @@ struct OutlineView: View {
                     apply(.setPinned(id: id, pinned: node.pinned != true))
                 }
 
-                // Separated because it is the one that is hard to take back,
-                // and because a mis-tap here costs more than a mis-tap above.
-                Divider()
+                // No divider above it. Red already says which one this is,
+                // and the confirmation is what actually guards it — the same
+                // alert a project on the grid gets, counting what goes with it.
                 Button("Delete", systemImage: "trash", role: .destructive) {
-                    // Out first, to the parent — not through `zoomOut`, which
-                    // walks the back trail and would land you on whatever
-                    // scope you happened to visit before. That is the right
-                    // answer for retracing and the wrong one here: the place
-                    // to be after deleting something is where it used to be
-                    // listed.
-                    setScope(node.parentId)
-                    delete(id)
+                    pendingDelete = node
                 }
             } label: {
-                Image(systemName: "ellipsis.circle")
+                // Bare glyph at the bar's own size, so it weighs the same as
+                // the chevron opposite. The circle drew a button around one of
+                // the two and not the other.
+                Image(systemName: "ellipsis")
             }
-            // Matching the weight the house had, so the bar keeps its balance
-            // against the chevron opposite.
-            .font(.system(size: 14, weight: .regular))
         }
     }
 
@@ -1905,6 +1900,19 @@ private struct ScopeTitle: View {
     let path: [Node]
     let onTap: (NodeId?) -> Void
 
+    /// Renaming happens in the header because the header *is* the scope's row:
+    /// zooming in is exactly what turned that row into this title.
+    let editing: Bool
+    @Binding var editText: String
+    /// The title's focus, not the list's `focusedRow`, which is aimed at rows.
+    /// Owned by the parent and passed in: a `@FocusState` declared here is
+    /// reset whenever the tree changes and rebuilds this struct.
+    let typing: FocusState<Bool>.Binding
+    /// Return, and tapping away, both mean the same thing here — the same rule
+    /// a row follows. It decides whether that is a rename, a delete, or
+    /// nothing at all.
+    let onCommit: () -> Void
+
     private var complete: Bool { progress?.pct == 100 }
 
     /// Always a line, never absent.
@@ -1933,6 +1941,38 @@ private struct ScopeTitle: View {
         // beside other small targets, so leaving a scope by tapping the wrong
         // one was easy. Opening the menu is deliberate, and every row in it is
         // full width.
+        if editing {
+            nameField
+        } else {
+            pathMenu
+        }
+    }
+
+    /// The name, as a field, in the name's place. Nothing moves when a rename
+    /// starts — which is the point of doing it here rather than in a sheet.
+    private var nameField: some View {
+        VStack(spacing: 1) {
+            TextField("Name", text: $editText)
+                .textFieldStyle(.plain)
+                .font(.headline)
+                .multilineTextAlignment(.center)
+                .focused(typing)
+                .submitLabel(.done)
+                .onSubmit(onCommit)
+                .onAppear { typing.wrappedValue = true }
+                // Tapping away commits, the same as Return. Without this the
+                // field would just go and the typing would be lost.
+                .onChange(of: typing.wrappedValue) { was, now in
+                    if was, !now { onCommit() }
+                }
+
+            statusLine
+        }
+        .frame(maxWidth: max(titleWidth, 0))
+        .padding(.vertical, 3)
+    }
+
+    private var pathMenu: some View {
         Menu {
             // Top down, outermost first — the path read the way it is written,
             // and the way the crumb trail read left to right. Nearest-first
@@ -1980,6 +2020,15 @@ private struct ScopeTitle: View {
     /// and is ~44pt wide.
     private let buttonZone: CGFloat = 60
 
+    private var statusLine: some View {
+        Text(status)
+            .font(.caption2)
+            .foregroundStyle(
+                complete ? AnyShapeStyle(Color.green) : AnyShapeStyle(.tertiary))
+            .monospacedDigit()
+            .contentTransition(.numericText())
+    }
+
     private var titleLabel: some View {
         VStack(spacing: 1) {
             HStack(spacing: 4) {
@@ -1999,12 +2048,7 @@ private struct ScopeTitle: View {
             .foregroundStyle(
                 lit ? AnyShapeStyle(DropPalette.nest) : AnyShapeStyle(.primary))
 
-            Text(status)
-                .font(.caption2)
-                .foregroundStyle(
-                    complete ? AnyShapeStyle(Color.green) : AnyShapeStyle(.tertiary))
-                .monospacedDigit()
-                .contentTransition(.numericText())
+            statusLine
         }
         // As wide as the bar allows. A drop on the header is easy to miss when
         // the target is only as wide as the name — "Fds" lit up is a thumbnail
