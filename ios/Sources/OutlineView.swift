@@ -37,6 +37,19 @@ struct OutlineView: View {
     @State private var ripple = RippleController()
     /// The project whose delete is awaiting confirmation.
     @State private var pendingDelete: Node?
+
+    /// The scope being renamed, and the name being typed for it.
+    ///
+    /// An alert rather than editing the title in place. The scope has no row of
+    /// its own — zooming in is what turns its row into the header — so the
+    /// obvious move was to make the header a field. A `.principal` toolbar item
+    /// will not host one: its content is built in a pass of its own, so a
+    /// `@FocusState` aimed at it reads straight back as nil, the field never
+    /// becomes first responder, and every rename is discarded silently. An
+    /// alert brings its own field and its own focus, and it is the same shape
+    /// iOS uses for "name this thing" everywhere else.
+    @State private var renamingScope: Node?
+    @State private var renameText = ""
     /// The outline's scroll proxy, kept so paths outside the `ScrollViewReader`
     /// can drive it.
     ///
@@ -232,6 +245,31 @@ struct OutlineView: View {
                     ? "It stays in the trash for 30 days."
                     : "This deletes \(count) task\(count == 1 ? "" : "s") under it. They stay in the trash for 30 days.")
             }
+            .alert(
+                "Rename",
+                isPresented: Binding(
+                    get: { renamingScope != nil },
+                    set: { if !$0 { renamingScope = nil } }),
+                presenting: renamingScope
+            ) { node in
+                TextField("Name", text: $renameText)
+                Button("Cancel", role: .cancel) { renamingScope = nil }
+                Button("Save") {
+                    // Through `TreeOps.commitEdit`, the same rule a row uses:
+                    // an emptied name deletes the node, an unchanged one is no
+                    // op. Renaming the scope should not mean something
+                    // different from renaming a row.
+                    let op = TreeOps.commitEdit(tree, node.id, renameText)
+                    // Leave before it goes. Emptying the name deletes the node,
+                    // and the node here is the screen you are standing on — the
+                    // header would keep naming something the tree no longer
+                    // has. The parent, not `zoomOut`, for the same reason
+                    // Delete uses it: where the thing used to be listed.
+                    if case .removeNode = op { setScope(node.parentId) }
+                    if let op { apply(op) }
+                    renamingScope = nil
+                }
+            }
             // Swipe right from the left edge to zoom out, the way every other
             // iOS app pops a screen. `NavigationStack` would give this for
             // free on a pushed view, but zooming is a change of `scope` in
@@ -307,24 +345,68 @@ struct OutlineView: View {
                     ToolbarItem(placement: .topBarLeading) {
                         Button("Back", systemImage: "chevron.left", action: zoomOut)
                     }
-                    // Back walks the trail a step at a time, which is right for
-                    // retracing and wrong for leaving: crossing to another
-                    // project meant swiping out as many times as you had gone
-                    // in. This is the one move that is always one tap.
+                    // What the house used to be, plus what the scope has never
+                    // had: a way to act on the thing you are inside.
+                    //
+                    // A row can be renamed, pinned and deleted by tapping or
+                    // swiping it, but zooming in turns that row into the
+                    // screen, and the screen had no such handles — you had to
+                    // leave the scope to do anything to it.
+                    //
+                    // The house moved because the title menu now leaves in one
+                    // tap too, so this corner was spending itself on a second
+                    // route to the same place.
                     ToolbarItem(placement: .topBarTrailing) {
-                        Button("Projects", systemImage: "house") {
-                            setScope(nil)
-                        }
-                        // A shade under the toolbar default: the glyph is
-                        // solider than the chevron opposite it and drew heavier
-                        // than the thing it sits beside.
-                        // Outline `house`, not `house.fill`: the solid glyph
-                        // drew heavier than the chevron opposite it, and this
-                        // is the quieter of the two controls.
-                        .font(.system(size: 14, weight: .regular))
+                        scopeMenu
                     }
                 }
             }
+        }
+    }
+
+    /// Rename, pin and delete, aimed at the scope itself.
+    ///
+    /// Ellipsis rather than a named glyph: the three actions have nothing in
+    /// common to name, and iOS spells "more, on this thing" this way
+    /// everywhere else.
+    @ViewBuilder private var scopeMenu: some View {
+        if let id = scope, let node = TreeOps.byId(tree, id) {
+            Menu {
+                Button("Rename", systemImage: "pencil") {
+                    renameText = node.text
+                    renamingScope = node
+                }
+
+                // The web calls a pinned project a place you go and a pinned
+                // task a thing to do; both are pins, so this is offered at any
+                // depth. Nothing on the phone shows pinned tasks back yet —
+                // the sidebar that does is web-only.
+                Button(
+                    node.pinned == true ? "Unpin" : "Pin",
+                    systemImage: node.pinned == true ? "pin.slash" : "pin"
+                ) {
+                    apply(.setPinned(id: id, pinned: node.pinned != true))
+                }
+
+                // Separated because it is the one that is hard to take back,
+                // and because a mis-tap here costs more than a mis-tap above.
+                Divider()
+                Button("Delete", systemImage: "trash", role: .destructive) {
+                    // Out first, to the parent — not through `zoomOut`, which
+                    // walks the back trail and would land you on whatever
+                    // scope you happened to visit before. That is the right
+                    // answer for retracing and the wrong one here: the place
+                    // to be after deleting something is where it used to be
+                    // listed.
+                    setScope(node.parentId)
+                    delete(id)
+                }
+            } label: {
+                Image(systemName: "ellipsis.circle")
+            }
+            // Matching the weight the house had, so the bar keeps its balance
+            // against the chevron opposite.
+            .font(.system(size: 14, weight: .regular))
         }
     }
 
@@ -1866,12 +1948,11 @@ private struct ScopeTitle: View {
                 Label("Projects", systemImage: "house")
             }
 
+            // No glyph on these. The same arrow beside every row distinguishes
+            // nothing, and the order already says which way the path runs.
             ForEach(ancestors) { node in
-                Button {
+                Button(node.text.isEmpty ? "Untitled" : node.text) {
                     onTap(node.id)
-                } label: {
-                    Label(node.text.isEmpty ? "Untitled" : node.text,
-                          systemImage: "chevron.down")
                 }
             }
         } label: {
