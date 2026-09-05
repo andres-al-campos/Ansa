@@ -283,12 +283,23 @@ struct OutlineView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .principal) {
-                    // The route, not the destination: the last crumb is the
-                    // body's title one line down, and saying it twice was what
-                    // made the header feel like it was repeating itself.
-                    Crumbs(
-                        path: scope.map { Array(TreeOps.lineageOf(tree, $0).dropLast()) } ?? [],
-                        onTap: setScope)
+                    // The destination, not the route. The strip below used to
+                    // name the scope and the crumbs above used to name the way
+                    // in; the name was on screen twice and the two bands cost
+                    // ~104pt between them. This is one band at ~54pt.
+                    //
+                    // The trail is still reachable — Back walks it a step at a
+                    // time, and the house button leaves in one tap. What is
+                    // gone is the horizontal path, which spent width to answer
+                    // a question asked far less often than "how far in am I".
+                    if scope != nil {
+                        ScopeTitle(
+                            title: title(of: scope),
+                            progress: adjusted(TreeOps.scopeProgress(tree, scope)),
+                            // Only the live copy can be a drop target; a drag
+                            // and a back swipe cannot both be running.
+                            lit: litRoot)
+                    }
                 }
                 if scope != nil {
                     ToolbarItem(placement: .topBarLeading) {
@@ -326,22 +337,6 @@ struct OutlineView: View {
     ///   set of writes land and be sorted out afterwards.
     @ViewBuilder private func slab(for scope: NodeId?, interactive: Bool) -> some View {
             VStack(spacing: 0) {
-                // Scrolls away with the list rather than pinning: it says where
-                // you are and how far in, which is read on arrival rather than
-                // watched continuously. Pinning both ends squeezed an already
-                // short screen.
-                // Only inside a project. On the grid each card carries its own
-                // bar, and a single figure across every project at once answers
-                // a question nobody asked.
-                if scope != nil, let progress = adjusted(TreeOps.scopeProgress(tree, scope)) {
-                    ScopeProgress(
-                        progress: progress,
-                        title: title(of: scope),
-                        // Only the live copy can be a drop target; a drag and a
-                        // back swipe cannot both be running.
-                        lit: interactive && litRoot)
-                }
-
                 if !store.live {
                     // Only about receiving. Saying "not saved" here would be a
                     // lie that pushes people into re-typing work that is
@@ -701,6 +696,9 @@ struct OutlineView: View {
     /// would read "0 of 4" with three tasks on screen. Corrected here rather
     /// than in `TreeOps` because the spare is a detail of how this view keeps
     /// the keyboard up — the model has no reason to know about it.
+    ///
+    /// Returning nil when the spare was the only leaf is fine: `ScopeTitle`
+    /// draws nil as 0%, so the header keeps its height either way.
     private func adjusted(_ progress: TreeOps.Progress?) -> TreeOps.Progress? {
         guard let progress, spareRow != nil else { return progress }
         let total = progress.total - 1
@@ -1799,99 +1797,72 @@ struct OutlineView: View {
     }
 }
 
-/// One bar for the whole scope, the way the web app does it.
+/// The scope's name and how far into it you are, as the nav bar's own title.
 ///
-/// Blue while there is work left, green at 100% — the colour change is the
-/// point, since a full bar and a nearly-full one are hard to tell apart at 4pt
-/// tall.
-private struct ScopeProgress: View {
-    let progress: TreeOps.Progress
-    /// The scope's own name, and the header's title.
-    ///
-    /// Always shown: it is what a drop lands *on*, so the strip reads as a
-    /// parent rather than an unlabelled measurement, and it is the one place
-    /// the current scope is named now that the nav bar holds the path there.
+/// One header instead of two. The name used to appear twice — once as the last
+/// crumb, once atop a progress strip below — and the strip cost ~60pt to say a
+/// thing the title bar was already saying.
+///
+/// The bar went with it. What was worth keeping was the figure, not the shape:
+/// a 4pt capsule reads as "some" or "most", where `45% done` is the actual
+/// answer and takes less room to give.
+private struct ScopeTitle: View {
     let title: String
+    /// Nil when the scope has no leaves under it — an empty project, or a leaf
+    /// you zoomed into. Rendered as 0%, not hidden: see `status`.
+    let progress: TreeOps.Progress?
     /// A drop at depth 0 would land as a top-level task in this project. Not
     /// nesting into the project the way one row nests into another — the
     /// project is the list, not a task in it — but it is the same question a
     /// drag is asking, so it gets the same answer.
     let lit: Bool
-    private var complete: Bool { progress.pct == 100 }
+
+    private var complete: Bool { progress?.pct == 100 }
+
+    /// Always a line, never absent.
+    ///
+    /// `nil` progress and 0% are different claims in the model, and `TreeOps`
+    /// is right to distinguish them. They are the same claim *here*: both mean
+    /// "nothing done yet", and a header that drops a line for one of them
+    /// changes height as you navigate. Zooming into a leaf would nudge the
+    /// whole list up 10pt, which is the one thing a header must not do.
+    ///
+    /// Words at 100% rather than `100% done`, which reads like a receipt.
+    private var status: String {
+        guard let progress else { return "0% done" }
+        return progress.pct == 100 ? "All done" : "\(progress.pct)% done"
+    }
 
     var body: some View {
-        // Two rows: the path, then the bar. They answer different questions —
-        // where am I, and how far in — and stacking them keeps each legible
-        // where cramming all of it onto one line did not.
-        //
-        // Height is the other reason. This strip is what a drop lands on to
-        // make a task a child of the project, and beside full-height task rows
-        // a one-line strip was too slim a target to aim at.
-        VStack(alignment: .leading, spacing: 7) {
-            HStack(spacing: 8) {
-                // The scope's own name. The trail that leads here is in the
-                // nav bar above — chrome names the route, the body names the
-                // thing, which is how a file browser splits the same two facts.
-                // Flush left with the rows and the bar, sharing their edge.
-                //
-                // The name stays put under a drag — only the colour changes.
-                // It used to read "Drop into X", which the strip needed when it
-                // was one line tall and could be mistaken for a measurement.
-                // At this size the highlight is unambiguous on its own, and
-                // swapping the text moved the header out from under the finger
-                // aiming at it.
-                Text(title)
-                    .font(.title3.weight(.semibold))
-                    .lineLimit(1)
-                    .foregroundStyle(
-                        lit ? AnyShapeStyle(DropPalette.nest) : AnyShapeStyle(.primary))
-                Spacer(minLength: 0)
-            }
+        VStack(spacing: 1) {
+            Text(title)
+                .font(.headline)
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .foregroundStyle(
+                    lit ? AnyShapeStyle(DropPalette.nest) : AnyShapeStyle(.primary))
 
-            // `n of m done` used to sit here. Dropped rather than shrunk: it is
-            // on every card in the project grid, which is where the question it
-            // answers — is this one worth opening — actually gets asked. Inside
-            // a project the tasks themselves say it, and the width buys a
-            // couple more crumbs before the path has to elide.
-            HStack(spacing: 8) {
-                ZStack(alignment: .leading) {
-                    GeometryReader { geo in
-                        ZStack(alignment: .leading) {
-                            Capsule().fill(.quaternary)
-                            Capsule()
-                                .fill(complete ? Color.green : Color.accentColor)
-                                .frame(width: geo.size.width * CGFloat(progress.pct) / 100)
-                        }
-                    }
-                }
-                .frame(height: 4)
-
-                Text("\(progress.pct)%")
-                    .foregroundStyle(
-                        complete ? AnyShapeStyle(Color.green) : AnyShapeStyle(.tertiary))
-                    .monospacedDigit()
-                    .contentTransition(.numericText())
-            }
+            Text(status)
+                .font(.caption2)
+                .foregroundStyle(
+                    complete ? AnyShapeStyle(Color.green) : AnyShapeStyle(.tertiary))
+                .monospacedDigit()
+                .contentTransition(.numericText())
         }
-        .font(.subheadline.weight(.medium))
-        .padding(.leading, OutlineRow.columnLeft)
-        .padding(.trailing, OutlineRow.railInset)
-        .padding(.vertical, 8)
-        // Same fill and outline a lit parent row gets, so "this becomes the
-        // parent" looks the same whether the parent is a row or the project.
-        // Drawn as a background rather than an overlay: the strip is a real
-        // element, not something floating over the list.
+        // The tint hugs the words rather than the whole centring track, so the
+        // highlight reads as "this title" and not "this row of the toolbar".
+        .padding(.horizontal, 10)
+        .padding(.vertical, 3)
         .background {
             if lit {
-                RoundedRectangle(cornerRadius: 6)
+                RoundedRectangle(cornerRadius: 7)
                     .fill(DropPalette.nest.opacity(0.14))
                     .overlay(
-                        RoundedRectangle(cornerRadius: 6)
+                        RoundedRectangle(cornerRadius: 7)
                             .strokeBorder(DropPalette.nest, lineWidth: 2))
-                    .padding(.horizontal, 8)
             }
         }
-        .animation(.easeOut(duration: 0.35), value: progress.pct)
+        .animation(.easeOut(duration: 0.35), value: progress?.pct)
         .animation(.easeOut(duration: 0.12), value: lit)
     }
 }
@@ -2495,6 +2466,12 @@ private struct RowFramesKey: PreferenceKey {
 /// and the question that costs you taps is how to get somewhere else. Every
 /// crumb is a jump, so leaving a deep scope is one tap rather than one swipe
 /// per level.
+///
+/// Currently unused: the nav bar shows `ScopeTitle` instead, which spends the
+/// width on the scope's own name and progress. Kept because the jump is a real
+/// capability and nothing has replaced it yet — the intended successor is a
+/// menu hung off the title, showing the same path vertically. Delete this once
+/// that exists, not before.
 private struct Crumbs: View {
     /// Root-first, current scope last. Empty on the project grid.
     let path: [Node]
