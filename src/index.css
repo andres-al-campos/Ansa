@@ -42,6 +42,10 @@
    * moves the outline off centre with nothing to catch it. */
   --side-w: 250px;
   --col-w: 720px;
+  /* The page title's size. A variable because the pin beside it is sized from
+     the same number — its box is the title's line box — and the two drifting
+     apart is exactly the misalignment this is here to prevent. */
+  --title-size: 23px;
   --main-pad: 30px;
 }
 
@@ -679,7 +683,7 @@ button { font: inherit; color: inherit; }
 .scope-title {
   font-family: Georgia, 'Iowan Old Style', serif;
   font-weight: 400;
-  font-size: 26px;
+  font-size: var(--title-size);
   line-height: 1.25;
   letter-spacing: -0.01em;
   /* Padding so the editing box never crowds the text — a touch less top/bottom,
@@ -968,8 +972,8 @@ button { font: inherit; color: inherit; }
 .scope-pin {
   opacity: 1;
   align-self: flex-start;
-  height: calc(26px * 1.25);
-  width: calc(26px * 1.25);
+  height: calc(var(--title-size) * 1.25);
+  width: calc(var(--title-size) * 1.25);
   padding: 0;
 }
 .scope-pin:hover { color: var(--ink-mid); background: var(--edge-lit); }
@@ -1270,12 +1274,24 @@ body:has(.row.gap-slot) .proj:is(:active, :hover, .proj) { cursor: default; }
   background: var(--bar);
   transition: width 0.45s cubic-bezier(0.4, 0, 0.2, 1), background-color 0.3s ease;
 }
+/* Sits with the bar rather than off at the edge. The 10px flex gap put it a
+   clear space away from the thing it labels while its own 32px min-width padded
+   the other side, so it read as a third element in the row instead of the bar's
+   own number. The gap comes off and the width holds only the widest value
+   ("100%"), which tabular-nums makes exact. `text-align: right` would push the
+   ink to whatever the box edge is; centring keeps it under the pin above, whose
+   glyph floats in the middle of its own larger box. */
 .pct {
   font-size: 11px;
   color: var(--ink-faint);
   font-variant-numeric: tabular-nums;
-  min-width: 32px;
-  text-align: right;
+  /* The same box as the pin above it (the title's line box), so the two centre
+     on the same axis instead of landing a pixel or two apart. `max()` because
+     "100%" is 2px wider than that box at 11px — without it the one value that
+     matters most is the one that breaks out of the column and stops lining up. */
+  min-width: max(calc(var(--title-size) * 1.25), 32px);
+  text-align: center;
+  margin-left: -4px;
 }
 .scope-progress.complete .pbar i { background: var(--leaf); }
 .scope-progress.complete .pct { color: var(--leaf); font-weight: 650; }
