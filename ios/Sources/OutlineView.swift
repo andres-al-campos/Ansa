@@ -48,7 +48,11 @@ struct OutlineView: View {
     /// this says so rather than letting the row do nothing — a row that
     /// swallows a tap reads as broken.
     /// Whether the trash sheet is up.
-    @State private var showingTrash = false
+    /// Whether the trash is the screen showing. A second axis beside `scope`
+    /// rather than a case of it: every navigation helper here keys off a
+    /// `NodeId?`, and the trash has no node to be. Only ever true at the grid,
+    /// so back from it means home and nothing else.
+    @State private var inTrash = false
 
     @State private var renamingScope: NodeId?
     @State private var renameText = ""
@@ -137,11 +141,14 @@ struct OutlineView: View {
             // yet, and a screen you might still slide away from should not be
             // able to act.
             if backPull > 0 {
-                slab(for: parentScope, interactive: false)
+                // `inTrash` is read by `slab` itself, so the copy behind a
+                // trash pull has to be drawn with it already false — otherwise
+                // the screen revealed is a second trash.
+                slab(for: inTrash ? nil : parentScope, interactive: false, trash: false)
                 // Over the revealed screen, under the one being lifted off it.
                 backdrop
             }
-            slab(for: scope, interactive: true)
+            slab(for: scope, interactive: true, trash: inTrash)
             .task { store.start() }
             // A phone backgrounds this app every time the screen locks, so this
             // is the ordinary path rather than an edge case. `.task` fires once
@@ -257,11 +264,6 @@ struct OutlineView: View {
                     ? "It stays in the trash for 30 days."
                     : "This deletes \(count) task\(count == 1 ? "" : "s") under it. They stay in the trash for 30 days.")
             }
-            // A sheet rather than a scope: the trash is not in the tree, so it
-            // has no parent for the back swipe to return to.
-            .sheet(isPresented: $showingTrash) {
-                TrashView(store: store)
-            }
             // Swipe right from the left edge to zoom out, the way every other
             // iOS app pops a screen. `NavigationStack` would give this for
             // free on a pushed view, but zooming is a change of `scope` in
@@ -322,7 +324,12 @@ struct OutlineView: View {
                     // tapping the name opens the path as a menu. What is gone
                     // is the horizontal path, which spent width to answer a
                     // question asked far less often than "how far in am I".
-                    if scope != nil {
+                    if inTrash {
+                        // A plain name. `ScopeTitle` carries a progress ring
+                        // and opens the lineage as a menu, and the trash has
+                        // neither a progress nor a lineage.
+                        Text("Trash").font(.headline)
+                    } else if scope != nil {
                         ScopeTitle(
                             title: title(of: scope),
                             progress: adjusted(TreeOps.scopeProgress(tree, scope)),
@@ -337,7 +344,11 @@ struct OutlineView: View {
                             onCommit: commitScopeRename)
                     }
                 }
-                if scope != nil {
+                if inTrash {
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button("Back", systemImage: "chevron.left", action: zoomOut)
+                    }
+                } else if scope != nil {
                     ToolbarItem(placement: .topBarLeading) {
                         Button("Back", systemImage: "chevron.left", action: zoomOut)
                     }
@@ -425,7 +436,9 @@ struct OutlineView: View {
     ///   the three things that would collide with the live copy — focus, row
     ///   geometry, and gestures — at the source rather than letting a second
     ///   set of writes land and be sorted out afterwards.
-    @ViewBuilder private func slab(for scope: NodeId?, interactive: Bool) -> some View {
+    @ViewBuilder private func slab(for scope: NodeId?, interactive: Bool, trash: Bool)
+        -> some View
+    {
             VStack(spacing: 0) {
                 if !store.live {
                     // Only about receiving. Saying "not saved" here would be a
@@ -437,7 +450,9 @@ struct OutlineView: View {
                     )
                 }
 
-                if scope == nil {
+                if trash {
+                    TrashView(store: store)
+                } else if scope == nil {
                     ProjectGrid(
                         tree: tree, loaded: store.loaded,
                         editing: edit.editing, editText: $edit.text,
@@ -449,7 +464,7 @@ struct OutlineView: View {
                         // people do, so this is a plain commit either way.
                         onSubmit: submitProjectName,
                         onDelete: confirmDeleteProject,
-                        onOpenTrash: { showingTrash = true })
+                        onOpenTrash: { openTrash() })
                 } else {
                     outline(for: scope, interactive: interactive)
                 }
@@ -466,7 +481,12 @@ struct OutlineView: View {
         // one below a field that no longer exists, with no way to make a first
         // project at all.
         .safeAreaInset(edge: .bottom, alignment: .trailing, spacing: 0) {
-            captureButton(interactive: interactive)
+            // Not in the trash. Everything here makes something — a task, or a
+            // project from the grid — and the trash is the one screen where
+            // there is nothing to add to.
+            if !trash {
+                captureButton(interactive: interactive)
+            }
         }
         // Opaque, so the rows behind cannot show through the slab as it
         // moves. A `VStack` paints only what its children paint, and the
@@ -780,6 +800,10 @@ struct OutlineView: View {
     private var parentScope: NodeId? {
         scope.flatMap { TreeOps.byId(tree, $0)?.parentId }
     }
+
+    /// Whether there is a screen behind this one. The grid is the floor, and
+    /// the trash sits one step above it however deep the scope underneath was.
+    private var canGoBack: Bool { inTrash || scope != nil }
 
     /// Take the waiting row back out of the count.
     ///
@@ -1213,6 +1237,19 @@ struct OutlineView: View {
             if backTrail.count > 200 { backTrail.removeFirst() }
         }
         scope = id
+    }
+
+    /// Go to the trash.
+    ///
+    /// A run in progress is committed first, the same as any other move: the
+    /// waiting row is a real empty node, and leaving it behind would be a blank
+    /// task. `scope` is untouched — the trash draws over it, and back restores
+    /// the grid it was opened from.
+    private func openTrash() {
+        dropSpare()
+        commitEdit()
+        edit.stopAdding()
+        inTrash = true
     }
 
     /// Open a project: zoom in, and record that it was opened.
@@ -1817,7 +1854,7 @@ struct OutlineView: View {
     /// bug — a strip that only covered where the pull *acts* left the row open
     /// across the band where the pull is actually attempted.
     private func claims(_ g: DragGesture.Value) -> Bool {
-        scope != nil && !drag.isActive && g.startLocation.x < backClaim
+        canGoBack && !drag.isActive && g.startLocation.x < backClaim
     }
 
     /// Whether this drag is a back swipe rather than a scroll or a row action.
@@ -1830,7 +1867,7 @@ struct OutlineView: View {
     /// see the attachment site. Everything here is deliberately cheap and
     /// side-effect free, because it runs on every drag anywhere on screen.
     private func armed(_ g: DragGesture.Value) -> Bool {
-        scope != nil
+        canGoBack
             // Not while a row is in the air. The two gestures are recognised
             // simultaneously, so without this a swipe can begin under a drag
             // that is already running and the row would follow a finger that
@@ -1860,6 +1897,13 @@ struct OutlineView: View {
     }
 
     private func zoomOut() {
+        // The trash is one step above the grid and holds no run, so leaving it
+        // is only this — the trail below it is the scope you were in before
+        // you came to the grid, and back from the trash must not spend it.
+        if inTrash {
+            inTrash = false
+            return
+        }
         // Zooming out changes where a new task would land, so the run and its
         // anchor both go with it. Done here rather than inherited from
         // `setScope`, because this deliberately does not call it: `setScope`

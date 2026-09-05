@@ -3,16 +3,17 @@ import SwiftUI
 
 /// The trash: what was deleted, with a way to put it back.
 ///
-/// A sheet rather than a change of `scope`. Zooming is movement inside the
-/// tree and the back swipe is how you undo it; the trash is not in the tree at
-/// all, so giving it a scope would put a place in the breadcrumb that has no
-/// parent to go back to.
+/// A screen, not a sheet. It is somewhere you go and then come back from, and a
+/// card sliding up over the app said "settings panel" instead. It is not a
+/// scope either — the trash has no node id, so it cannot be one — so it is the
+/// third thing `slab` can draw, alongside the project grid and an outline.
+/// Back lands on the grid, which is the only place the Trash row is reachable
+/// from anyway.
 ///
 /// Loads when opened, and again on every open. Another device may have deleted
 /// or restored something since, and a stale list offers buttons that fail.
 struct TrashView: View {
     let store: OutlineStore
-    @Environment(\.dismiss) private var dismiss
 
     /// Nil until the first page lands, which is what tells "still asking" apart
     /// from "nothing deleted" — the same distinction the project grid draws.
@@ -27,16 +28,7 @@ struct TrashView: View {
     @State private var confirming: TrashEntry?
 
     var body: some View {
-        NavigationStack {
-            list
-                .navigationTitle("Trash")
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    ToolbarItem(placement: .confirmationAction) {
-                        Button("Done") { dismiss() }
-                    }
-                }
-        }
+        list
         .task { await load() }
         .confirmationDialog(
             confirming.map { $0.text.isEmpty ? "Untitled" : $0.text } ?? "",
