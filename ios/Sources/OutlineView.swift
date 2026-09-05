@@ -2561,6 +2561,30 @@ private struct ProjectGrid: View {
         pinnedProjects.isEmpty && pinnedTasks.isEmpty
     }
 
+    /// Whether the shelf is showing everything it has. Per device and not
+    /// persisted: expanding it is a thing you do to find one pin, not a setting
+    /// about how you like the screen.
+    @State private var showAllPins = false
+
+    /// How many pins the shelf shows before it stops. A shelf is only a shelf
+    /// while you can take it in at a glance — past that it is a second list,
+    /// and the projects it sits above start falling off the screen.
+    private let pinCap = 5
+
+    private var pinCount: Int { pinnedProjects.count + pinnedTasks.count }
+
+    /// Both halves of the shelf share one budget: they are one thing to the
+    /// reader, so capping them separately would let the shelf reach ten rows.
+    private var shownPinnedProjects: [Node] {
+        showAllPins ? pinnedProjects : Array(pinnedProjects.prefix(pinCap))
+    }
+
+    private var shownPinnedTasks: [(node: Node, trail: [Node])] {
+        showAllPins
+            ? pinnedTasks
+            : Array(pinnedTasks.prefix(max(0, pinCap - pinnedProjects.count)))
+    }
+
     var body: some View {
         if projects.isEmpty && nothingPinned {
             if loaded {
@@ -2579,33 +2603,52 @@ private struct ProjectGrid: View {
             }
         } else {
             List {
-                // Projects first: the whole list is what you have, and the
-                // shelf below is what you have singled out of it.
-                Section(isExpanded: $projectsOpen) {
-                    ForEach(projects) { project in
-                        projectRow(project)
-                    }
-                } header: {
-                    Text("Projects")
-                }
-
+                // The shelf goes first now that it cannot grow past `pinCap`.
+                // An uncapped one at the top would push the projects off the
+                // screen; a short one is the reason you came to this screen.
                 if !nothingPinned {
                     Section(isExpanded: $pinnedOpen) {
                         // Pinned projects first: a project is a place you go, so
                         // it sits above the specific things to do inside one.
-                        ForEach(pinnedProjects) { project in
+                        ForEach(shownPinnedProjects) { project in
                             projectRow(project)
                         }
-                        ForEach(pinnedTasks, id: \.node.id) { pin in
+                        ForEach(shownPinnedTasks, id: \.node.id) { pin in
                             PinnedTaskRow(
                                 node: pin.node,
                                 trail: pin.trail,
                                 progress: TreeOps.progressOf(tree, pin.node.id),
                                 onOpen: { onOpen(pin.node.id) })
                         }
+
+                        // A row rather than an inner scroll view. Nesting one
+                        // scroller inside the page's would make a single drag
+                        // ambiguous about which list it moves, and hand off
+                        // mid-gesture when the inner one hits its end.
+                        if pinCount > pinCap && !showAllPins {
+                            Button {
+                                showAllPins = true
+                            } label: {
+                                Text("Show all \(pinCount)")
+                                    .font(.subheadline)
+                                    .foregroundStyle(.tint)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .padding(.vertical, 5)
+                                    .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                        }
                     } header: {
                         Text("Pinned")
                     }
+                }
+
+                Section(isExpanded: $projectsOpen) {
+                    ForEach(projects) { project in
+                        projectRow(project)
+                    }
+                } header: {
+                    Text("Projects")
                 }
 
                 // Its own section with no header, so it reads as a place of its
@@ -2682,20 +2725,18 @@ private struct PinnedTaskRow: View {
     var body: some View {
         Button(action: onOpen) {
             HStack(spacing: 6) {
-                Image(systemName: "pin.fill")
-                    .font(.caption2)
-                    .foregroundStyle(.tint)
-
-                VStack(alignment: .leading, spacing: 0) {
+                VStack(alignment: .leading, spacing: 1) {
                     Text(node.text.isEmpty ? "Untitled" : node.text)
                         .font(.subheadline.weight(.medium))
                         .foregroundStyle(.primary)
                         .lineLimit(1)
 
-                    // The trail is what makes the name mean anything: "Total the
-                    // receipts" names nothing without "Taxes › Forms".
-                    Text(trail.map { $0.text.isEmpty ? "Untitled" : $0.text }
-                        .joined(separator: " › "))
+                    // The project, not the whole trail. The name needs
+                    // somewhere to live — "Total the receipts" says nothing
+                    // alone — but the intermediate parents are how you would
+                    // navigate there, and this row is the thing that means you
+                    // do not have to.
+                    Text(projectName)
                         .font(.caption2)
                         .foregroundStyle(.tertiary)
                         .lineLimit(1)
@@ -2711,14 +2752,19 @@ private struct PinnedTaskRow: View {
                         .foregroundStyle(.secondary)
                 }
             }
-            // Tighter than a project card, deliberately. A card carries a
-            // progress bar and the vertical room that needs; a checkpoint is
-            // two lines of text, and giving it the same height made a shelf of
-            // them read heavier than the projects they hang off.
-            .padding(.vertical, 2)
+            // Still tighter than a project card, which carries a progress bar
+            // and the room that needs. No pin glyph: every row in this section
+            // is pinned, so the marker said only what the header already said.
+            .padding(.vertical, 5)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+    }
+
+    /// The root the pin hangs off. `trail` is root-first, so this is its head.
+    private var projectName: String {
+        guard let root = trail.first else { return "" }
+        return root.text.isEmpty ? "Untitled" : root.text
     }
 }
 
