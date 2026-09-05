@@ -173,15 +173,22 @@ function ZoomIcon() {
 }
 
 /**
- * The pin mark. Filled when pinned, outline when not — the fill is what makes a
- * pinned row readable at a glance once the pointer has left.
+ * The pin, drawn as the action the click performs rather than the state it is
+ * in: a plain pin when clicking will pin, a struck pin when clicking will
+ * unpin. It used to be one shape that filled in when pinned, which said "this
+ * is pinned" — true, but the button's job is to say what pressing it does, and
+ * the state is already carried by the brass and by the row's presence in the
+ * sidebar.
+ *
+ * `size` because this sits in two places at two scales: beside a 12.5px row
+ * label and beside the 26px serif page title.
  */
-function PinIcon() {
+function PinIcon({ pinned = false, size = 16 }: { pinned?: boolean; size?: number }) {
   return (
     <svg
       viewBox="0 0 14 14"
-      width="16"
-      height="16"
+      width={size}
+      height={size}
       fill="none"
       stroke="currentColor"
       strokeWidth="1.4"
@@ -191,6 +198,9 @@ function PinIcon() {
       focusable="false"
     >
       <path d="M7 8.5V12M4.2 2h5.6l-.8 3.2 1.4 1.6H3.6l1.4-1.6L4.2 2z" />
+      {/* The slash reads as "undo this" the way it does on a muted mic or a
+          hidden eye — the same pin, cancelled. */}
+      {pinned && <path d="M2.4 11.6L11.6 2.4" />}
     </svg>
   )
 }
@@ -1231,7 +1241,7 @@ export default function Outliner({ initial }: { initial: Tree }) {
               aria-label={scopeNode.pinned ? `Unpin ${scopeNode.text}` : `Pin ${scopeNode.text}`}
               title={scopeNode.pinned ? 'Unpin' : 'Pin to the sidebar'}
             >
-              <PinIcon />
+              <PinIcon pinned={!!scopeNode.pinned} size={20} />
             </button>
           )}
         </div>

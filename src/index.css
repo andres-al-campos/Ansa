@@ -957,13 +957,18 @@ button { font: inherit; color: inherit; }
    `opacity: 0` above would make it unreachable — it rests at the ghost grey the
    rows' pin rests at once revealed, and brightens on hover like the rest. This
    sits below .pin-toggle rather than up with .scope-head because both are
-   single-class selectors: equal specificity, so source order decides. The 6px
-   top margin drops it onto the title's optical centre. */
+   single-class selectors: equal specificity, so source order decides.
+   
+   The height is the title's own line box (26px × 1.25 = 32.5px), not a nudge:
+   two things sharing a row should be the same height, so the button matches the
+   line it sits on and centres its glyph inside that. A hand-tuned margin got it
+   looking right at one font size and would drift at any other. */
 .scope-pin {
   opacity: 1;
   align-self: flex-start;
-  margin-top: 6px;
-  padding: 4px;
+  height: calc(26px * 1.25);
+  width: calc(26px * 1.25);
+  padding: 0;
 }
 .scope-pin:hover { color: var(--ink-mid); background: var(--edge-lit); }
 
