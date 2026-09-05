@@ -1359,8 +1359,8 @@ struct OutlineView: View {
             Text(node.text.isEmpty ? "Untitled" : node.text)
                 .lineLimit(1)
                 .font(.callout.weight(.medium))
-                .padding(.horizontal, 12)
-                .padding(.vertical, 7)
+                .padding(.horizontal, Space.block)
+                .padding(.vertical, Space.row)
                 .background(
                     Capsule().fill(.regularMaterial))
                 .overlay(Capsule().strokeBorder(DropPalette.insert.opacity(0.5), lineWidth: 1))
@@ -2025,7 +2025,7 @@ private struct ScopeTitle: View {
             statusLine
         }
         .frame(maxWidth: max(titleWidth, 0))
-        .padding(.vertical, 3)
+        .padding(.vertical, Space.tight)
     }
 
     private var pathMenu: some View {
@@ -2127,7 +2127,7 @@ private struct ScopeTitle: View {
         // than filled: the screen less the two button zones. `maxWidth` and not
         // `width`, so a bar too narrow for it shrinks instead of colliding.
         .frame(maxWidth: max(titleWidth, 0))
-        .padding(.vertical, 3)
+        .padding(.vertical, Space.tight)
         .background {
             if lit {
                 RoundedRectangle(cornerRadius: 7)
@@ -2160,7 +2160,7 @@ private struct SyncBanner: View {
         .foregroundStyle(.secondary)
         .padding(.leading, OutlineRow.columnLeft)
         .padding(.trailing, OutlineRow.railInset)
-        .padding(.vertical, 8)
+        .padding(.vertical, Space.row)
         .background(.quaternary)
     }
 }
@@ -2168,6 +2168,39 @@ private struct SyncBanner: View {
 /// One row: checkbox, bullet, text. Progress moved to a single bar for the
 /// whole scope, matching the web app, which never showed a count per row.
 
+
+/// The vertical paddings this file is allowed to use.
+///
+/// Six values became one question — "is this a 5 or a 6?" — that nobody could
+/// answer and everybody answered differently, so two rows doing the same job
+/// ended up different heights for no reason anyone could name. A scale answers
+/// it by not offering the choice: a padding is one of these, or it is derived
+/// from a target height, and there is no third way to get a number.
+///
+/// Multiples of 4, which is the grid the platform's own metrics land on. The
+/// exception is `OutlineRow.rowPadding` at 14, which is derived from the touch
+/// target rather than picked — see its comment.
+///
+/// No horizontal scale. Horizontal here is `railInset` and `columnLeft`, both
+/// derived from where the marks sit, and `gutter` for everything that only has
+/// to agree with the screen edge.
+enum Space {
+    /// Squeezed against a taller neighbour. Two lines in a bar sized for one.
+    static let tight: CGFloat = 2
+
+    /// A row inside a container that already carries its own padding.
+    static let inner: CGFloat = 4
+
+    /// A single-line row that stands on its own and takes a tap.
+    static let row: CGFloat = 8
+
+    /// A block set apart from what surrounds it.
+    static let block: CGFloat = 12
+
+    /// The screen edge. Anything that has to line up with another section's
+    /// left edge measures from here.
+    static let gutter: CGFloat = 16
+}
 
 private struct OutlineRow: View {
     let node: Node
@@ -2679,7 +2712,8 @@ private struct ProjectGrid: View {
                                 // only thing deciding its height.
                                 .listRowInsets(
                                     EdgeInsets(
-                                        top: 4, leading: 16, bottom: 4, trailing: 16))
+                                        top: Space.inner, leading: Space.gutter,
+                                        bottom: Space.inner, trailing: Space.gutter))
                         }
 
                         // A row rather than an inner scroll view. Nesting one
@@ -2694,7 +2728,7 @@ private struct ProjectGrid: View {
                                     .font(.subheadline)
                                     .foregroundStyle(.tint)
                                     .frame(maxWidth: .infinity, alignment: .leading)
-                                    .padding(.vertical, 5)
+                                    .padding(.vertical, Space.row)
                                     .contentShape(Rectangle())
                             }
                             .buttonStyle(.plain)
@@ -2723,7 +2757,7 @@ private struct ProjectGrid: View {
                         Label("Trash", systemImage: "trash")
                             .foregroundStyle(.secondary)
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.vertical, 6)
+                            .padding(.vertical, Space.row)
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
@@ -2756,6 +2790,15 @@ private struct ProjectGrid: View {
                     onDelete(project.id)
                 }
             }
+            // The same insets as a pinned row. Without this the card took
+            // the sidebar's defaults while the pinned row declared 16, so the
+            // two sections started at different x — the most visible unearned
+            // difference on the screen. Both are two-line rows; what should
+            // separate them is the type, not the margin.
+            .listRowInsets(
+                EdgeInsets(
+                    top: Space.inner, leading: Space.gutter,
+                    bottom: Space.inner, trailing: Space.gutter))
             // Deleting a project takes everything under it, so this
             // is not the same weight of action as deleting a task.
             // `role: .destructive` alone would fire on a full swipe
@@ -2797,9 +2840,15 @@ private struct PinnedTaskRow: View {
                     // alone — but the intermediate parents are how you would
                     // navigate there, and this row is the thing that means you
                     // do not have to.
+                    //
+                    // `.secondary`, not `.tertiary`. Tertiary is 26% opacity,
+                    // about 1.8:1 against the list — and this line is what
+                    // makes the pin legible at all. It still reads as the
+                    // lesser of the two; `.caption2` against `.subheadline`
+                    // does that without dimming it.
                     Text(projectName)
                         .font(.caption2)
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
 
@@ -2813,10 +2862,10 @@ private struct PinnedTaskRow: View {
                         .foregroundStyle(.secondary)
                 }
             }
-            // Still tighter than a project card, which carries a progress bar
-            // and the room that needs. No pin glyph: every row in this section
-            // is pinned, so the marker said only what the header already said.
-            .padding(.vertical, 1)
+            // No padding of its own: the row insets carry it, the same ones
+            // the project card uses, so both sections share a vertical rhythm
+            // and differ only where they mean to. No pin glyph either — every
+            // row here is pinned, so the marker said what the header said.
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -2854,7 +2903,10 @@ private struct ProjectRow: View {
     }
 
     private var card: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        // `inner`, not `row`: this is the gap between two halves of one
+        // row, not the gap between rows. At 8 the card breathed differently
+        // from the pinned row beside it.
+        VStack(alignment: .leading, spacing: Space.inner) {
                 HStack(spacing: 6) {
                     if project.pinned == true {
                         Image(systemName: "pin.fill")
@@ -2896,7 +2948,7 @@ private struct ProjectRow: View {
                         }
                     }
             }
-        .padding(.vertical, 6)
+        // Insets, not padding here — see the pinned row.
         .contentShape(Rectangle())
     }
 }
