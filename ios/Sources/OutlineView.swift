@@ -319,6 +319,7 @@ struct OutlineView: View {
                             // and a back swipe cannot both be running.
                             lit: litRoot,
                             path: scope.map { TreeOps.lineageOf(tree, $0) } ?? [],
+                            checkpoints: TreeOps.pinnedTasks(tree),
                             onTap: setScope,
                             editing: renamingScope != nil && renamingScope == scope,
                             editText: $renameText,
@@ -1898,6 +1899,9 @@ private struct ScopeTitle: View {
     /// Root-first, current scope last, as `TreeOps.lineageOf` gives it.
     /// Empty on the project grid, where there is no path.
     let path: [Node]
+    /// The pinned tasks, each with the trail that makes it readable. Jumping to
+    /// one is the same verb as jumping up the path, so they share this menu.
+    let checkpoints: [(node: Node, trail: [Node])]
     let onTap: (NodeId?) -> Void
 
     /// Renaming happens in the header because the header *is* the scope's row:
@@ -1995,11 +1999,32 @@ private struct ScopeTitle: View {
                     onTap(node.id)
                 }
             }
+
+            // Pinned tasks, below the path and in a section of their own. The
+            // path walks you up your own branch; these jump across to another
+            // one, which is the move a deep tree makes expensive. Same menu
+            // because it is the same verb — go somewhere — and this menu is
+            // reachable from any depth without going back to the grid.
+            if !checkpoints.isEmpty {
+                Section("Pinned") {
+                    ForEach(checkpoints, id: \.node.id) { pin in
+                        Button {
+                            onTap(pin.node.id)
+                        } label: {
+                            // The trail is what makes the name mean something:
+                            // "Total the receipts" alone names nothing.
+                            Text(pin.node.text.isEmpty ? "Untitled" : pin.node.text)
+                            Text(pin.trail.map(\.text).joined(separator: " › "))
+                        }
+                    }
+                }
+            }
         } label: {
             titleLabel
         }
-        // Off on the grid, where the path is empty and there is nowhere to go.
-        .disabled(path.isEmpty)
+        // Off only when there is nowhere at all to go: no path up, no pins
+        // across. On the grid with pins, this is still the way to reach them.
+        .disabled(path.isEmpty && checkpoints.isEmpty)
     }
 
     /// The path above the current scope. The scope itself is the title, and
