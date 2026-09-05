@@ -70,13 +70,23 @@ interface Row {
   createdAt: number
 }
 
-/** One line of the trash list: what was deleted, when, and how big it was. */
+/** One line of the trash list: what was deleted, where from, when, how big. */
 export interface TrashEntry {
   id: string
   rootId: string
   text: string
   deletedAt: number
   count: number
+  /**
+   * The name of the project the deleted subtree came out of, or null if it was
+   * a project itself — or if that project has since been deleted too.
+   *
+   * The project rather than the immediate parent. A task deleted three levels
+   * down names a parent you may not place; the project is the thing that tells
+   * you which corner of the tree this row came from, and it is what the phone's
+   * pinned rows show for the same reason.
+   */
+  projectText: string | null
 }
 
 export class TreeStore {
@@ -351,8 +361,29 @@ export class TreeStore {
    */
   trashPage(limit = 50, cursor?: number): { entries: TrashEntry[]; nextCursor?: number } {
     const rows = this.sql.exec(
-      `SELECT e.id, e.rootId, e.deletedAt, n.text,
-              (SELECT COUNT(*) FROM trash_nodes WHERE entryId = e.id) AS count
+      // `up` walks each entry's stored parentId through the live `nodes` table
+      // to whichever ancestor has no parent — the project. It is a walk rather
+      // than a stored column because the entry records where the node *was*,
+      // and an ancestor can be renamed or reparented between the delete and the
+      // read; resolving at read time keeps the label true.
+      //
+      // The join is a LEFT JOIN and `projectText` is nullable: an entry whose
+      // parentId is null was a project itself, and one whose ancestors have
+      // since been deleted walks off the end of `nodes`. Both are the same
+      // answer on screen — no project to name.
+      `WITH RECURSIVE up(entryId, id, parentId) AS (
+         SELECT e.id, e.parentId, (SELECT parentId FROM nodes WHERE id = e.parentId)
+           FROM trash_entries e
+          WHERE e.parentId IS NOT NULL
+         UNION ALL
+         SELECT up.entryId, up.parentId, (SELECT parentId FROM nodes WHERE id = up.parentId)
+           FROM up
+          WHERE up.parentId IS NOT NULL
+       )
+       SELECT e.id, e.rootId, e.deletedAt, n.text,
+              (SELECT COUNT(*) FROM trash_nodes WHERE entryId = e.id) AS count,
+              (SELECT p.text FROM up JOIN nodes p ON p.id = up.id
+                WHERE up.entryId = e.id AND up.parentId IS NULL) AS projectText
          FROM trash_entries e
          JOIN trash_nodes n ON n.entryId = e.id AND n.id = e.rootId
         WHERE e.deletedAt < ?

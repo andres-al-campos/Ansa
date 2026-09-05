@@ -348,6 +348,42 @@ describe('the trash', () => {
     expect(storeA.load().map((n) => n.text).sort()).toEqual(['project'])
   })
 
+  it('names the project a deleted node came out of, however deep', () => {
+    // Not the immediate parent. A task deleted three levels down names a parent
+    // you may not place; the project says which corner of the tree it was in.
+    const { id: root } = storeA.addChild(null, 'project')
+    const { id: mid } = storeA.addChild(root, 'parent')
+    const { id: leaf } = storeA.addChild(mid, 'child')
+    storeA.applyOp({ op: 'removeNode', id: leaf, trash: true })
+
+    expect(storeA.trashPage().entries[0].projectText).toBe('project')
+  })
+
+  it('has no project to name for a deleted project, or an orphaned entry', () => {
+    const { id: root } = storeA.addChild(null, 'project')
+    const { id: child } = storeA.addChild(root, 'child')
+    storeA.applyOp({ op: 'removeNode', id: child, trash: true })
+    storeA.applyOp({ op: 'removeNode', id: root, trash: true })
+
+    const byText = (t: string) =>
+      storeA.trashPage().entries.find((e) => e.text === t)!
+    // A project has no parent to walk up from.
+    expect(byText('project').projectText).toBeNull()
+    // The child's walk now runs off the end of `nodes` — its ancestor is itself
+    // in the trash, so there is no live project to name.
+    expect(byText('child').projectText).toBeNull()
+  })
+
+  it('follows a rename of the project after the delete', () => {
+    // Resolved at read time rather than stored, so the label stays true.
+    const { id: root } = storeA.addChild(null, 'project')
+    const { id: child } = storeA.addChild(root, 'child')
+    storeA.applyOp({ op: 'removeNode', id: child, trash: true })
+    storeA.applyOp({ op: 'setText', id: root, text: 'renamed' })
+
+    expect(storeA.trashPage().entries[0].projectText).toBe('renamed')
+  })
+
   it('restores under the original parent', () => {
     const { id: root } = storeA.addChild(null, 'project')
     const { id: parent } = storeA.addChild(root, 'parent')

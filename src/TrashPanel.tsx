@@ -14,14 +14,6 @@ import { useCallback, useEffect, useState } from 'react'
 import { fetchTrash, forgetTrash, restoreTrash, type TrashEntry } from './api'
 import type { Tree } from '@shared/tree'
 
-/** "3 days ago" — coarse on purpose; the exact minute of a deletion is noise. */
-function ago(at: number): string {
-  const days = Math.floor((Date.now() - at) / 86_400_000)
-  if (days < 1) return 'today'
-  if (days === 1) return 'yesterday'
-  return `${days} days ago`
-}
-
 /**
  * How much longer this entry has. The sweep runs daily past 30 days, so the
  * number is what the user can still act on rather than a precise deadline.
@@ -115,10 +107,22 @@ export default function TrashPanel({
               <div className="trash-what">
                 <span className="trash-text">{entry.text || 'Untitled'}</span>
                 <span className="trash-meta">
+                  {/* The project leads. Scanning a trash list, where a row came
+                      from places it faster than anything else on the line —
+                      null only for a deleted project, which needs no origin. */}
+                  {entry.projectText && (
+                    <>
+                      <span className="trash-proj">{entry.projectText}</span>
+                      {' · '}
+                    </>
+                  )}
                   {/* count includes the deleted node itself, so a subtree of one
                       is a plain task and says nothing extra. */}
                   {entry.count > 1 && `${entry.count - 1} subtask${entry.count === 2 ? '' : 's'} · `}
-                  {ago(entry.deletedAt)} · {left(entry.deletedAt)}
+                  {/* No "deleted yesterday" beside "29 days left". The two are
+                      the same fact counted from opposite ends, and the one that
+                      answers "do I need to act" is the one left. */}
+                  {left(entry.deletedAt)}
                 </span>
               </div>
               <div className="trash-actions">

@@ -243,13 +243,19 @@ export async function sendOp(op: Op): Promise<WriteResult> {
   return { status: 'unreachable' }
 }
 
-/** One line of the trash list: what was deleted, when, and how big it was. */
+/** One line of the trash list: what was deleted, where from, when, how big. */
 export interface TrashEntry {
   id: string
   rootId: string
   text: string
   deletedAt: number
   count: number
+  /**
+   * The project the deleted subtree came out of, or null if it was a project
+   * itself. Resolved on the server, which still has the ancestors — the deleted
+   * node is out of the tree, so `lineageOf` cannot reach it from here.
+   */
+  projectText: string | null
 }
 
 /**

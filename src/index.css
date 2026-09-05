@@ -481,6 +481,10 @@ button { font: inherit; color: inherit; }
 /* Revealed on hover, like every other row action here. Restore is the reason
  * the trash exists, so it is the one that reads as a button; Delete-for-good
  * stays quiet, since the sweep already does that job unprompted. */
+/* The project the row came from. Same size as the rest of the meta line but
+   not dimmed — it is the part of that line you scan for, and --ink-faint at
+   10px was reading as decoration next to the countdown. */
+.trash-proj { color: var(--ink-mid); }
 .trash-actions { display: flex; gap: 4px; opacity: 0; transition: opacity 0.12s ease; }
 .rail.trash-list li:hover .trash-actions,
 .rail.trash-list li:focus-within .trash-actions { opacity: 1; }
