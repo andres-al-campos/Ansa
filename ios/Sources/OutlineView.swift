@@ -47,7 +47,8 @@ struct OutlineView: View {
     /// The trash row was tapped. There is no trash screen on the phone yet, so
     /// this says so rather than letting the row do nothing — a row that
     /// swallows a tap reads as broken.
-    @State private var trashNotBuilt = false
+    /// Whether the trash sheet is up.
+    @State private var showingTrash = false
 
     @State private var renamingScope: NodeId?
     @State private var renameText = ""
@@ -256,14 +257,10 @@ struct OutlineView: View {
                     ? "It stays in the trash for 30 days."
                     : "This deletes \(count) task\(count == 1 ? "" : "s") under it. They stay in the trash for 30 days.")
             }
-            // Says what is true rather than doing nothing. Deleting already
-            // promises 30 days in the trash, so a row that goes nowhere would
-            // read as the promise being broken.
-            .alert("No trash view yet", isPresented: $trashNotBuilt) {
-                Button("OK", role: .cancel) {}
-            } message: {
-                Text(
-                    "Deleted tasks are kept for 30 days, but the phone cannot show them yet. Open Ansa in a browser to restore something.")
+            // A sheet rather than a scope: the trash is not in the tree, so it
+            // has no parent for the back swipe to return to.
+            .sheet(isPresented: $showingTrash) {
+                TrashView(store: store)
             }
             // Swipe right from the left edge to zoom out, the way every other
             // iOS app pops a screen. `NavigationStack` would give this for
@@ -452,7 +449,7 @@ struct OutlineView: View {
                         // people do, so this is a plain commit either way.
                         onSubmit: submitProjectName,
                         onDelete: confirmDeleteProject,
-                        onOpenTrash: { trashNotBuilt = true })
+                        onOpenTrash: { showingTrash = true })
                 } else {
                     outline(for: scope, interactive: interactive)
                 }
