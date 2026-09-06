@@ -2731,7 +2731,15 @@ private struct ProjectGrid: View {
                         // mid-gesture when the inner one hits its end.
                         if pinCount > pinCap && !showAllPins {
                             Button {
-                                showAllPins = true
+                                // Explicit, because a bare state write here
+                                // pops five rows in on one frame and takes the
+                                // button out from under the finger in the same
+                                // one. The fold above animates itself; this is
+                                // a plain `@State` change and gets nothing
+                                // unless it asks.
+                                withAnimation(.easeOut(duration: 0.2)) {
+                                    showAllPins = true
+                                }
                             } label: {
                                 Text("Show all \(pinCount)")
                                     .font(.subheadline)
