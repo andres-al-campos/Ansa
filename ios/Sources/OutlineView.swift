@@ -2643,6 +2643,10 @@ private struct OutlineRow: View {
     /// `commitFraction` — that one moved to a quarter and this did not.
     private static let pastCommit: CGFloat = 0.35
 
+    /// The corner the reveal takes on once the pull is past the threshold.
+    /// Only the row-facing edge rounds; see `revealShape`.
+    private static let armedRadius: CGFloat = 12
+
     /// The pull that deletes.
     ///
     /// Trailing only. The leading edge stays on `swipeActions`, so this is one
@@ -2684,6 +2688,64 @@ private struct OutlineRow: View {
     /// `minimumDistance: 20` on purpose. Below that this competes with the
     /// list's scroll and with the row's own 0.35s press, and a row that slides
     /// sideways on a scroll that drifts is worse than one that starts late.
+    /// The action the row slides off, sized to whatever has been uncovered so
+    /// far. Not a Button: the one `swipeActions` revealed could not be tapped,
+    /// and a second untappable button would only look like an invitation. It
+    /// says what releasing will do — the release is the tap.
+    ///
+    /// Mirrored, not duplicated: the side it sits on and what it says both come
+    /// from the direction, so the two edges cannot drift apart in threshold,
+    /// colour or timing.
+    ///
+    /// Split out of the body because the type checker gave up on it inline.
+    @ViewBuilder private var reveal: some View {
+        if let action, swipe != 0 {
+            let armed = abs(swipe) >= screenWidth * Self.commitFraction
+            Image(systemName: action.label)
+                // Dimmed until armed, so the glyph carries the state as well as
+                // the ground does. White on both would leave the background the
+                // only thing that changed.
+                .foregroundStyle(.white.opacity(armed ? 1 : 0.6))
+                .font(.system(size: armed ? 19 : 16))
+                // Armed is worth feeling before the finger lifts, since neither
+                // of these asks anything after it.
+                .animation(.easeOut(duration: 0.12), value: armed)
+                // Centred in the strip uncovered so far, so the glyph rides out
+                // with the row rather than appearing once there is room.
+                //
+                // The padding is added back because it is applied at the call
+                // site, outside this view — so the measured frame is the
+                // content's, 14pt short of the cell the strip has to fill.
+                // Measuring here and forgetting that left a 40pt strip against
+                // a 54pt cell, the same gap a hardcoded height had left before.
+                .frame(width: abs(swipe), height: contentHeight + Self.rowPadding)
+                // Muted, not absent. This is the only thing that says releasing
+                // will act — there is no confirmation behind it — so unarmed
+                // has to read as a real colour that then intensifies, rather
+                // than a wash that looks like the strip failed to draw.
+                //
+                // Rounded once armed, on the two corners facing the row only.
+                // That inner edge is the one that moves and the one you watch;
+                // the outer one is flush against the screen, where a radius
+                // would read as the strip having come loose rather than as it
+                // arming.
+                .background(revealShape(armed: armed).fill(
+                    armed ? action.tint : action.tint.opacity(0.5)))
+        }
+    }
+
+    /// The reveal's outline: square while the pull is short of the threshold,
+    /// rounded on the row-facing edge once it is past.
+    private func revealShape(armed: Bool) -> UnevenRoundedRectangle {
+        let r: CGFloat = armed ? Self.armedRadius : 0
+        let left = swipe < 0
+        return UnevenRoundedRectangle(
+            topLeadingRadius: left ? r : 0,
+            bottomLeadingRadius: left ? r : 0,
+            bottomTrailingRadius: left ? 0 : r,
+            topTrailingRadius: left ? 0 : r)
+    }
+
     private var rowSwipe: some Gesture {
         DragGesture(minimumDistance: 20, coordinateSpace: .local)
             .onChanged { g in
@@ -2880,41 +2942,7 @@ private struct OutlineRow: View {
         // Mirrored, not duplicated: the side it sits on and what it says both
         // come from the direction, so the two edges cannot drift apart in
         // threshold, colour or timing.
-        .background(alignment: swipe < 0 ? .trailing : .leading) {
-            if let action, swipe != 0 {
-                let commit = screenWidth * Self.commitFraction
-                let armed = abs(swipe) >= commit
-                Image(systemName: action.label)
-                    // Dimmed until armed, so the glyph carries the state as
-                    // well as the ground does. White on both would leave the
-                    // background the only thing that changed.
-                    .foregroundStyle(.white.opacity(armed ? 1 : 0.6))
-                    .font(.system(size: armed ? 19 : 16))
-                    // Armed is worth feeling before the finger lifts, since
-                    // neither of these asks anything after it.
-                    .animation(.easeOut(duration: 0.12), value: armed)
-                    // Centred in the strip uncovered so far, so the glyph rides
-                    // out with the row rather than appearing once there is room.
-                    //
-                    // The colour is painted around it rather than behind it,
-                    // because a `.background` is sized by its own content: the
-                    // height had to come from a frame the strip itself sets,
-                    // not from the row it sits behind.
-                    // The padding is added back because it is applied at the
-                    // call site, outside this view — so the frame measured
-                    // below is the content's, 14pt short of the cell the strip
-                    // has to fill. Measuring here and forgetting that left a
-                    // 40pt strip against a 54pt cell, which is the same gap a
-                    // hardcoded height had left before it.
-                    .frame(width: abs(swipe), height: contentHeight + Self.rowPadding)
-                    // Muted, not absent. This is the only thing that says
-                    // releasing will act — there is no confirmation behind it —
-                    // so the unarmed state has to read as a real colour that
-                    // then intensifies, rather than a wash that looks like the
-                    // strip failed to draw.
-                    .background(armed ? action.tint : action.tint.opacity(0.5))
-            }
-        }
+        .background(alignment: swipe < 0 ? .trailing : .leading) { reveal }
         // Measured rather than assumed, in both axes: the width a commit
         // carries the row off by is the list's less an indent that grows with
         // depth, and the height is a line's or two of them, depending on how
