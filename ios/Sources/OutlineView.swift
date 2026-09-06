@@ -402,8 +402,8 @@ struct OutlineView: View {
 
                 // The web calls a pinned project a place you go and a pinned
                 // task a thing to do; both are pins, so this is offered at any
-                // depth. Nothing on the phone shows pinned tasks back yet —
-                // the sidebar that does is web-only.
+                // depth. The home screen's Pinned shelf shows both back, the
+                // same as the web's sidebar.
                 Button(
                     node.pinned == true ? "Unpin" : "Pin",
                     systemImage: node.pinned == true ? "pin.slash" : "pin"
@@ -2142,7 +2142,11 @@ private struct ScopeTitle: View {
     /// A toolbar button's tap target plus the bar's own edge inset. Nothing
     /// exposes this, so it is measured: the chevron sits ~16pt from the edge
     /// and is ~44pt wide.
-    private let buttonZone: CGFloat = 60
+    ///
+    /// Plus a gutter, because the highlight is drawn to this width: at a bare
+    /// 60 its border landed flush against the chevron and the ellipsis with no
+    /// air between them, which read as one wide control rather than three.
+    private let buttonZone: CGFloat = 60 + Space.row
 
     private var titleLabel: some View {
         // One line, not a stack. The figure moved to its own row under the bar,
@@ -2173,7 +2177,10 @@ private struct ScopeTitle: View {
         // than filled: the screen less the two button zones. `maxWidth` and not
         // `width`, so a bar too narrow for it shrinks instead of colliding.
         .frame(maxWidth: max(titleWidth, 0))
-        .padding(.vertical, Space.tight)
+        // Enough that the border reads as a box around the name rather than a
+        // rule under it. `tight` was the smallest step in the scale and drew
+        // the brass almost against the glyphs.
+        .padding(.vertical, Space.inner + Space.lift)
         .background {
             if lit {
                 RoundedRectangle(cornerRadius: 7)
