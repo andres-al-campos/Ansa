@@ -808,8 +808,16 @@ struct OutlineView: View {
         }
         .buttonStyle(.plain)
         .disabled(!interactive)
-        .padding(.trailing, OutlineRow.railInset)
-        .padding(.bottom, 12)
+        // The same on both edges, so a round button floating over the corner
+        // sits equally far from each. It was on `railInset` and 12 — the rail
+        // aligns the button to the bullets in the rows, which is an alignment
+        // for text inside a row rather than for a control floating above them,
+        // and 12 was neither that nor anything else.
+        //
+        // Measured from the safe area, since this rides a `safeAreaInset`: the
+        // home indicator is already out of the way, so equal padding is equal
+        // distance.
+        .padding([.trailing, .bottom], Space.gutter)
         .accessibilityLabel(adding ? "Done adding" : "Add a task")
     }
 
