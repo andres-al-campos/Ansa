@@ -1918,16 +1918,15 @@ struct OutlineView: View {
     ///
     /// The edge you can see, not the finger. Those were the same thing only
     /// below the old 60pt threshold — past it the pull was damped to 0.35, so
-    /// landing the visible edge at a third of the screen cost nearly three
-    /// quarters of it in thumb travel, and pulling back to cancel moved the
-    /// edge so little that a swipe felt impossible to call off.
+    /// landing the visible edge a fixed way across cost far more than that in
+    /// thumb travel, and pulling back to cancel moved the edge so little that
+    /// a swipe felt impossible to call off.
     ///
     /// Matches the row delete's `commitFraction`, and for a weaker reason than
-    /// that one: both are a third of the way across, but a back swipe costs a
-    /// tap to undo where a delete costs a trip to the trash. The number is
-    /// shared because the two gestures live on the same rows and should not
-    /// commit at visibly different distances.
-    private let backFraction: CGFloat = 0.35
+    /// that one: a back swipe costs a tap to undo where a delete costs a trip
+    /// to the trash. The number is shared because the two gestures live on the
+    /// same rows and should not commit at visibly different distances.
+    private let backFraction: CGFloat = 0.25
 
     /// How far the view must travel before letting go zooms out.
     ///
@@ -2604,16 +2603,17 @@ private struct OutlineRow: View {
     /// full swipe was the only way to delete and its distance was the whole
     /// gesture rather than a shortcut past a button.
     ///
-    /// A third rather than the half UIKit uses, because the two are not the
+    /// A quarter rather than the half UIKit uses, because the two are not the
     /// same bet. Half is tuned for a delete that ends the data; this one goes
     /// to a trash it stays restorable in for 30 days, so an accidental fire
     /// costs a trip to that screen while a threshold too high is paid on every
     /// single delete.
-    private static let commitFraction: CGFloat = 0.35
+    private static let commitFraction: CGFloat = 0.25
 
     /// Rubber-banding past the threshold, so the pull keeps answering the
-    /// finger while saying the useful part is done. The same 0.35 the back
-    /// swipe uses, for the same reason.
+    /// finger while saying the useful part is done. The same damping the back
+    /// swipe uses past its own threshold, for the same reason. Unrelated to
+    /// `commitFraction` — that one moved to a quarter and this did not.
     private static let pastCommit: CGFloat = 0.35
 
     /// The pull that deletes.
