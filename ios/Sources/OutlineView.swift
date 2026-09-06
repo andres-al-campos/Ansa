@@ -814,10 +814,19 @@ struct OutlineView: View {
         // for text inside a row rather than for a control floating above them,
         // and 12 was neither that nor anything else.
         //
-        // Measured from the safe area, since this rides a `safeAreaInset`: the
-        // home indicator is already out of the way, so equal padding is equal
-        // distance.
-        .padding([.trailing, .bottom], Space.gutter)
+        // Not equal, though, and equal is not what to reach for. This rides a
+        // `safeAreaInset`, so the bottom padding is measured from the top of
+        // the home indicator's strip — the visible gap under the button is this
+        // padding *plus* the ~34pt the system reserves. The two gaps are not
+        // the same kind of thing: the side one is margin, the bottom one is
+        // margin plus a reservation. Matching them on screen needs ~50pt on the
+        // trailing edge, which stops looking like a corner button, or a bottom
+        // padding below zero, which puts the target in the swipe-up strip.
+        //
+        // So: 4pt of lean off the plain gutter, and the asymmetry stands. Every
+        // app with a floating button in this corner lives with the same one.
+        .padding(.bottom, Space.gutter)
+        .padding(.trailing, 20)
         .accessibilityLabel(adding ? "Done adding" : "Add a task")
     }
 
