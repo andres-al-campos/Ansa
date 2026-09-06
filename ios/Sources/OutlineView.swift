@@ -101,6 +101,14 @@ struct OutlineView: View {
     /// and a flag that waited for visible travel would answer too late.
     @State private var rowSwiping = false
 
+    /// How far the row currently being swiped is pulled, and which row that is.
+    ///
+    /// Only ever one entry, because one finger swipes one row — a dictionary
+    /// would carry stale offsets for rows that have long since sprung back.
+    /// Held here rather than in the row because the thing it moves, the guide
+    /// segments, is drawn at this level.
+    @State private var swipedRow: (id: NodeId, offset: CGFloat)?
+
     /// The sliding view's own width, which the back threshold is a fraction of.
     ///
     /// Measured rather than read off the screen: this is the width of the thing
@@ -619,6 +627,10 @@ struct OutlineView: View {
                     onZoom: { if interactive { setScope(row.node.id) } },
                     backHolding: backHolding,
                     onSwipingChanged: { if interactive { rowSwiping = $0 } },
+                    onSwipeOffset: { x in
+                        guard interactive else { return }
+                        swipedRow = x == 0 ? nil : (row.node.id, x)
+                    },
                     screenWidth: slabWidth)
                     // The waiting row stays in the hierarchy but takes up no
                     // space and draws nothing. It has to stay built: it exists
@@ -680,6 +692,12 @@ struct OutlineView: View {
                     }
                     .background(alignment: .topLeading) {
                         guideSegments(for: row.node.id, in: rows(of: scope))
+                            // Travels with the row it belongs to. A guide
+                            // segment is this row's piece of the line, so it
+                            // slides off with the row rather than staying to
+                            // draw a line through the revealed action.
+                            .offset(x: swipedRow?.id == row.node.id
+                                ? swipedRow?.offset ?? 0 : 0)
                     }
                     // Neither edge is `swipeActions` any more. Both are
                     // `OutlineRow`'s own gesture, because the commit threshold
@@ -2415,6 +2433,14 @@ private struct OutlineRow: View {
     /// Announce that this row's swipe has taken the touch, or given it back.
     /// The list shuts the back swipe out for as long as it is true.
     let onSwipingChanged: (Bool) -> Void
+    /// Report how far this row is pulled, so the call site can slide the guide
+    /// segments the same distance.
+    ///
+    /// The guides are a `.background` of the *cell*, drawn outside this view,
+    /// so the offset below cannot reach them. `swipeActions` used to slide the
+    /// whole cell and carried them for free; hand-rolling the gesture moved
+    /// the offset inside the row and left the lines standing still.
+    let onSwipeOffset: (CGFloat) -> Void
     /// The width the commit threshold is a fraction of.
     ///
     /// The screen's, not the row's. A threshold asks how much effort confirms
@@ -2804,10 +2830,12 @@ private struct OutlineRow: View {
         // The web draws them as children of `.row` and dodges this the same
         // way, with `.row.ripple > :not(.guide)`.
         .modifier(RippleWiggle(delay: rippleDelay))
-        // Slid aside by the delete swipe. On the content, like the ripple
-        // above and for the same reason: the guides are a `.background` of the
-        // row, and carrying them along would lean the whole structure.
+        // Slid aside by the swipe. Only the content moves here — the guide
+        // segments live outside this view and are slid by the call site, off
+        // `onSwipeOffset` below, so that the row and its own piece of the
+        // nesting line travel together the way they did under `swipeActions`.
         .offset(x: swipe)
+        .onChange(of: swipe) { _, x in onSwipeOffset(x) }
         // The action the row slides off, sized to whatever has been uncovered
         // so far. Not a Button: the one `swipeActions` revealed could not be
         // tapped, and a second untappable button would only look like an
