@@ -2427,6 +2427,13 @@ private struct OutlineRow: View {
     /// The row's own width. Only what the row is carried off by on a commit —
     /// the threshold is a fraction of the screen, not of this.
     @State private var width: CGFloat = 0
+    /// The row's own height, which the reveal strip has to match.
+    ///
+    /// Measured, because a two-line row is taller than a one-line one and a
+    /// constant can only be right for one of them. Seeded at the single-line
+    /// height so the first frame of a swipe on a freshly appeared row is not
+    /// a zero-height strip.
+    @State private var height: CGFloat = OutlineRow.cellHeight
     /// Which way the current touch first moved, or nil between touches.
     @State private var direction: SwipeDirection?
 
@@ -2547,9 +2554,10 @@ private struct OutlineRow: View {
     /// The height of a single-line cell: the row's own 40pt minimum plus the
     /// vertical padding the call site adds around it. Measured at 54.
     ///
-    /// Spelled out because the delete strip is a `.background`, which takes
-    /// its size from its content and so cannot simply fill the row the way
-    /// `swipeActions` fills its cell on the other edge.
+    /// Only the starting value for `height`, which is what the strip actually
+    /// uses — a wrapped row is taller than this. It exists at all because the
+    /// strip is a `.background`, sized by its own content, and so cannot fill
+    /// the row the way `swipeActions` fills its cell.
     static let cellHeight: CGFloat = 40 + rowPadding
 
     /// The fraction of the *screen's* width a pull must cross to delete on
@@ -2818,7 +2826,7 @@ private struct OutlineRow: View {
                     // because a `.background` is sized by its own content: the
                     // height had to come from a frame the strip itself sets,
                     // not from the row it sits behind.
-                    .frame(width: abs(swipe), height: Self.cellHeight)
+                    .frame(width: abs(swipe), height: height)
                     // Muted, not absent. This is the only thing that says
                     // releasing will act — there is no confirmation behind it —
                     // so the unarmed state has to read as a real colour that
@@ -2827,14 +2835,16 @@ private struct OutlineRow: View {
                     .background(armed ? action.tint : action.tint.opacity(0.5))
             }
         }
-        // Measured rather than assumed: the threshold is a fraction of the
-        // row, and a row's width is the list's, less an indent that grows
-        // with depth.
+        // Measured rather than assumed, in both axes: the width a commit
+        // carries the row off by is the list's less an indent that grows with
+        // depth, and the height the strip has to match is a line's or two of
+        // them, depending on how far the title wrapped.
         .background {
             GeometryReader { geo in
                 Color.clear
-                    .onAppear { width = geo.size.width }
+                    .onAppear { width = geo.size.width; height = geo.size.height }
                     .onChange(of: geo.size.width) { _, w in width = w }
+                    .onChange(of: geo.size.height) { _, h in height = h }
             }
         }
         // Alongside the press, never instead of it: the two are separated by
