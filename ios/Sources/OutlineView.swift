@@ -451,7 +451,9 @@ struct OutlineView: View {
                 }
 
                 if trash {
-                    TrashView(store: store)
+                    // `interactive` too: the copy drawn behind the swipe must
+                    // not take the gesture either, the same as an outline's.
+                    TrashView(store: store, backing: interactive && backPull > 0)
                 } else if scope == nil {
                     ProjectGrid(
                         tree: tree, loaded: store.loaded,

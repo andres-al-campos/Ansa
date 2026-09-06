@@ -16,6 +16,13 @@ import SwiftUI
 struct TrashView: View {
     let store: OutlineStore
 
+    /// Whether a back swipe is currently carrying this screen aside.
+    ///
+    /// Only to lock the scroll while it is — see the `List` below. The swipe
+    /// itself belongs to the view that draws this one, which is also where the
+    /// pull it reads is measured.
+    let backing: Bool
+
     /// Nil until the first page lands, which is what tells "still asking" apart
     /// from "nothing deleted" — the same distinction the project grid draws.
     @State private var entries: [TrashEntry]?
@@ -134,6 +141,12 @@ struct TrashView: View {
                         .disabled(busy)
                     }
                 }
+                // While the back swipe is carrying this screen aside, so one
+                // finger cannot scroll the list and slide the screen at the
+                // same time. The list's own recogniser is not something the
+                // swipe can outrank, so the lock has to be this — the same one
+                // an outline takes, for the same reason.
+                .scrollDisabled(backing)
             }
         } else {
             ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
