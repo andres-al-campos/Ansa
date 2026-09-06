@@ -404,11 +404,19 @@ struct OutlineView: View {
                 // task a thing to do; both are pins, so this is offered at any
                 // depth. The home screen's Pinned shelf shows both back, the
                 // same as the web's sidebar.
-                Button(
-                    node.pinned == true ? "Unpin" : "Pin",
-                    systemImage: node.pinned == true ? "pin.slash" : "pin"
-                ) {
+                //
+                // The web's pin rather than the system's: a pin standing up to
+                // pin, lying over to unpin. `pin.slash` said the same thing
+                // with a slash, and a slash negates a state rather than an
+                // action — see `PinIcon`.
+                Button {
                     apply(.setPinned(id: id, pinned: node.pinned != true))
+                } label: {
+                    Label {
+                        Text(node.pinned == true ? "Unpin" : "Pin")
+                    } icon: {
+                        Image(uiImage: PinIcon.image(over: node.pinned == true))
+                    }
                 }
 
                 // No divider above it. Red already says which one this is,
@@ -3022,8 +3030,9 @@ private struct ProjectRow: View {
         VStack(alignment: .leading, spacing: Space.inner) {
                 HStack(spacing: 6) {
                     if project.pinned == true {
-                        Image(systemName: "pin.fill")
-                            .font(.caption2)
+                        // Standing up, not lying over: this is not a button, so
+                        // it says the state rather than what a tap would do.
+                        PinIcon(size: 12)
                             .foregroundStyle(.tint)
                     }
                     if editing {
