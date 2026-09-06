@@ -630,10 +630,18 @@ struct OutlineView: View {
                         // Alone on this edge, so the full swipe commits to it —
                         // which needs no confirmation because it goes to the
                         // trash and stays restorable for 30 days.
-                        Button(role: .destructive) {
-                            if interactive { self.delete(row.node.id) }
-                        } label: {
-                            Label("Delete", systemImage: "trash")
+                        //
+                        // Empty while a row is in the air, the same as the
+                        // leading edge below: a reorder is a vertical carry
+                        // that never travels in a perfectly straight line, and
+                        // the sideways part of it was opening this button
+                        // under the finger mid-drag.
+                        if !drag.isActive {
+                            Button(role: .destructive) {
+                                if interactive { self.delete(row.node.id) }
+                            } label: {
+                                Label("Delete", systemImage: "trash")
+                            }
                         }
                     }
                     .swipeActions(edge: .leading) {
@@ -644,7 +652,11 @@ struct OutlineView: View {
                         // that gesture takes this edge for as long as it is
                         // running. `swipeActions` with no buttons reveals
                         // nothing, so the row simply does not respond.
-                        if !backHolding {
+                        //
+                        // And while a row is in the air, for the same reason:
+                        // reordering should move the list, not slide the row
+                        // sideways under the finger doing the moving.
+                        if !backHolding && !drag.isActive {
                             Button {
                                 if interactive { self.setScope(row.node.id) }
                             } label: {
