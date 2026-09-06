@@ -711,7 +711,12 @@ struct OutlineView: View {
         // measured, so a list that scrolls under it would move the answer out
         // from under the finger. Edge-scrolling during a drag is driven by the
         // controller's own tick instead.
-        .scrollDisabled(interactive && (backPull > 0 || drag.isActive))
+        // Also while a row is being swiped sideways. `rowSwiping` is set once
+        // the pull has cleared 20pt, which is the point the gesture has proved
+        // it is horizontal — before that a scroll that drifts must still be
+        // able to scroll. Without this a swipe carrying any vertical drift did
+        // both at once, the same way the back swipe used to.
+        .scrollDisabled(interactive && (backPull > 0 || drag.isActive || rowSwiping))
         // The carry, for every row at once.
         //
         // One recogniser on the list rather than one per row. Per-row was what
