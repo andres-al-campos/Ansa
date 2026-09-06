@@ -44,9 +44,11 @@ final class OpQueue {
     ///
     /// Persisted here rather than once at the end of a drain, because the app
     /// can be killed mid-drain and the file has to match what actually went
-    /// out. Re-sending an op the server already applied is not free: `addChild`
-    /// carries its own id, so a replay is idempotent, but `toggleCollapsed` is
-    /// not and would flip back.
+    /// out. No op survives being sent twice: `toggleCollapsed` flips back, and
+    /// `addChild` appends unconditionally, so a replay leaves two nodes sharing
+    /// one id rather than doing nothing. Carrying its own id makes that op
+    /// deterministic — both machines build the same node — which is not the
+    /// same as idempotent.
     func removeHead() {
         guard !ops.isEmpty else { return }
         ops.removeFirst()

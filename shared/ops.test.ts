@@ -159,6 +159,22 @@ describe('creation ops are deterministic', () => {
     expect(applyOp(fixture(), op).tree).toEqual(applyOp(fixture(), op).tree)
   })
 
+  it('the same addChild applied twice makes two nodes, not one', () => {
+    // Deterministic is not idempotent, and the test above only shows the
+    // first. The graft appends without checking whether the id is already
+    // present, so a replay lands a second node under the same id — a tree
+    // where `byId` is ambiguous and one of the pair cannot be reached.
+    //
+    // Pinned because the sending side has to know it: a queue that re-sends
+    // an op the server already stored corrupts the tree rather than wasting a
+    // round-trip. See `removeHead` in `AnsaSync/OpQueue.swift`.
+    const op: Op = { op: 'addChild', id: 'dup', parentId: 'flat', text: 'Mop', at: 999 }
+    const once = applyOp(fixture(), op).tree
+    const twice = applyOp(once, op).tree
+    expect(once.filter((n) => n.id === 'dup')).toHaveLength(1)
+    expect(twice.filter((n) => n.id === 'dup')).toHaveLength(2)
+  })
+
   it('addSubtree takes its ids depth-first, in the order given', () => {
     const t = fixture()
     const op: Op = {
