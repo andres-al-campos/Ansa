@@ -332,7 +332,6 @@ struct OutlineView: View {
                     } else if scope != nil {
                         ScopeTitle(
                             title: title(of: scope),
-                            progress: adjusted(TreeOps.scopeProgress(tree, scope)),
                             // Only the live copy can be a drop target; a drag
                             // and a back swipe cannot both be running.
                             lit: litRoot,
@@ -468,6 +467,10 @@ struct OutlineView: View {
                         onDelete: confirmDeleteProject,
                         onOpenTrash: { openTrash() })
                 } else {
+                    // Under the bar, above the list: the figure the title used
+                    // to carry as a caption. Only here — the grid and the trash
+                    // have no scope to be a fraction of.
+                    ScopeProgress(progress: adjusted(TreeOps.scopeProgress(tree, scope)))
                     outline(for: scope, interactive: interactive)
                 }
 
@@ -1934,6 +1937,67 @@ struct OutlineView: View {
     }
 }
 
+/// The scope's progress, as a thin row under the nav bar.
+///
+/// Split back out of the title. The bar and the figure were folded into the
+/// header to save the ~60pt an earlier strip cost, but that strip also repeated
+/// the scope's name and stacked a caption under it — so the saving came out of
+/// the title's height, and the name ended up smaller than anything it labels.
+///
+/// This is the figure without the repetition: one line, no name, so it costs
+/// about a third of what it replaced and hands the whole header back to the
+/// title.
+private struct ScopeProgress: View {
+    let progress: TreeOps.Progress?
+
+    private var complete: Bool { progress?.pct == 100 }
+
+    /// Nil and 0% are the same claim here, as in the title: both mean nothing
+    /// done yet. Drawn either way so the row never changes height.
+    private var fraction: Double {
+        guard let progress, progress.total > 0 else { return 0 }
+        return Double(progress.done) / Double(progress.total)
+    }
+
+    private var label: String {
+        guard let progress else { return "0% done" }
+        return progress.pct == 100 ? "All done" : "\(progress.pct)% done"
+    }
+
+    var body: some View {
+        HStack(spacing: Space.row) {
+            // The bar the header dropped. At a glance it says "some" or
+            // "most"; the figure beside it says which — the pair is why this
+            // is worth a row where either alone was not.
+            GeometryReader { geo in
+                Capsule()
+                    .fill(.quaternary)
+                    .overlay(alignment: .leading) {
+                        Capsule()
+                            .fill(complete ? Color.done : Color.accentColor)
+                            .frame(width: geo.size.width * fraction)
+                    }
+            }
+            .frame(height: 4)
+
+            Text(label)
+                .font(.caption)
+                // `.secondary`, not `.tertiary`. Tertiary is 26% opacity —
+                // about 1.8:1 in light mode and 2.2:1 in dark, against the
+                // 4.5:1 text this size needs. It is Apple's tint for
+                // decoration, and this is a figure meant to be read.
+                .foregroundStyle(
+                    complete ? AnyShapeStyle(Color.done) : AnyShapeStyle(.secondary))
+                .monospacedDigit()
+                .contentTransition(.numericText())
+        }
+        .padding(.horizontal, Space.gutter)
+        .padding(.vertical, Space.inner)
+        // The fill and the figure move together when a tick changes the count.
+        .animation(.easeOut(duration: 0.35), value: progress?.pct)
+    }
+}
+
 /// The scope's name and how far into it you are, as the nav bar's own title.
 ///
 /// One header instead of two. The name used to appear twice — once as the last
@@ -1945,9 +2009,6 @@ struct OutlineView: View {
 /// answer and takes less room to give.
 private struct ScopeTitle: View {
     let title: String
-    /// Nil when the scope has no leaves under it — an empty project, or a leaf
-    /// you zoomed into. Rendered as 0%, not hidden: see `status`.
-    let progress: TreeOps.Progress?
     /// A drop at depth 0 would land as a top-level task in this project. Not
     /// nesting into the project the way one row nests into another — the
     /// project is the list, not a task in it — but it is the same question a
@@ -1971,22 +2032,6 @@ private struct ScopeTitle: View {
     /// nothing at all.
     let onCommit: () -> Void
 
-    private var complete: Bool { progress?.pct == 100 }
-
-    /// Always a line, never absent.
-    ///
-    /// `nil` progress and 0% are different claims in the model, and `TreeOps`
-    /// is right to distinguish them. They are the same claim *here*: both mean
-    /// "nothing done yet", and a header that drops a line for one of them
-    /// changes height as you navigate. Zooming into a leaf would nudge the
-    /// whole list up 10pt, which is the one thing a header must not do.
-    ///
-    /// Words at 100% rather than `100% done`, which reads like a receipt.
-    private var status: String {
-        guard let progress else { return "0% done" }
-        return progress.pct == 100 ? "All done" : "\(progress.pct)% done"
-    }
-
     var body: some View {
         // The path vertically, on demand, rather than horizontally and always.
         //
@@ -2009,10 +2054,12 @@ private struct ScopeTitle: View {
     /// The name, as a field, in the name's place. Nothing moves when a rename
     /// starts — which is the point of doing it here rather than in a sheet.
     private var nameField: some View {
-        VStack(spacing: 1) {
+        // No stack any more: the figure is in the row below the bar, so the
+        // field is the whole title the same way the name is.
+        Group {
             TextField("Name", text: $editText)
                 .textFieldStyle(.plain)
-                .font(.headline)
+                .font(.title3.weight(.semibold))
                 .multilineTextAlignment(.center)
                 .focused(typing)
                 .submitLabel(.done)
@@ -2023,8 +2070,6 @@ private struct ScopeTitle: View {
                 .onChange(of: typing.wrappedValue) { was, now in
                     if was, !now { onCommit() }
                 }
-
-            statusLine
         }
         .frame(maxWidth: max(titleWidth, 0))
         .padding(.vertical, Space.tight)
@@ -2085,41 +2130,26 @@ private struct ScopeTitle: View {
     /// and is ~44pt wide.
     private let buttonZone: CGFloat = 60
 
-    private var statusLine: some View {
-        Text(status)
-            .font(.caption2)
-            // `.secondary`, not `.tertiary`. Tertiary is 26% opacity — about
-            // 1.8:1 against the bar in light mode and 2.2:1 in dark, against
-            // the 4.5:1 text this size needs. It is Apple's tint for
-            // decoration, and this is a figure meant to be read. Secondary is
-            // 60%, clears the bar in both, and still sits under the name.
-            .foregroundStyle(
-                complete ? AnyShapeStyle(Color.done) : AnyShapeStyle(.secondary))
-            .monospacedDigit()
-            .contentTransition(.numericText())
-    }
-
     private var titleLabel: some View {
-        VStack(spacing: 1) {
-            HStack(spacing: 4) {
-                Text(title)
-                    .font(.headline)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
+        // One line, not a stack. The figure moved to its own row under the bar,
+        // which is what lets the name have the whole height here instead of
+        // splitting it with a caption.
+        HStack(spacing: 4) {
+            Text(title)
+                .font(.title3.weight(.semibold))
+                .lineLimit(1)
+                .truncationMode(.tail)
 
-                // The mark that says the name is a control. Without it the
-                // title reads as a label and the menu never gets found.
-                if !path.isEmpty {
-                    Image(systemName: "chevron.down")
-                        .font(.system(size: 9, weight: .semibold))
-                        .foregroundStyle(.tertiary)
-                }
+            // The mark that says the name is a control. Without it the
+            // title reads as a label and the menu never gets found.
+            if !path.isEmpty {
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.tertiary)
             }
-            .foregroundStyle(
-                lit ? AnyShapeStyle(DropPalette.nest) : AnyShapeStyle(.primary))
-
-            statusLine
         }
+        .foregroundStyle(
+            lit ? AnyShapeStyle(DropPalette.nest) : AnyShapeStyle(.primary))
         // As wide as the bar allows. A drop on the header is easy to miss when
         // the target is only as wide as the name — "Fds" lit up is a thumbnail
         // — and a target that changes size with the title is one you have to
@@ -2139,7 +2169,6 @@ private struct ScopeTitle: View {
                             .strokeBorder(DropPalette.nest, lineWidth: 2))
             }
         }
-        .animation(.easeOut(duration: 0.35), value: progress?.pct)
         .animation(.easeOut(duration: 0.12), value: lit)
     }
 }
