@@ -84,12 +84,18 @@ extension TreeOps {
     /// Three bands: insert above, nest into, insert below. This is the only
     /// number that sets how wide each one is.
     ///
-    /// At an even third each the gaps were about 15pt on a phone, which is
-    /// inside the wobble of a thumb that is already moving — the target flipped
-    /// between nesting and inserting without the finger meaning to. The gaps
-    /// are the harder ones to hit deliberately, since nesting has the whole
-    /// middle of the row to aim at, so they get the extra room.
-    static let nestBand = 0.35
+    /// A quarter, which makes the three outcomes equally likely rather than
+    /// merely equally sized. A gap is a boundary between two rows, so its band
+    /// is the bottom quarter of the row above plus the top quarter of the row
+    /// below — half a row's worth of travel, the same as the nest band in the
+    /// middle. Splitting a row into even thirds looks fair and is not: it gives
+    /// each gap two thirds of a row while nesting keeps one.
+    ///
+    /// This was briefly 0.35, to widen the gaps. It did the opposite of what it
+    /// was reaching for — above a third, so nesting came out the *narrowest* of
+    /// the three at about 13pt, which is the wrong band to shrink. The web has
+    /// been at a quarter throughout, as is every outliner that does this.
+    static let nestBand = 0.25
 
     /// Resolve a touch point to a drop target: which row, and which of its three
     /// bands — top quarter is the gap above, middle half nests into, bottom

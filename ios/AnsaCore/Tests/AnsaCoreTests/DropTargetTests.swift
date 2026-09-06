@@ -60,20 +60,21 @@ struct DropTargetTests {
         #expect(at(100, 62)?.mode == .after)
     }
 
-    @Test("the gap bands are wide enough to hit with a thumb")
-    func gapBandsAreReachable() {
+    @Test("nesting owns the middle half of a row")
+    func bandsSplitAtQuarters() {
         // Pins `nestBand`, which the other tests probe well inside of and so
-        // would not notice moving. The number is a feel decision, but the
-        // reason for it is not: a band this is allowed to shrink back to about
-        // a sixth of a row is one a moving thumb cannot hold, and the target
-        // flickers between nesting and inserting.
+        // would not notice moving. The split is what makes the three outcomes
+        // equally likely: a gap band is a quarter of the row above plus a
+        // quarter of the row below, which is the same half-row of travel that
+        // nesting gets in the middle. A `nestBand` above a third inverts that
+        // and leaves nesting the narrowest of the three.
         //
-        // Row `b` spans 32–64. At 0.35 its top gap runs 32–43.2, so a third of
-        // the way down the row is still a gap rather than a nest.
-        #expect(at(100, 42)?.mode == .after)
-        #expect(at(100, 54)?.mode == .after)
-        // ...and the middle is still comfortably a nest.
-        #expect(at(100, 48)?.mode == .into)
+        // Row `b` spans 32–64, so its quarters fall at 40 and 56.
+        #expect(at(100, 38)?.mode == .after)  // top quarter: the gap above
+        #expect(at(100, 42)?.mode == .into)  // just inside the middle
+        #expect(at(100, 48)?.mode == .into)  // dead centre
+        #expect(at(100, 54)?.mode == .into)  // still the middle
+        #expect(at(100, 58)?.mode == .after)  // bottom quarter: the gap below
     }
 
     @Test("the dragged row's own slot offers to put it back")
