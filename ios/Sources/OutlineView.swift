@@ -87,6 +87,9 @@ struct OutlineView: View {
     /// Cleared when the finger lifts, so a back swipe that is abandoned gives
     /// the row swipe straight back.
     @State private var backHolding = false
+    /// Whether the back pull was past its threshold on the previous callback,
+    /// so the haptic marks the crossing instead of every frame beyond it.
+    @State private var backWasArmed = false
 
     /// Whether a row's delete swipe currently has the touch.
     ///
@@ -1836,11 +1839,21 @@ struct OutlineView: View {
                 backPull = d <= backThreshold
                     ? d
                     : backThreshold + (d - backThreshold) * 0.35
+                // The same tick a row's swipe gives at its own threshold. The
+                // two gestures commit at the same fraction and travel the same
+                // way, so feeling different at the crossing would be the one
+                // place they disagreed.
+                let armedNow = d >= backThreshold
+                if armedNow != backWasArmed {
+                    haptic.impactOccurred(intensity: armedNow ? 1 : 0.6)
+                    backWasArmed = armedNow
+                }
             }
             .onEnded { g in
                 // Released, so the row swipe is available again — a cancelled
                 // back swipe hands the row back rather than leaving it inert.
                 backHolding = false
+                backWasArmed = false
                 guard armed(g), g.translation.width > backThreshold else {
                     // Short of the threshold: back where it came from, which is
                     // what tells you the gesture was seen and declined.
@@ -2472,6 +2485,20 @@ private struct OutlineRow: View {
     @State private var contentHeight: CGFloat = 40
     /// Which way the current touch first moved, or nil between touches.
     @State private var direction: SwipeDirection?
+    /// Whether the pull was past the commit point on the previous callback.
+    ///
+    /// Kept so the haptic can fire on the *crossing* rather than on the state:
+    /// `onChanged` runs many times a second, and a tick per callback past the
+    /// threshold would be a buzz instead of a boundary.
+    @State private var wasArmed = false
+
+    /// Felt when the pull crosses the commit point, in either direction.
+    ///
+    /// A threshold you can only feel entering is one you cannot feel backing
+    /// out of, and backing out is exactly when the finger is over the strip
+    /// and the eyes are not. Light, matching the drag's per-target ticks: it
+    /// marks a boundary mid-gesture, not the commit itself.
+    private let armHaptic = UIImpactFeedbackGenerator(style: .light)
 
     /// A touch's committed direction. Fixed on the first movement, because a
     /// gesture that changed its mind halfway would take the leading edge back
@@ -2679,6 +2706,9 @@ private struct OutlineRow: View {
                 // Ours from the moment there is a direction until the finger
                 // lifts, so the back swipe cannot start partway through it.
                 onSwipingChanged(direction != nil)
+                // Warmed while the pull is still short of the threshold, so
+                // the tick lands on the crossing rather than a beat after it.
+                if direction != nil { armHaptic.prepare() }
                 guard action != nil else { return }
                 let commit = screenWidth * Self.commitFraction
                 // Rubber-banded past the commit point only. Up to it the edge
@@ -2688,11 +2718,17 @@ private struct OutlineRow: View {
                 let m = abs(d)
                 let shown = m <= commit ? m : commit + (m - commit) * Self.pastCommit
                 swipe = d < 0 ? -shown : shown
+                let armed = m >= commit
+                if armed != wasArmed {
+                    armHaptic.impactOccurred(intensity: armed ? 1 : 0.6)
+                    wasArmed = armed
+                }
             }
             .onEnded { g in
                 defer {
                     onSwipingChanged(false)
                     direction = nil
+                    wasArmed = false
                 }
                 // Whichever way the finger was going when it lifted — the
                 // strip on screen at that moment is what runs.
@@ -2903,7 +2939,7 @@ private struct OutlineRow: View {
         // Back at rest whenever the row reappears. `swipe` is `@State` and
         // survives the view being torn down and rebuilt — a zoom used to bring
         // a row back still holding the offset that carried it off.
-        .onAppear { swipe = 0; direction = nil }
+        .onAppear { swipe = 0; direction = nil; wasArmed = false }
         // The whole row arms a drag, not just the bullet. Reaching across the
         // screen for a 32pt column with the other hand was the cost of putting
         // the handle in one place, and the 0.35s hold already separates a drag
