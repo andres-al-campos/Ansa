@@ -1960,8 +1960,8 @@ private struct ScopeProgress: View {
     }
 
     private var label: String {
-        guard let progress else { return "0% done" }
-        return progress.pct == 100 ? "All done" : "\(progress.pct)% done"
+        guard let progress else { return "0%" }
+        return progress.pct == 100 ? "All done" : "\(progress.pct)%"
     }
 
     var body: some View {
