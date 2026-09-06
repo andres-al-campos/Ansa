@@ -2184,6 +2184,24 @@ private struct SyncBanner: View {
 /// No horizontal scale. Horizontal here is `railInset` and `columnLeft`, both
 /// derived from where the marks sit, and `gutter` for everything that only has
 /// to agree with the screen edge.
+extension Binding where Value == Bool {
+    /// The same binding, with every write wrapped in an animation.
+    ///
+    /// For the home screen's folds, whose state is `@AppStorage`. A write there
+    /// goes out to `UserDefaults` and arrives back as a change notification,
+    /// which is not the transaction SwiftUI would have animated — so the
+    /// section's rows appear and vanish on a single frame. Animating at the
+    /// binding covers the write wherever it comes from, including the chevron's
+    /// own, which is not ours to wrap.
+    var animated: Binding<Bool> {
+        Binding(
+            get: { wrappedValue },
+            set: { newValue, _ in
+                withAnimation(.easeOut(duration: 0.2)) { wrappedValue = newValue }
+            })
+    }
+}
+
 enum Space {
     /// Squeezed against a taller neighbour. Two lines in a bar sized for one.
     static let tight: CGFloat = 2
@@ -2702,7 +2720,7 @@ private struct ProjectGrid: View {
                 // An uncapped one at the top would push the projects off the
                 // screen; a short one is the reason you came to this screen.
                 if !nothingPinned {
-                    Section(isExpanded: $pinnedOpen) {
+                    Section(isExpanded: $pinnedOpen.animated) {
                         // Pinned projects first: a project is a place you go, so
                         // it sits above the specific things to do inside one.
                         ForEach(shownPinnedProjects) { project in
@@ -2755,7 +2773,7 @@ private struct ProjectGrid: View {
                     }
                 }
 
-                Section(isExpanded: $projectsOpen) {
+                Section(isExpanded: $projectsOpen.animated) {
                     ForEach(projects) { project in
                         projectRow(project)
                     }
