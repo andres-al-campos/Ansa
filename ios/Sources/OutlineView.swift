@@ -2191,6 +2191,15 @@ enum Space {
     /// A row inside a container that already carries its own padding.
     static let inner: CGFloat = 4
 
+    /// Added to a row that would otherwise sit shorter than its neighbours.
+    ///
+    /// The grid's three rows hold different things — a pinned row stacks two
+    /// lines of text, a project row one line and a progress bar, the trash one
+    /// line — so equal insets do not make equal heights. This is what the two
+    /// shorter ones add to meet the tallest, levelling up so the row carrying
+    /// the most keeps its space.
+    static let lift: CGFloat = 2
+
     /// A single-line row that stands on its own and takes a tap.
     static let row: CGFloat = 8
 
@@ -2767,15 +2776,15 @@ private struct ProjectGrid: View {
                             Image(systemName: "trash")
                                 .foregroundStyle(.secondary)
                         }
-                        // `inner`, not `row`. A project row is two lines — name,
-                        // then the progress bar — and this is one, so matching
-                        // their height is what the padding is for: it stands in
-                        // for the line this row does not have. At `row` it was
-                        // doing that *on top of* the sidebar's own insets, which
-                        // this row was the last one still taking, so it paid for
-                        // the second line twice and sat taller than the cards
-                        // above it.
-                        .padding(.vertical, Space.inner)
+                        // Padding stands in for the line this row does not
+                        // have: a project row is two lines — name, then the
+                        // progress bar — and this is one. `row` would be too
+                        // much, as it was when this row also took the sidebar's
+                        // default insets and so paid for that second line twice.
+                        //
+                        // The extra 2 over `inner` is the same 2 a project row
+                        // adds, and for the same reason — see `Space.lift`.
+                        .padding(.vertical, Space.inner + Space.lift)
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
@@ -2974,7 +2983,12 @@ private struct ProjectRow: View {
                         }
                     }
             }
-        // Insets, not padding here — see the pinned row.
+        // Insets carry the rest — see the pinned row. This 2 is the one thing
+        // on top of them: a pinned row stacks two lines of text where this
+        // stacks one line and a 4pt bar, so it stands ~4pt taller on content
+        // alone. Levelling up rather than down, so the row with the most in it
+        // keeps its space and nothing gets cramped to match.
+        .padding(.vertical, Space.lift)
         .contentShape(Rectangle())
     }
 }
