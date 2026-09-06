@@ -2754,13 +2754,39 @@ private struct ProjectGrid: View {
                     // tap on the label's own glyph and text, so the rest of the
                     // row swallowed it.
                     Button(action: onOpenTrash) {
-                        Label("Trash", systemImage: "trash")
-                            .foregroundStyle(.secondary)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.vertical, Space.row)
-                            .contentShape(Rectangle())
+                        // Text first, can at the trailing edge — not a `Label`,
+                        // which reserves an icon column ahead of the text and so
+                        // started "Trash" well right of every project name. The
+                        // rows share a left edge now; the can sits where a
+                        // project's count does.
+                        HStack(spacing: 6) {
+                            Text("Trash")
+                                .font(.body.weight(.medium))
+                                .foregroundStyle(.secondary)
+                            Spacer(minLength: 8)
+                            Image(systemName: "trash")
+                                .foregroundStyle(.secondary)
+                        }
+                        // `inner`, not `row`. A project row is two lines — name,
+                        // then the progress bar — and this is one, so matching
+                        // their height is what the padding is for: it stands in
+                        // for the line this row does not have. At `row` it was
+                        // doing that *on top of* the sidebar's own insets, which
+                        // this row was the last one still taking, so it paid for
+                        // the second line twice and sat taller than the cards
+                        // above it.
+                        .padding(.vertical, Space.inner)
+                        .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
+                    // The same insets as a project row, which every other row in
+                    // this list already declares. Left out, this one kept the
+                    // sidebar's defaults and started at a different x than the
+                    // cards above it.
+                    .listRowInsets(
+                        EdgeInsets(
+                            top: Space.inner, leading: Space.gutter,
+                            bottom: Space.inner, trailing: Space.gutter))
                 }
             }
             .listStyle(.sidebar)
