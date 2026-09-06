@@ -306,6 +306,27 @@ struct SyncClientTests {
         #expect(adopted() == [[node("a", "baseline")]])
     }
 
+    @Test("an unchanged tree from elsewhere is still adopted")
+    func identicalTreeStillAdopts() async {
+        // The trash depends on this. Permanently deleting a trash entry does not
+        // change the tree — the node left `nodes` when it was first deleted — so
+        // the server broadcasts an identical tree purely to wake the other
+        // devices. If this were skipped as a no-op, a device sitting on the trash
+        // screen would keep offering Restore and Delete on an entry that is gone.
+        //
+        // Which is also why the screen watches an adopt counter rather than the
+        // tree: `Tree` is `Equatable`, so the change it would be waiting for
+        // never comes.
+        let api = FakeBackend()
+        let (client, adopted) = makeClient(api)
+        client.adoptInitial([node("a", "same")])
+
+        client.deliverForTesting(tree: [node("a", "same")], origin: "other")
+        await settle(api, expecting: 0)
+
+        #expect(adopted().count == 2)
+    }
+
     // ------------------------------------------------------------ own echo
 
     @Test("this device's own broadcast is not re-adopted")

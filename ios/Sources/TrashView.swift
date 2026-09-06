@@ -10,8 +10,9 @@ import SwiftUI
 /// Back lands on the grid, which is the only place the Trash row is reachable
 /// from anyway.
 ///
-/// Loads when opened, and again on every open. Another device may have deleted
-/// or restored something since, and a stale list offers buttons that fail.
+/// Loads when opened, and again whenever the tree changes under it. Another
+/// device may have deleted or restored something — before you got here, or while
+/// you are looking at it — and a stale list offers buttons that fail.
 struct TrashView: View {
     let store: OutlineStore
 
@@ -30,6 +31,19 @@ struct TrashView: View {
     var body: some View {
         list
         .task { await load() }
+        // And again on every tree the server sends, which is what keeps a list
+        // open on this screen honest while another device works on it.
+        //
+        // `store.adopted`, not `store.tree`. A permanent delete elsewhere does
+        // not change the tree — the node left `nodes` when it was first deleted
+        // — so what arrives is an unchanged tree sent purely to wake this
+        // device. `Tree` is `Equatable`, so watching it would correctly see no
+        // change and skip, and the row would sit there offering a Restore and a
+        // Delete that both fail. The counter is the arrival itself.
+        //
+        // `.task` covers arriving at a list another device already changed;
+        // this covers the list changing while you are looking at it.
+        .onChange(of: store.adopted) { Task { await load() } }
         .confirmationDialog(
             confirming.map { $0.text.isEmpty ? "Untitled" : $0.text } ?? "",
             isPresented: Binding(

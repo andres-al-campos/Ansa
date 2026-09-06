@@ -20,6 +20,20 @@ final class OutlineStore {
     /// apart from "you have no projects" with this — before, both were an empty
     /// list and a new user saw the same screen as a slow connection.
     private(set) var loaded = false
+    /// Bumped every time a server tree is adopted, whether or not it differs
+    /// from the one on screen.
+    ///
+    /// The trash needs this and `tree` cannot give it. Permanently deleting a
+    /// trash entry does not change the tree — the node left `nodes` when it was
+    /// first deleted — so the server broadcasts an *unchanged* tree purely to
+    /// wake the other devices. `Tree` is `Equatable`, so `onChange(of: tree)`
+    /// correctly sees no change and skips, and the trash list stays stale. (The
+    /// web gets this for free only because its effect fires on reference
+    /// identity, which a fresh JSON parse always breaks.)
+    ///
+    /// A counter rather than a flag: two broadcasts in a row are two distinct
+    /// values, where a toggled Bool set twice to true is one.
+    private(set) var adopted = 0
     /// False once the live connection has failed repeatedly — the app has
     /// stopped *receiving*. Writes are unaffected, so the UI should say changes
     /// are still saved.
@@ -47,6 +61,7 @@ final class OutlineStore {
         guard sync == nil else { return }
         let client = SyncClient(api: api, queueURL: Self.queueURL) { [weak self] tree in
             self?.tree = tree
+            self?.adopted += 1
         }
         // Reads `client`, not `self.sync`: the two are the same object, but
         // `self.sync` is assigned on the line below, so a guard on it drops any
