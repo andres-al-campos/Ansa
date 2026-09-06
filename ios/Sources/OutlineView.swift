@@ -2434,13 +2434,17 @@ private struct OutlineRow: View {
     /// The row's own width. Only what the row is carried off by on a commit —
     /// the threshold is a fraction of the screen, not of this.
     @State private var width: CGFloat = 0
-    /// The row's own height, which the reveal strip has to match.
+    /// This view's own height — the row's *content*, without the vertical
+    /// padding the call site wraps it in. `cellHeight` is this plus that.
     ///
-    /// Measured, because a two-line row is taller than a one-line one and a
-    /// constant can only be right for one of them. Seeded at the single-line
-    /// height so the first frame of a swipe on a freshly appeared row is not
-    /// a zero-height strip.
-    @State private var height: CGFloat = OutlineRow.cellHeight
+    /// Measured, because a title that wraps to two lines is taller than one
+    /// that does not, and a constant can only be right for one of them. That
+    /// was the bug this replaced: a fixed 54 was correct for a single line
+    /// and short for every wrapped row.
+    ///
+    /// Seeded at the single-line content height so a freshly appeared row's
+    /// first swipe frame is not a zero-height strip.
+    @State private var contentHeight: CGFloat = 40
     /// Which way the current touch first moved, or nil between touches.
     @State private var direction: SwipeDirection?
 
@@ -2561,10 +2565,9 @@ private struct OutlineRow: View {
     /// The height of a single-line cell: the row's own 40pt minimum plus the
     /// vertical padding the call site adds around it. Measured at 54.
     ///
-    /// Only the starting value for `height`, which is what the strip actually
-    /// uses — a wrapped row is taller than this. It exists at all because the
-    /// strip is a `.background`, sized by its own content, and so cannot fill
-    /// the row the way `swipeActions` fills its cell.
+    /// Kept for the callers that need a row's height before one exists. The
+    /// swipe strip does not use it — it measures, since a wrapped row is
+    /// taller than this.
     static let cellHeight: CGFloat = 40 + rowPadding
 
     /// The fraction of the *screen's* width a pull must cross to delete on
@@ -2833,7 +2836,13 @@ private struct OutlineRow: View {
                     // because a `.background` is sized by its own content: the
                     // height had to come from a frame the strip itself sets,
                     // not from the row it sits behind.
-                    .frame(width: abs(swipe), height: height)
+                    // The padding is added back because it is applied at the
+                    // call site, outside this view — so the frame measured
+                    // below is the content's, 14pt short of the cell the strip
+                    // has to fill. Measuring here and forgetting that left a
+                    // 40pt strip against a 54pt cell, which is the same gap a
+                    // hardcoded height had left before it.
+                    .frame(width: abs(swipe), height: contentHeight + Self.rowPadding)
                     // Muted, not absent. This is the only thing that says
                     // releasing will act — there is no confirmation behind it —
                     // so the unarmed state has to read as a real colour that
@@ -2844,14 +2853,17 @@ private struct OutlineRow: View {
         }
         // Measured rather than assumed, in both axes: the width a commit
         // carries the row off by is the list's less an indent that grows with
-        // depth, and the height the strip has to match is a line's or two of
-        // them, depending on how far the title wrapped.
+        // depth, and the height is a line's or two of them, depending on how
+        // far the title wrapped.
+        //
+        // This is the content box, not the cell — the call site's vertical
+        // padding sits outside it. Whoever reads `contentHeight` adds it back.
         .background {
             GeometryReader { geo in
                 Color.clear
-                    .onAppear { width = geo.size.width; height = geo.size.height }
+                    .onAppear { width = geo.size.width; contentHeight = geo.size.height }
                     .onChange(of: geo.size.width) { _, w in width = w }
-                    .onChange(of: geo.size.height) { _, h in height = h }
+                    .onChange(of: geo.size.height) { _, h in contentHeight = h }
             }
         }
         // Alongside the press, never instead of it: the two are separated by
