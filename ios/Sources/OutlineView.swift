@@ -88,6 +88,27 @@ struct OutlineView: View {
     /// the row swipe straight back.
     @State private var backHolding = false
 
+    /// Whether a row's delete swipe currently has the touch.
+    ///
+    /// The mirror of `backHolding`, and needed for the same reason. That flag
+    /// shuts the row out while the screen is being pulled; without this one the
+    /// exclusion only ran one way, so a finger already dragging a row leftward
+    /// could cross into the back swipe's strip and start sliding the whole
+    /// screen mid-delete — one touch driving two gestures.
+    ///
+    /// Set by the row rather than derived from its offset, because the claim
+    /// has to land on the first callback: `claims` asks where the touch began,
+    /// and a flag that waited for visible travel would answer too late.
+    @State private var rowSwiping = false
+
+    /// The sliding view's own width, which the back threshold is a fraction of.
+    ///
+    /// Measured rather than read off the screen: this is the width of the thing
+    /// that actually moves, so it stays right on an iPad split or a rotation
+    /// where a device-wide constant would not be. Seeded at a phone's width so
+    /// the very first callback of a swipe has something sane to divide by.
+    @State private var slabWidth: CGFloat = 393
+
     /// Which row's field holds focus, by node id rather than a bare Bool.
     ///
     /// A single shared `Bool` across the ForEach cannot express "focus the row
@@ -149,6 +170,13 @@ struct OutlineView: View {
                 backdrop
             }
             slab(for: scope, interactive: true, trash: inTrash)
+            .background {
+                GeometryReader { geo in
+                    Color.clear
+                        .onAppear { slabWidth = geo.size.width }
+                        .onChange(of: geo.size.width) { _, w in slabWidth = w }
+                }
+            }
             .task { store.start() }
             // A phone backgrounds this app every time the screen locks, so this
             // is the ordinary path rather than an edge case. `.task` fires once
@@ -312,61 +340,12 @@ struct OutlineView: View {
             // path arrives as one clean sequence and the recognisers never
             // contend; a finger is what produces the race.
             .simultaneousGesture(zoomOutSwipe)
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .principal) {
-                    // The destination, not the route. The strip below used to
-                    // name the scope and the crumbs above used to name the way
-                    // in; the name was on screen twice and the two bands cost
-                    // ~104pt between them. This is one band at ~54pt.
-                    //
-                    // The trail is still here, just folded into the title:
-                    // tapping the name opens the path as a menu. What is gone
-                    // is the horizontal path, which spent width to answer a
-                    // question asked far less often than "how far in am I".
-                    if inTrash {
-                        // A plain name. `ScopeTitle` carries a progress ring
-                        // and opens the lineage as a menu, and the trash has
-                        // neither a progress nor a lineage.
-                        Text("Trash").font(.headline)
-                    } else if scope != nil {
-                        ScopeTitle(
-                            title: title(of: scope),
-                            // Only the live copy can be a drop target; a drag
-                            // and a back swipe cannot both be running.
-                            lit: litRoot,
-                            path: scope.map { TreeOps.lineageOf(tree, $0) } ?? [],
-                            onTap: setScope,
-                            editing: renamingScope != nil && renamingScope == scope,
-                            editText: $renameText,
-                            typing: $renamingFocus,
-                            onCommit: commitScopeRename)
-                    }
-                }
-                if inTrash {
-                    ToolbarItem(placement: .topBarLeading) {
-                        Button("Back", systemImage: "chevron.left", action: zoomOut)
-                    }
-                } else if scope != nil {
-                    ToolbarItem(placement: .topBarLeading) {
-                        Button("Back", systemImage: "chevron.left", action: zoomOut)
-                    }
-                    // What the house used to be, plus what the scope has never
-                    // had: a way to act on the thing you are inside.
-                    //
-                    // A row can be renamed, pinned and deleted by tapping or
-                    // swiping it, but zooming in turns that row into the
-                    // screen, and the screen had no such handles — you had to
-                    // leave the scope to do anything to it.
-                    //
-                    // The house moved because the title menu now leaves in one
-                    // tap too, so this corner was spending itself on a second
-                    // route to the same place.
-                    ToolbarItem(placement: .topBarTrailing) {
-                        scopeMenu
-                    }
-                }
-            }
+            // No `.toolbar`. The bar belongs to the `NavigationStack`, which
+            // renders it outside this view — so `backPull`'s offset moved the
+            // whole screen *except* its header, and the title sat still while
+            // everything under it slid. The header is part of the page, so it
+            // is drawn inside the slab now and travels with it.
+            .navigationBarHidden(true)
         }
     }
 
@@ -434,6 +413,76 @@ struct OutlineView: View {
         }
     }
 
+    /// The title band, drawn inside the slab rather than as a `.toolbar`.
+    ///
+    /// It has to live here for the back swipe to work: the offset that slides a
+    /// screen aside is on the slab, and a `NavigationStack` toolbar is rendered
+    /// outside it — so a system bar stayed pinned while the page moved under
+    /// it. Drawn here it slides with the page, and the copy behind the swipe
+    /// gets its own header revealed underneath, which is what the gesture is
+    /// supposed to show.
+    ///
+    /// Parameterised on scope and trash for the same reason `slab` is: the two
+    /// copies on screen during a swipe are different screens and must not share
+    /// a title.
+    @ViewBuilder private func header(for scope: NodeId?, interactive: Bool, trash: Bool)
+        -> some View
+    {
+        if trash || scope != nil {
+            HStack(spacing: Space.row) {
+                // Inert on the copy behind the swipe, like everything else
+                // there — it is a screen you may still slide away from.
+                Button("Back", systemImage: "chevron.left") {
+                    if interactive { zoomOut() }
+                }
+                .labelStyle(.iconOnly)
+
+                Spacer(minLength: 0)
+
+                // The destination, not the route. The strip below used to name
+                // the scope and the crumbs above used to name the way in; the
+                // name was on screen twice and the two bands cost ~104pt
+                // between them. This is one band.
+                //
+                // The trail is still here, folded into the title: tapping the
+                // name opens the path as a menu. What is gone is the horizontal
+                // path, which spent width to answer a question asked far less
+                // often than "how far in am I".
+                if trash {
+                    // A plain name. `ScopeTitle` carries a progress ring and
+                    // opens the lineage as a menu, and the trash has neither.
+                    Text("Trash").font(.headline)
+                } else {
+                    ScopeTitle(
+                        title: title(of: scope),
+                        // Only the live copy can be a drop target; a drag and a
+                        // back swipe cannot both be running.
+                        lit: interactive && litRoot,
+                        path: scope.map { TreeOps.lineageOf(tree, $0) } ?? [],
+                        onTap: { if interactive { setScope($0) } },
+                        editing: interactive && renamingScope != nil && renamingScope == scope,
+                        editText: $renameText,
+                        typing: $renamingFocus,
+                        onCommit: commitScopeRename)
+                }
+
+                Spacer(minLength: 0)
+
+                // Balances the chevron opposite whether or not there is a menu
+                // to show, so the title stays centred on the trash screen too.
+                if trash {
+                    Image(systemName: "ellipsis").opacity(0)
+                } else {
+                    scopeMenu.disabled(!interactive)
+                }
+            }
+            .padding(.horizontal, Space.gutter)
+            // The height the inline bar had, so nothing below it shifts.
+            .frame(height: 44)
+            .background(Color(.systemBackground))
+        }
+    }
+
     /// One screen's worth of outline, for a given scope.
     ///
     /// Parameterised rather than reading `scope` directly so the back swipe can
@@ -447,6 +496,8 @@ struct OutlineView: View {
         -> some View
     {
             VStack(spacing: 0) {
+                header(for: scope, interactive: interactive, trash: trash)
+
                 if !store.live {
                     // Only about receiving. Saying "not saved" here would be a
                     // lie that pushes people into re-typing work that is
@@ -556,7 +607,12 @@ struct OutlineView: View {
                     // The same row `parentHighlight` outlines — the bullet is
                     // the thing being dropped into, so it lights with the row
                     // rather than leaving the highlight to the frame alone.
-                    isDropTarget: interactive && litGuideParent == row.node.id)
+                    isDropTarget: interactive && litGuideParent == row.node.id,
+                    onDelete: { if interactive { delete(row.node.id) } },
+                    onZoom: { if interactive { setScope(row.node.id) } },
+                    backHolding: backHolding,
+                    onSwipingChanged: { if interactive { rowSwiping = $0 } },
+                    screenWidth: slabWidth)
                     // The waiting row stays in the hierarchy but takes up no
                     // space and draws nothing. It has to stay built: it exists
                     // so Return has a live field to move focus onto, and
@@ -618,63 +674,25 @@ struct OutlineView: View {
                     .background(alignment: .topLeading) {
                         guideSegments(for: row.node.id, in: rows(of: scope))
                     }
-                    // One action per edge, each swiped in the direction of what
-                    // it does: right-to-left to delete, left-to-right to zoom
-                    // in. Sharing an edge put zoom one slip away from a delete
-                    // that asks nothing before it fires.
+                    // Neither edge is `swipeActions` any more. Both are
+                    // `OutlineRow`'s own gesture, because the commit threshold
+                    // had to be a fixed fraction of the screen and UIKit does
+                    // not expose its own — so the two edges of one row used to
+                    // commit at visibly different distances, and only the
+                    // hand-rolled one could show an armed state.
                     //
-                    // The leading edge collides with `zoomOutSwipe`: both travel
-                    // left-to-right, and a thumb coming off the bezel lands past
-                    // that gesture's arming strip often enough that "they start
-                    // in different places" is not a separation at all.
-                    //
-                    // So the back swipe wins outright while it holds the touch,
-                    // and the row offers nothing until the finger lifts. An
-                    // earlier attempt put a clear view over the row's leading
-                    // edge to swallow the touch instead; that never ran, because
-                    // `swipeActions` belongs to the `List` cell and an overlay on
-                    // the row's content sits below it.
-                    .swipeActions(edge: .trailing) {
-                        // Alone on this edge, so the full swipe commits to it —
-                        // which needs no confirmation because it goes to the
-                        // trash and stays restorable for 30 days.
-                        //
-                        // Empty while a row is in the air, the same as the
-                        // leading edge below: a reorder is a vertical carry
-                        // that never travels in a perfectly straight line, and
-                        // the sideways part of it was opening this button
-                        // under the finger mid-drag.
-                        if !drag.isActive {
-                            Button(role: .destructive) {
-                                if interactive { self.delete(row.node.id) }
-                            } label: {
-                                Label("Delete", systemImage: "trash")
-                            }
-                        }
-                    }
-                    .swipeActions(edge: .leading) {
-                        // `allowsFullSwipe` is left on: the worst a full swipe
-                        // does here is land on a screen one Back tap away.
-                        //
-                        // Empty while a back swipe holds the touch, which is how
-                        // that gesture takes this edge for as long as it is
-                        // running. `swipeActions` with no buttons reveals
-                        // nothing, so the row simply does not respond.
-                        //
-                        // And while a row is in the air, for the same reason:
-                        // reordering should move the list, not slide the row
-                        // sideways under the finger doing the moving.
-                        if !backHolding && !drag.isActive {
-                            Button {
-                                if interactive { self.setScope(row.node.id) }
-                            } label: {
-                                Label("Zoom in", systemImage: "chevron.right")
-                            }
-                            .tint(.accentColor)
-                        }
-                    }
+                    // The back swipe is handled inside that gesture too: it
+                    // travels the same way as a zoom, so the row declines the
+                    // touch while `backHolding` is set rather than racing it.
             }
-            .onDelete { if interactive { delete(at: $0) } }
+            // No `.onDelete`. It looks like the harmless way to spell "rows can
+            // be deleted", but SwiftUI turns it into a full-swipe gesture of
+            // its own — haptic and all — on the same edge the row's swipe
+            // uses. That is UIKit's threshold, three quarters of the way
+            // across, and it ran no matter what this row did with the edge: it
+            // is what a delete actually fired, and it is why the button the
+            // trailing `swipeActions` used to reveal could never be tapped.
+            // Nothing else reaches it, since this list has no edit mode.
         }
         .listStyle(.plain)
         // Frozen while the screen is being swiped aside.
@@ -1774,9 +1792,16 @@ struct OutlineView: View {
                 // which cannot be known yet and so cannot gate the claim.
                 if claims(g) { backHolding = true }
                 guard armed(g) else { return }
-                // Rubber-banded rather than one-to-one past the threshold: the
-                // pull keeps responding so the gesture never feels dead, while
-                // the slowing says the useful part of it is already done.
+                // One-to-one all the way to the threshold, damped only past
+                // it. The damping used to start at 60pt, well short of where
+                // the gesture commits, so for most of the pull the edge you
+                // watch and the finger you move were different distances —
+                // which is what made the commit point unreadable and a cancel
+                // feel impossible: retreating moved the edge back at a third
+                // the rate it went out.
+                //
+                // Past the commit point it is overscroll and nothing depends
+                // on it, so the pull can slow there without hiding anything.
                 let d = g.translation.width
                 backPull = d <= backThreshold
                     ? d
@@ -1859,8 +1884,26 @@ struct OutlineView: View {
         }
     }
 
+    /// The fraction of the slab's width its edge must cross to zoom out.
+    ///
+    /// The edge you can see, not the finger. Those were the same thing only
+    /// below the old 60pt threshold — past it the pull was damped to 0.35, so
+    /// landing the visible edge at a third of the screen cost nearly three
+    /// quarters of it in thumb travel, and pulling back to cancel moved the
+    /// edge so little that a swipe felt impossible to call off.
+    ///
+    /// Matches the row delete's `commitFraction`, and for a weaker reason than
+    /// that one: both are a third of the way across, but a back swipe costs a
+    /// tap to undo where a delete costs a trip to the trash. The number is
+    /// shared because the two gestures live on the same rows and should not
+    /// commit at visibly different distances.
+    private let backFraction: CGFloat = 0.35
+
     /// How far the view must travel before letting go zooms out.
-    private let backThreshold: CGFloat = 60
+    ///
+    /// Derived, so it is 35% of whatever is actually on screen rather than 35%
+    /// of the phone this was written on.
+    private var backThreshold: CGFloat { slabWidth * backFraction }
 
     /// Far enough right to be clear of the screen on any phone.
     private let slideOut: CGFloat = 700
@@ -1885,7 +1928,7 @@ struct OutlineView: View {
     /// bug — a strip that only covered where the pull *acts* left the row open
     /// across the band where the pull is actually attempted.
     private func claims(_ g: DragGesture.Value) -> Bool {
-        canGoBack && !drag.isActive && g.startLocation.x < backClaim
+        canGoBack && !drag.isActive && !rowSwiping && g.startLocation.x < backClaim
     }
 
     /// Whether this drag is a back swipe rather than a scroll or a row action.
@@ -1904,6 +1947,10 @@ struct OutlineView: View {
             // that is already running and the row would follow a finger that
             // is busy moving the whole screen out from under it.
             && !drag.isActive
+            // Nor while a row is being swiped. A delete already under way owns
+            // the touch until the finger lifts — navigating back has to be a
+            // new gesture, not the tail of that one.
+            && !rowSwiping
             && g.startLocation.x < 32
             && goingSideways(g)
     }
@@ -2345,6 +2392,43 @@ private struct OutlineRow: View {
     let isDragging: Bool
     /// True while a drop would land inside this row, which lights its bullet.
     let isDropTarget: Bool
+    /// Delete this row. Fired by the swipe below rather than by a button, so
+    /// the row owns the whole gesture — see `rowSwipe`.
+    let onDelete: () -> Void
+    /// Zoom into this row, the leading edge's half of the same gesture.
+    let onZoom: () -> Void
+    /// True while a back swipe holds the touch, which shuts this row's swipe
+    /// for as long as it runs. The same suppression the leading edge takes.
+    let backHolding: Bool
+    /// Announce that this row's swipe has taken the touch, or given it back.
+    /// The list shuts the back swipe out for as long as it is true.
+    let onSwipingChanged: (Bool) -> Void
+    /// The width the commit threshold is a fraction of.
+    ///
+    /// The screen's, not the row's. A threshold asks how much effort confirms
+    /// the action, and effort is how far a finger travels — so it has to be
+    /// the same distance on every row. A fraction of the row made a nested one
+    /// commit sooner than its parent purely because the indent had made it
+    /// narrower, which is the indent deciding how hard it is to delete.
+    let screenWidth: CGFloat
+
+    /// How far the row has been pulled, in points. Signed: negative is a pull
+    /// left to delete, positive a pull right to zoom in. Zero at rest.
+    ///
+    /// One value for both edges, because they are one gesture mirrored — same
+    /// threshold, same rubber-banding, same armed colour. Two separate offsets
+    /// would be two chances for the pair to drift apart.
+    @State private var swipe: CGFloat = 0
+    /// The row's own width. Only what the row is carried off by on a commit —
+    /// the threshold is a fraction of the screen, not of this.
+    @State private var width: CGFloat = 0
+    /// Which way the current touch first moved, or nil between touches.
+    @State private var direction: SwipeDirection?
+
+    /// A touch's committed direction. Fixed on the first movement, because a
+    /// gesture that changed its mind halfway would take the leading edge back
+    /// from `swipeActions` after that edge had already started opening.
+    private enum SwipeDirection { case left, right }
 
     /// True from the moment this row's press arms a drag until the carry ends.
     ///
@@ -2455,6 +2539,139 @@ private struct OutlineRow: View {
     /// would make both marks genuinely hard to hit.
     static let rowPadding: CGFloat = 14
 
+    /// The height of a single-line cell: the row's own 40pt minimum plus the
+    /// vertical padding the call site adds around it. Measured at 54.
+    ///
+    /// Spelled out because the delete strip is a `.background`, which takes
+    /// its size from its content and so cannot simply fill the row the way
+    /// `swipeActions` fills its cell on the other edge.
+    static let cellHeight: CGFloat = 40 + rowPadding
+
+    /// The fraction of the *screen's* width a pull must cross to delete on
+    /// release. Constant across rows, whatever their depth.
+    ///
+    /// `swipeActions` sets its own and does not expose it, which is why this
+    /// edge is hand-rolled: the revealed button could not be tapped, so the
+    /// full swipe was the only way to delete and its distance was the whole
+    /// gesture rather than a shortcut past a button.
+    ///
+    /// A third rather than the half UIKit uses, because the two are not the
+    /// same bet. Half is tuned for a delete that ends the data; this one goes
+    /// to a trash it stays restorable in for 30 days, so an accidental fire
+    /// costs a trip to that screen while a threshold too high is paid on every
+    /// single delete.
+    private static let commitFraction: CGFloat = 0.35
+
+    /// Rubber-banding past the threshold, so the pull keeps answering the
+    /// finger while saying the useful part is done. The same 0.35 the back
+    /// swipe uses, for the same reason.
+    private static let pastCommit: CGFloat = 0.35
+
+    /// The pull that deletes.
+    ///
+    /// Trailing only. The leading edge stays on `swipeActions`, so this is one
+    /// new recogniser rather than a replacement for both — and the back swipe,
+    /// which travels the other way, is untouched.
+    ///
+    /// `minimumDistance: 20` on purpose. Below that this competes with the
+    /// list's scroll and with the row's own 0.35s press, and a row that slides
+    /// sideways on a scroll that drifts is worse than one that starts late.
+    /// Hands the touch back if this row leaves while its swipe is running.
+    ///
+    /// A committed delete removes the row, and a view that is gone does not get
+    /// `onEnded` — which would strand `rowSwiping` true and leave the back
+    /// swipe dead for the rest of the session. Cheap insurance for a flag whose
+    /// only other clear path is a callback that may never arrive.
+    private func releaseSwipeClaim() {
+        if direction != nil { onSwipingChanged(false) }
+    }
+
+    /// What either edge commits to.
+    ///
+    /// The two are the same gesture mirrored, so the direction picks the action
+    /// rather than there being two recognisers to keep in step.
+    private var action: (label: String, tint: Color, run: () -> Void)? {
+        switch direction {
+        case .left: return ("trash.fill", .red, onDelete)
+        case .right: return ("chevron.right", .accentColor, onZoom)
+        case nil: return nil
+        }
+    }
+
+    /// The pull that deletes or zooms.
+    ///
+    /// One recogniser for both edges. `swipeActions` used to own the leading
+    /// one, but its commit threshold is UIKit's and is not exposed — so the two
+    /// edges of the same row committed at visibly different distances and only
+    /// one of them could show an armed state.
+    ///
+    /// `minimumDistance: 20` on purpose. Below that this competes with the
+    /// list's scroll and with the row's own 0.35s press, and a row that slides
+    /// sideways on a scroll that drifts is worse than one that starts late.
+    private var rowSwipe: some Gesture {
+        DragGesture(minimumDistance: 20, coordinateSpace: .local)
+            .onChanged { g in
+                guard !isDragging, !backHolding else { return }
+                // Decided once, on the first movement that clears the 20pt, and
+                // held for the rest of the touch. A gesture that could change
+                // its mind halfway would hand the row to the other edge after
+                // that edge had already started opening.
+                // Follows the finger for the whole gesture rather than
+                // latching on the first movement. A pull that starts rightward
+                // and comes back left is a zoom the user changed their mind
+                // about, and the row should say so — blue on the leading edge
+                // becoming red on the trailing one, not whichever edge the
+                // opening sample happened to name.
+                //
+                // Below the dead zone it stays nil, so a jittery start does not
+                // flash a strip before the direction means anything.
+                let d = g.translation.width
+                direction = abs(d) < 20 ? nil : (d < 0 ? .left : .right)
+                // Ours from the moment there is a direction until the finger
+                // lifts, so the back swipe cannot start partway through it.
+                onSwipingChanged(direction != nil)
+                guard action != nil else { return }
+                let commit = screenWidth * Self.commitFraction
+                // Rubber-banded past the commit point only. Up to it the edge
+                // you watch and the finger you move are the same distance,
+                // which is what makes the threshold readable and a cancel
+                // possible; past it nothing depends on the distance any more.
+                let m = abs(d)
+                let shown = m <= commit ? m : commit + (m - commit) * Self.pastCommit
+                swipe = d < 0 ? -shown : shown
+            }
+            .onEnded { g in
+                defer {
+                    onSwipingChanged(false)
+                    direction = nil
+                }
+                // Whichever way the finger was going when it lifted — the
+                // strip on screen at that moment is what runs.
+                guard !isDragging, !backHolding, let action else {
+                    withAnimation(.easeOut(duration: 0.22)) { swipe = 0 }
+                    return
+                }
+                if abs(g.translation.width) >= screenWidth * Self.commitFraction {
+                    // Only a delete rides out. That row is leaving, so carrying
+                    // it the rest of the way is what stops it vanishing from
+                    // under the finger.
+                    //
+                    // A zoom keeps the row — the screen changes around it — so
+                    // sliding it off would park a live row 393pt to the side:
+                    // its content off screen, its cell still holding a row's
+                    // worth of height. A gap exactly where the row should be.
+                    if direction == .left {
+                        withAnimation(.easeIn(duration: 0.16)) { swipe = -width }
+                    } else {
+                        swipe = 0
+                    }
+                    action.run()
+                } else {
+                    withAnimation(.easeOut(duration: 0.22)) { swipe = 0 }
+                }
+            }
+    }
+
     var body: some View {
         HStack(spacing: 10) {
             // Square, where the bullet is round. Both marks used to be circles
@@ -2564,6 +2781,67 @@ private struct OutlineRow: View {
         // The web draws them as children of `.row` and dodges this the same
         // way, with `.row.ripple > :not(.guide)`.
         .modifier(RippleWiggle(delay: rippleDelay))
+        // Slid aside by the delete swipe. On the content, like the ripple
+        // above and for the same reason: the guides are a `.background` of the
+        // row, and carrying them along would lean the whole structure.
+        .offset(x: swipe)
+        // The action the row slides off, sized to whatever has been uncovered
+        // so far. Not a Button: the one `swipeActions` revealed could not be
+        // tapped, and a second untappable button would only look like an
+        // invitation. It says what releasing will do — the release is the tap.
+        //
+        // Mirrored, not duplicated: the side it sits on and what it says both
+        // come from the direction, so the two edges cannot drift apart in
+        // threshold, colour or timing.
+        .background(alignment: swipe < 0 ? .trailing : .leading) {
+            if let action, swipe != 0 {
+                let commit = screenWidth * Self.commitFraction
+                let armed = abs(swipe) >= commit
+                Image(systemName: action.label)
+                    // Dimmed until armed, so the glyph carries the state as
+                    // well as the ground does. White on both would leave the
+                    // background the only thing that changed.
+                    .foregroundStyle(.white.opacity(armed ? 1 : 0.6))
+                    .font(.system(size: armed ? 19 : 16))
+                    // Armed is worth feeling before the finger lifts, since
+                    // neither of these asks anything after it.
+                    .animation(.easeOut(duration: 0.12), value: armed)
+                    // Centred in the strip uncovered so far, so the glyph rides
+                    // out with the row rather than appearing once there is room.
+                    //
+                    // The colour is painted around it rather than behind it,
+                    // because a `.background` is sized by its own content: the
+                    // height had to come from a frame the strip itself sets,
+                    // not from the row it sits behind.
+                    .frame(width: abs(swipe), height: Self.cellHeight)
+                    // Muted, not absent. This is the only thing that says
+                    // releasing will act — there is no confirmation behind it —
+                    // so the unarmed state has to read as a real colour that
+                    // then intensifies, rather than a wash that looks like the
+                    // strip failed to draw.
+                    .background(armed ? action.tint : action.tint.opacity(0.5))
+            }
+        }
+        // Measured rather than assumed: the threshold is a fraction of the
+        // row, and a row's width is the list's, less an indent that grows
+        // with depth.
+        .background {
+            GeometryReader { geo in
+                Color.clear
+                    .onAppear { width = geo.size.width }
+                    .onChange(of: geo.size.width) { _, w in width = w }
+            }
+        }
+        // Alongside the press, never instead of it: the two are separated by
+        // time and direction — this one needs 20pt of sideways travel, that
+        // one needs 0.35s of stillness — so both can watch the same touch and
+        // only one will ever act on it.
+        .simultaneousGesture(rowSwipe)
+        .onDisappear(perform: releaseSwipeClaim)
+        // Back at rest whenever the row reappears. `swipe` is `@State` and
+        // survives the view being torn down and rebuilt — a zoom used to bring
+        // a row back still holding the offset that carried it off.
+        .onAppear { swipe = 0; direction = nil }
         // The whole row arms a drag, not just the bullet. Reaching across the
         // screen for a 32pt column with the other hand was the cost of putting
         // the handle in one place, and the 0.35s hold already separates a drag
