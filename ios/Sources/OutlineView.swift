@@ -2188,9 +2188,6 @@ private struct ScopeTitle: View {
         // — and a target that changes size with the title is one you have to
         // look at to aim. This is the same rectangle every time.
         //
-        // `.principal` sizes to its content, so the width is asked for rather
-        // than filled: the screen less the two button zones. `maxWidth` and not
-        // `width`, so a bar too narrow for it shrinks instead of colliding.
         // Two boxes, nested. The inner one is where the name may go and keeps
         // it off the border; the outer one is the target, and is the whole
         // space between the buttons — so the padding comes out of the room the
@@ -2201,7 +2198,15 @@ private struct ScopeTitle: View {
         // zones, at the height of a button. A frame, not padding — padding
         // makes the box a function of the name, and this one is a function of
         // the bar, so it is the same rectangle whatever the title says.
-        .frame(maxWidth: max(titleWidth, 0), minHeight: buttonHeight)
+        //
+        // `width`, not `maxWidth`. A `maxWidth` only *permits* the width, and
+        // `.principal` sizes to its content — so with a single truncated line
+        // inside, the item asked for the width of the name and got it: a short
+        // title got a short box. Spacers do not help, because the stack is
+        // already only as wide as the frame it was given. This demands the
+        // width instead, which is the one thing that makes the box a function
+        // of the bar rather than of the name.
+        .frame(width: max(titleWidth, 0), height: buttonHeight)
         .background {
             // Only under a drop. At rest the header is a title, and a box
             // drawn around it all the time reads as a permanently half-pressed
