@@ -2151,10 +2151,10 @@ private struct ScopeTitle: View {
     /// exposes this, so it is measured: the chevron sits ~16pt from the edge
     /// and is ~44pt wide.
     ///
-    /// Plus a gutter, because the box is drawn to this width: at a bare 60 its
-    /// border landed flush against the chevron and the ellipsis with no air
-    /// between them, which read as one wide control rather than three.
-    private let buttonZone: CGFloat = 60 + Space.row
+    /// The box runs to exactly this, with no gutter subtracted. The air between
+    /// the box and the buttons is the buttons' own inset; taking a gutter off
+    /// as well made the box smaller than the space it was meant to fill.
+    private let buttonZone: CGFloat = 60
 
     /// A toolbar button's tap target, which is what the box matches.
     ///
@@ -2191,25 +2191,29 @@ private struct ScopeTitle: View {
         // `.principal` sizes to its content, so the width is asked for rather
         // than filled: the screen less the two button zones. `maxWidth` and not
         // `width`, so a bar too narrow for it shrinks instead of colliding.
+        // Two boxes, nested. The inner one is where the name may go and keeps
+        // it off the border; the outer one is the target, and is the whole
+        // space between the buttons — so the padding comes out of the room the
+        // title had rather than out of the box's size, which is what a single
+        // padded box did.
+        .padding(.horizontal, Space.row)
         // The biggest box that fits: the bar's width less the two button
-        // zones, at the height of a button. Not padding around the text —
-        // padding makes the box a function of the name, and this box is a
-        // function of the bar, so it is the same rectangle whatever the title
-        // says.
+        // zones, at the height of a button. A frame, not padding — padding
+        // makes the box a function of the name, and this one is a function of
+        // the bar, so it is the same rectangle whatever the title says.
         .frame(maxWidth: max(titleWidth, 0), minHeight: buttonHeight)
         .background {
-            RoundedRectangle(cornerRadius: 9)
-                // Always drawn, so the name is visibly a control before you
-                // touch it — the chevron alone is small enough to miss. Quiet
-                // at rest and brass under a drop: filling it brass all the time
-                // would spend the drag colour on a resting state, which is the
-                // one thing `DropPalette` exists to prevent.
-                .fill(lit ? AnyShapeStyle(DropPalette.nest.opacity(0.14)) : AnyShapeStyle(.quaternary))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 9)
-                        .strokeBorder(
-                            lit ? AnyShapeStyle(DropPalette.nest) : AnyShapeStyle(.clear),
-                            lineWidth: 2))
+            // Only under a drop. At rest the header is a title, and a box
+            // drawn around it all the time reads as a permanently half-pressed
+            // button — worse, it spends the drag's own colour on a resting
+            // state, which is the one thing `DropPalette` exists to prevent.
+            if lit {
+                RoundedRectangle(cornerRadius: 9)
+                    .fill(DropPalette.nest.opacity(0.14))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 9)
+                            .strokeBorder(DropPalette.nest, lineWidth: 2))
+            }
         }
         .animation(.easeOut(duration: 0.12), value: lit)
     }
