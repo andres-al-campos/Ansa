@@ -477,9 +477,16 @@ struct OutlineView: View {
                 }
             }
             .padding(.horizontal, Space.gutter)
-            // The height the inline bar had, so nothing below it shifts.
-            .frame(height: 44)
-            .background(Color(.systemBackground))
+            // No fixed height. The buttons already carry the 44pt hit target
+            // the system bar was sized around, so the band lands in the same
+            // place without a number that a larger Dynamic Type setting would
+            // then be squeezed into.
+            .frame(minHeight: 44)
+            // The material the bar had, not a flat fill. Rows scrolling up
+            // under the header blur through it instead of vanishing at a hard
+            // edge, which is the one thing that gave away that this is a view
+            // in the page rather than the bar it replaced.
+            .background(.bar)
         }
     }
 
