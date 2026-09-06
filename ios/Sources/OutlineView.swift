@@ -1971,9 +1971,11 @@ private struct ScopeProgress: View {
         return Double(progress.done) / Double(progress.total)
     }
 
+    /// A figure at every value, including the last one. "All done" read as a
+    /// different kind of thing sitting where a number had been — and the colour
+    /// and the full bar beside it already say finished.
     private var label: String {
-        guard let progress else { return "0%" }
-        return progress.pct == 100 ? "All done" : "\(progress.pct)%"
+        "\(progress?.pct ?? 0)%"
     }
 
     var body: some View {
