@@ -3,16 +3,12 @@ import SwiftUI
 
 /// The trash: what was deleted, with a way to put it back.
 ///
-/// A screen, not a sheet. It is somewhere you go and then come back from, and a
-/// card sliding up over the app said "settings panel" instead. It is not a
-/// scope either — the trash has no node id, so it cannot be one — so it is the
-/// third thing `slab` can draw, alongside the project grid and an outline.
-/// Back lands on the grid, which is the only place the Trash row is reachable
-/// from anyway.
+/// A screen, not a sheet, and not a scope — the trash has no node id — so it is
+/// the third thing `slab` can draw. Back lands on the grid.
 ///
-/// Loads when opened, and again whenever the tree changes under it. Another
-/// device may have deleted or restored something — before you got here, or while
-/// you are looking at it — and a stale list offers buttons that fail.
+/// Loads when opened and again whenever the tree changes under it: another
+/// device may have deleted or restored something, and a stale list offers
+/// buttons that fail.
 struct TrashView: View {
     let store: OutlineStore
 
@@ -42,14 +38,9 @@ struct TrashView: View {
         // open on this screen honest while another device works on it.
         //
         // `store.adopted`, not `store.tree`. A permanent delete elsewhere does
-        // not change the tree — the node left `nodes` when it was first deleted
-        // — so what arrives is an unchanged tree sent purely to wake this
-        // device. `Tree` is `Equatable`, so watching it would correctly see no
-        // change and skip, and the row would sit there offering a Restore and a
-        // Delete that both fail. The counter is the arrival itself.
-        //
-        // `.task` covers arriving at a list another device already changed;
-        // this covers the list changing while you are looking at it.
+        // not change the tree, so what arrives is an unchanged one sent purely
+        // to wake this device — watching `tree` would correctly see no change
+        // and leave the row offering a Restore and a Delete that both fail.
         .onChange(of: store.adopted) { Task { await load() } }
         .confirmationDialog(
             confirming.map { $0.text.isEmpty ? "Untitled" : $0.text } ?? "",
@@ -95,21 +86,11 @@ struct TrashView: View {
                     Section {
                         ForEach(entries) { entry in
                             TrashRow(entry: entry)
-                                // Swipes rather than buttons in the row. Both
-                                // actions are destructive-shaped — one undoes a
-                                // delete, the other finishes it — and a row with
-                                // two buttons on it invites the wrong one.
-                                // Words, no glyphs, on both. A swipe button
-                                // given a title *and* an image shows only the
-                                // image when the row is too short for both, so
-                                // "Restore" was on screen as a bare undo arrow
-                                // — and that arrow means "undo the last thing"
-                                // rather than "put this one back".
-                                //
-                                // The trash is somewhere you arrive twice a
-                                // year, with no muscle memory built up, about
-                                // to act on something you thought was gone.
-                                // Nothing to be saved by making it a rebus.
+                                // Words, no glyphs. A swipe button given a
+                                // title *and* an image shows only the image when
+                                // the row is too short for both, so "Restore"
+                                // appeared as a bare undo arrow — which means
+                                // "undo the last thing", not "put this back".
                                 .swipeActions(edge: .leading) {
                                     Button("Restore") {
                                         Task { await restore(entry) }
@@ -141,11 +122,10 @@ struct TrashView: View {
                         .disabled(busy)
                     }
                 }
-                // While the back swipe is carrying this screen aside, so one
-                // finger cannot scroll the list and slide the screen at the
-                // same time. The list's own recogniser is not something the
-                // swipe can outrank, so the lock has to be this — the same one
-                // an outline takes, for the same reason.
+                // While the back swipe carries this screen aside, so one finger
+                // cannot scroll and slide at once. The list's own recogniser is
+                // not something the swipe can outrank, so the lock has to be
+                // this.
                 .scrollDisabled(backing)
             }
         } else {

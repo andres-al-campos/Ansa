@@ -1,14 +1,8 @@
-/// The two colours a drag speaks in.
+/// The two colours a drag speaks in: brass means the row becomes a parent,
+/// blue means it goes in a gap. One meaning each, never mixed.
 ///
-/// Brass means the row becomes a parent. Blue means the row goes in a gap.
-/// One meaning each, never mixed — during a drag those are the only two things
-/// that can happen, and shape alone does not separate them fast enough at the
-/// moment of release.
-///
-/// Both are the web's tokens (`--brass`, `--bar` in `src/index.css`) rather
-/// than the system accent, so the same drop reads the same on both screens.
-/// The system accent still owns everything that is not a drag — swipe actions,
-/// progress bars — because those follow the user's own tint.
+/// The web's `--brass` and `--bar` (`src/index.css`) rather than the system
+/// accent, so the same drop reads the same on both screens.
 
 import SwiftUI
 
@@ -25,17 +19,12 @@ enum DropPalette {
         dark: Color(red: 0.435, green: 0.624, blue: 0.847))
 }
 
-/// The two colours a ticked box speaks in.
+/// The two colours a ticked box speaks in: green when the group is finished
+/// too, blue when the task is done but the group is not.
 ///
-/// Green says the group this task belongs to is finished too; blue says the
-/// task is done but the group around it is not. So a branch turning green is
-/// visible from any row in it, not just from the parent — which is the thing
-/// the progress bar at the top cannot tell you about a subtree.
-///
-/// The web's `--leaf` and `--bar`, same as `DropPalette`'s. Kept separate from
-/// it despite `bar` being the identical blue: that palette means "what this
-/// drop will do", and one enum standing for two unrelated vocabularies is how
-/// a colour quietly acquires a second meaning.
+/// Kept separate from `DropPalette` despite sharing the blue — that one means
+/// "what this drop will do", and one enum for two vocabularies is how a colour
+/// acquires a second meaning.
 enum DonePalette {
 
     /// Done, and so is everything around it.
@@ -50,23 +39,13 @@ enum DonePalette {
 }
 
 extension Color {
-    /// "Done", dark enough to read on white.
-    ///
-    /// `Color.green` is the system's, tuned for a dark ground — on white it
-    /// lands near 2.3:1, well under the 4.5:1 text this size needs. Dark mode
-    /// keeps the bright one, which is what that colour is for.
-    ///
-    /// Here rather than beside its first use because both the project card and
-    /// the scope title say "All done", and two greens drifting apart is how the
-    /// same state ends up looking like two states.
+    /// "Done", dark enough to read on white. `Color.green` is tuned for a dark
+    /// ground and lands near 2.3:1 on white, under the 4.5:1 this size needs.
     static let done = Color(
         light: Color(red: 0.10, green: 0.45, blue: 0.20), dark: .green)
 
-    /// A colour that follows the interface style.
-    ///
-    /// SwiftUI has no literal for this the way CSS has a media query, so the
-    /// pair goes through UIKit's dynamic provider. Without it a brass tuned for
-    /// white sits on a dark row at roughly the contrast of the row itself.
+    /// A colour that follows the interface style. SwiftUI has no literal for
+    /// this, so the pair goes through UIKit's dynamic provider.
     init(light: Color, dark: Color) {
         self = Color(UIColor { traits in
             UIColor(traits.userInterfaceStyle == .dark ? dark : light)

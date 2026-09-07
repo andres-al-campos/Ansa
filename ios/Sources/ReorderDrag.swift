@@ -6,20 +6,13 @@ import SwiftUI
 /// back swipe — a row has three drags on it, so this one is named for what it
 /// does.
 ///
-/// Pulled out of `OutlineView` because these pieces are meaningless apart and
-/// always change together — `endDrag` clearing them as a unit was the tell. The
-/// bugs this session came from two of them disagreeing: `rowFrames` was serving
-/// as both "what is on screen" and "what exists", and the frame it held was the
-/// row's content box while every reader wanted the whole cell.
+/// State and geometry only. Anything needing the tree — what a drop would do,
+/// whether a row can accept one — stays in the view, so this type never has to
+/// know what a drag means.
 ///
-/// It owns state and geometry only. Anything needing the tree — what a drop
-/// would do, whether a row can accept one — stays in the view, so this type
-/// never has to know what a drag means.
-/// Main-actor because every part of it is: the state feeds a SwiftUI view, the
-/// geometry comes from layout, and the edge-scroll tick drives a
-/// `ScrollViewProxy`. It was already only ever touched from the main thread —
-/// saying so is what lets the timer closure hop back to that actor instead of
-/// capturing view state into a `@Sendable` closure and hoping.
+/// Main-actor because every part of it is, which is what lets the timer closure
+/// hop back to that actor rather than capturing view state into a `@Sendable`
+/// closure.
 @MainActor
 @Observable
 final class ReorderDrag {
@@ -46,18 +39,13 @@ final class ReorderDrag {
 
     /// A drag finished a moment ago, so a tap arriving now is its release.
     ///
-    /// The row's label is a Button and the drag is a `.simultaneousGesture` —
-    /// which it has to be, since taking the touch outright is exactly what stops
-    /// a Button firing. The cost is that lifting the finger after a drop also
-    /// completes the tap, and the row opened for rename the instant it landed.
+    /// The row's label is a Button and the drag is a `.simultaneousGesture`, so
+    /// lifting the finger after a drop also completes the tap and the row
+    /// opened for rename the instant it landed.
     ///
-    /// Time rather than a flag cleared on the next tap: nothing guarantees that
-    /// tap ever comes. A drop over empty space fires no Button, and a flag left
-    /// standing would swallow the user's next real tap instead.
-    ///
-    /// 0.3s is well past the release — the tap lands in the same runloop turn —
-    /// while staying under the time it takes to look at the result and reach
-    /// back to rename it.
+    /// Time rather than a flag cleared on the next tap: a drop over empty space
+    /// fires no Button, and a flag left standing would swallow the next real
+    /// tap instead.
     var justEnded: Bool {
         guard let endedAt else { return false }
         return Date().timeIntervalSince(endedAt) < 0.3
@@ -71,19 +59,14 @@ final class ReorderDrag {
     /// it is what the busy flag and the row's fade both actually ask.
     var isActive: Bool { dragging != nil }
 
-    /// The rows' shared left edge in global space.
-    ///
-    /// Any row's will do: the indent is padding *inside* the row, so every
-    /// frame starts at the list's own inset whatever its depth. Taking the
-    /// minimum avoids depending on which row happens to be first.
+    /// The rows' shared left edge in global space. The indent is padding
+    /// *inside* the row, so every frame starts at the list's own inset whatever
+    /// its depth.
     var rowsLeft: CGFloat { frames.values.map(\.minX).min() ?? 0 }
 
-    /// Row boxes in visual order, from the measured frames.
-    ///
-    /// Measured rather than derived from a uniform height, because a row whose
-    /// text wraps is taller than one that does not — and the band arithmetic
-    /// splits each row into quarters, so a wrong height puts the `into` band in
-    /// the wrong place rather than merely off by a little.
+    /// Row boxes in visual order, from the measured frames. Measured rather
+    /// than derived from a uniform height: a row whose text wraps is taller, and
+    /// the band arithmetic splits each row into quarters.
     func boxes(order: [NodeId]) -> [TreeOps.RowBox] {
         order.compactMap { id in
             guard let f = frames[id] else { return nil }
@@ -120,17 +103,10 @@ final class ReorderDrag {
     /// list scrolled only while the finger jittered.
     ///
     /// The tick walks a cursor along the rows rather than re-deriving the edge
-    /// row from the measured frames each time. Two reasons, and either alone
-    /// stalls the scroll:
-    ///
-    /// The frames come from a preference that refreshes on the next layout
-    /// pass, so within a tick they still describe the pre-scroll positions —
-    /// asking again returns the row just scrolled to, and re-issuing that
-    /// scroll does nothing. And `scrollTo` only moves far enough to bring a row
-    /// into view, so a target one place beyond the edge is already nearly
-    /// visible and yields a few pixels of travel. Together they are a scroll
-    /// that creeps a couple of pixels and then stops dead while the timer keeps
-    /// running.
+    /// row each time. Either reason alone stalls the scroll: the frames refresh
+    /// only on the next layout pass, so asking again within a tick returns the
+    /// row just scrolled to; and `scrollTo` moves only far enough to bring a row
+    /// into view, so a target one place beyond the edge yields a few pixels.
     ///
     /// - Parameters:
     ///   - order: every visible row, in visual order. Re-read each tick, since

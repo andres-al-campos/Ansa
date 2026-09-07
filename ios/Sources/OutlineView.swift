@@ -255,20 +255,11 @@ struct OutlineView: View {
             .onChange(of: drag.isActive || edit.isEditing) { _, busy in
                 store.setBusy(busy)
             }
-            // A project takes its whole subtree with it, and unlike ticking a
-            // parent that is not undoable — the ops are one-way. The web arms
-            // the trash and confirms in place; a dialog is the same idea in the
-            // platform's own idiom, and it can say how much is going.
-            // An alert rather than a confirmation dialog: on a phone the latter
-            // slides up from the bottom edge as an action sheet, which reads as
-            // a menu of things you might do next rather than a question that
-            // has to be answered. Deleting a project takes every task under it,
-            // so it wants the centred, modal version.
-            //
-            // The cancel is explicit. A confirmation dialog gets an implicit
-            // one by tapping outside it — fine for a menu, wrong here, since
-            // the way out of a destructive question should be a labelled button
-            // and not a guess about where it is safe to tap.
+            // An alert rather than a confirmation dialog: the latter slides up
+            // as an action sheet, which reads as a menu of things you might do
+            // next rather than a question. Deleting a project takes every task
+            // under it, so it wants the centred, modal version with an explicit
+            // labelled cancel.
             .alert(
                 pendingDelete.map { "Delete \($0.text.isEmpty ? "Untitled" : $0.text)?" } ?? "",
                 isPresented: Binding(
@@ -299,59 +290,28 @@ struct OutlineView: View {
                     ? "It stays in the trash for 30 days."
                     : "This deletes \(count) task\(count == 1 ? "" : "s") under it. They stay in the trash for 30 days.")
             }
-            // Swipe right from the left edge to zoom out, the way every other
-            // iOS app pops a screen. `NavigationStack` would give this for
-            // free on a pushed view, but zooming is a change of `scope` in
-            // place rather than a push — there is no stack entry to pop, so
-            // the gesture has to be built.
+            // Swipe right from the left edge to zoom out. Zooming changes
+            // `scope` in place rather than pushing, so there is no stack entry
+            // for `NavigationStack` to pop and the gesture has to be built.
             //
-            // Edge-only, not the whole width: the rows carry `swipeActions`,
-            // and a full-width recogniser would race them, so a swipe meant to
-            // reveal Delete would sometimes leave the project instead.
-            //
-            // No swipe-left counterpart. Going *in* has no unambiguous target
-            // — a tree branches, so "forward" is a choice of child rather than
-            // a direction — and the bullet tap already covers it.
-            // The view is a slab being lifted aside, so it needs a ground to
-            // be lifted *off* and an edge that casts onto it.
-            //
+            // Edge-only: the rows carry their own swipe, and a full-width
+            // recogniser would race it.
             // The ground names where the swipe is going rather than being a
-            // bare colour. Sliding onto an empty dark panel was the problem it
-            // fixes: two near-identical dark surfaces with nothing on the lower
-            // one read as the app failing to draw, not as depth. A label is
-            // enough — this is glimpsed for a fifth of a second, so it has to
-            // be legible at once and cannot repay any more detail than that.
+            // bare colour: two near-identical dark surfaces with nothing on the
+            // lower one read as the app failing to draw, not as depth.
             }
-            // Attached to the whole screen but recognised *simultaneously*,
-            // not exclusively.
+            // Simultaneous, not exclusive. Attached plainly this broke the row
+            // drag on a real phone: an ancestor `DragGesture` recognises at 20pt
+            // and takes the touch sequence, and `armed` runs inside the handler,
+            // far too late to give it back. Simultaneous recognition lets both
+            // see the same touch; `armed` then settles which one acts.
             //
-            // Attaching it plainly is what broke the row drag on a real phone:
-            // an ancestor `DragGesture` recognises at 20pt of movement and
-            // takes the touch sequence, and `armed` — which runs inside the
-            // handler, after recognition — is far too late to give it back. The
-            // row got nothing, the swipe refused to happen, and the gesture
-            // died mid-screen.
-            //
-            // Simultaneous recognition is what lets both see the same touch, so
-            // the row drag is never starved. Which one *acts* is then settled
-            // by `armed`, and the two are not actually ambiguous: a back swipe
-            // moves immediately from the edge, while a row drag must sit still
-            // for 0.35s before it will accept any movement at all.
-            //
-            // An edge-strip overlay was the other candidate and is wrong here:
-            // a top-level bullet is centred at x=16 and spans the full 32pt, so
-            // any strip wide enough to catch a thumb sits directly on top of
-            // the thing being dragged.
-            //
-            // None of this reproduced on the simulator. A synthesised touch
-            // path arrives as one clean sequence and the recognisers never
-            // contend; a finger is what produces the race.
+            // None of this reproduces on the simulator, where a synthesised
+            // touch path never makes the recognisers contend.
             .simultaneousGesture(zoomOutSwipe)
-            // No `.toolbar`. The bar belongs to the `NavigationStack`, which
-            // renders it outside this view — so `backPull`'s offset moved the
-            // whole screen *except* its header, and the title sat still while
-            // everything under it slid. The header is part of the page, so it
-            // is drawn inside the slab now and travels with it.
+            // No `.toolbar`. The bar belongs to the `NavigationStack` and
+            // renders outside this view, so `backPull`'s offset moved the whole
+            // screen except its header. The header is drawn inside the slab.
             .navigationBarHidden(true)
         }
     }
@@ -405,9 +365,8 @@ struct OutlineView: View {
                     }
                 }
 
-                // No divider above it. Red already says which one this is,
-                // and the confirmation is what actually guards it — the same
-                // alert a project on the grid gets, counting what goes with it.
+                // No divider. Red says which one this is, and the alert is
+                // what actually guards it.
                 Button("Delete", systemImage: "trash", role: .destructive) {
                     pendingDelete = node
                 }
@@ -679,12 +638,11 @@ struct OutlineView: View {
                             }
                         }
                     }
-                    // Neither edge is `swipeActions` any more. Both are
-                    // `OutlineRow`'s own gesture, because the commit threshold
-                    // had to be a fixed fraction of the screen and UIKit does
-                    // not expose its own — so the two edges of one row used to
-                    // commit at visibly different distances, and only the
-                    // hand-rolled one could show an armed state.
+                    // Neither edge is `swipeActions`. Both are `OutlineRow`'s
+                    // own gesture: the commit threshold has to be a fixed
+                    // fraction of the screen and UIKit does not expose its own,
+                    // so the two edges committed at visibly different
+                    // distances.
                     //
                     // The back swipe is handled inside that gesture too: it
                     // travels the same way as a zoom, so the row declines the
@@ -700,40 +658,28 @@ struct OutlineView: View {
             // Nothing else reaches it, since this list has no edit mode.
         }
         .listStyle(.plain)
-        // Frozen while the screen is being swiped aside.
+        // The directional lock the platform does not hand you. Every gesture
+        // here is recognised simultaneously, so none of them takes the touch
+        // away from the list — without this a swipe carrying any vertical drift
+        // slid the screen and scrolled the rows at once.
         //
-        // The swipe is recognised simultaneously with everything else, which
-        // means it never takes the touch away from the list — so a swipe
-        // carrying any vertical drift scrolled the rows while it slid them. The
-        // screen was moving in two directions at once from one finger.
+        // Also while a row is in the air: the drag reads the frames it
+        // measured, so a list scrolling under it moves the answer out from
+        // under the finger. Edge-scrolling is the controller's own tick.
         //
-        // The list's own recogniser is not something the swipe can outrank, so
-        // the lock has to be this: once the pull has started, the list stops
-        // accepting the gesture at all. This is the directional lock the
-        // platform does not hand you — decided once when the pull begins, and
-        // held for the rest of it.
-        // Also while a row is in the air: the drag reads the row frames it
-        // measured, so a list that scrolls under it would move the answer out
-        // from under the finger. Edge-scrolling during a drag is driven by the
-        // controller's own tick instead.
-        // Also while a row is being swiped sideways. `rowSwiping` is set once
-        // the pull has cleared 20pt, which is the point the gesture has proved
-        // it is horizontal — before that a scroll that drifts must still be
-        // able to scroll. Without this a swipe carrying any vertical drift did
-        // both at once, the same way the back swipe used to.
+        // `rowSwiping` is set once the pull clears 20pt, the point the gesture
+        // has proved it is horizontal — before that a drifting scroll must
+        // still be able to scroll.
         .scrollDisabled(interactive && (backPull > 0 || drag.isActive || rowSwiping))
         // Put the list back where it was when this scope was last left.
         //
-        // A turn late and unanimated: the rows for the new scope have to lay
-        // out before one of them can be scrolled to, and the whole point is
-        // that the position is already right on the first frame you see. The
-        // preview behind a back swipe reads the same anchor, so what slides in
-        // and what lands are the same picture.
+        // Unanimated, so the position is already right on the first frame
+        // rather than seen to travel. The preview behind a back swipe reads the
+        // same anchor, so what slides in and what lands are the same picture.
+        //
         // `.onChange` and not `.onAppear`: zooming out swaps this slab's rows
-        // but does not rebuild the slab, so its `onAppear` fired once at launch
-        // and never again. The preview behind the swipe is created fresh each
-        // time and so restored correctly — the live one, which is the one you
-        // land on, sat there ignoring it.
+        // without rebuilding the slab, so its `onAppear` fires once at launch
+        // and never again.
         .onChange(of: restoring) { _, anchor in
             guard let anchor else { return }
             applyAnchor(anchor, with: proxy, live: interactive)
@@ -801,17 +747,8 @@ struct OutlineView: View {
         }
     }
 
-    /// The one control: plus at rest, checkmark while adding.
-    ///
-    /// It replaced a permanent text field, which is the point. A field that is
-    /// always on screen looks the same whether or not it is live, so there was
-    /// no way to tell adding from not adding — and it spent two rows of a short
-    /// screen saying so. A button can only be pressed, so pressing it is
-    /// unambiguously the user choosing to add.
-    ///
-    /// The same button is also the way out, and the symbol swap is what says
-    /// the mode is on. Nothing else on screen changes, so the mode costs no
-    /// space at all: same corner, same size, different glyph.
+    /// The one control: plus at rest, checkmark while adding. The same button
+    /// is also the way out, and the symbol swap is what says the mode is on.
     ///
     /// Inert behind a swipe for the same reason as a row's field — the copy
     /// underneath must not act on a screen that is sliding away.
@@ -837,14 +774,11 @@ struct OutlineView: View {
                 // no backdrop left to sample — so it stopped being glass and
                 // resolved to a flat dark disc, black against light mode.
                 //
-                // The flatten is still doing its original job. The button rides
-                // the bottom safe-area inset, which animates down as the keyboard
-                // goes; the circle travelled with that animation while the `Image`
-                // was laid out against the *final* safe area from the first frame.
-                // So the plus appeared at the bottom and waited there while the
-                // circle slid down to meet it — two images, in two coordinate
-                // spaces, inside one view. No change to the transition could reach
-                // it, because it was never a transition.
+                // The flatten's original job: the button rides the bottom
+                // safe-area inset, which animates down with the keyboard, and
+                // the circle travelled with it while the `Image` was laid out
+                // against the *final* safe area from the first frame — two
+                // images in two coordinate spaces inside one view.
                 .drawingGroup()
                 .frame(width: 52, height: 52)
                 .modifier(CaptureButtonSurface())
@@ -1333,10 +1267,8 @@ struct OutlineView: View {
         // without ever leaving depth 1. It is generous for that reason — the
         // entries are ids, so the whole trail costs less than one row of text.
         //
-        // Overflow drops the oldest, so the most recent steps always survive.
-        // Back still works past the end: `popBack` hands off to the tree parent
-        // once the trail runs out, which is where it walked before there was a
-        // trail at all.
+        // Past the end `popBack` hands off to the tree parent, so back still
+        // works once the trail runs out.
         if id != scope {
             backTrail.append(BackStep(scope: scope, at: topRowAnchor()))
             if backTrail.count > 200 { backTrail.removeFirst() }
@@ -1547,23 +1479,17 @@ struct OutlineView: View {
     /// The row whose guide the dragged row would hang from, or nil when no gap
     /// drop is live.
     ///
-    /// Identified by node, not by depth. Depth alone matches every guide on
-    /// that level — all of the future parent's siblings light up alongside it,
-    /// which says the row could land under any of them. `parentAtDepth` walks
-    /// the same lineage `insertAtDepth` walks to choose the real parent, so the
-    /// lit guide and the landing place cannot disagree.
+    /// Identified by node, not by depth: depth alone matches every guide on
+    /// that level, lighting all the future parent's siblings. `parentAtDepth`
+    /// walks the same lineage `insertAtDepth` does, so the lit guide and the
+    /// landing place cannot disagree.
     ///
-    /// The parent a drop would land under, for every drop that has one.
-    ///
-    /// Both the guide and the parent row light from this, in both modes. They
-    /// are one answer shown twice rather than two answers: the row names the
-    /// parent, and the line traces the run the drop joins — so a drag knows
-    /// where it is landing even when the parent has scrolled off, which is the
-    /// common case in a deep tree.
+    /// The guide and the parent row light from this in both modes — one answer
+    /// shown twice, so a drag knows where it is landing even when the parent
+    /// has scrolled off.
     ///
     /// A drop at depth 0 lights nothing, which is correct rather than missing:
-    /// a root row has no parent, so there is no guide it could hang from, and
-    /// the insertion line's x is the only depth cue at that level.
+    /// a root row has no parent to hang from.
     private var litGuideParent: NodeId? {
         guard let target = drag.target else { return nil }
         switch target.mode {
@@ -1621,18 +1547,12 @@ struct OutlineView: View {
     /// The first row index the lit guide does *not* reach.
     ///
     /// A guide's run spans the whole subtree, but only the part from the parent
-    /// down to the insertion point is the path the dropped row would take. The
-    /// rest is subtree that happens to sit on the same line and has nothing to
-    /// do with this drop — lighting it says the row might land anywhere in
-    /// there.
+    /// down to the insertion point is the path the dropped row would take —
+    /// lighting the rest says the row might land anywhere in there. Cutting it
+    /// at the drop point makes the lit length itself the answer.
     ///
-    /// Cutting it at the drop point makes the lit length itself the answer: the
-    /// line reaches from the parent to exactly where the row is going, which is
-    /// the same shape the insertion indicator gives a depth-0 drop.
-    ///
-    /// `.into` is not cut. Nesting into a row lights that row rather than a
-    /// guide — the row has no run yet to truncate — and `parentHighlight`
-    /// carries the case on its own.
+    /// `.into` is not cut: nesting lights the row rather than a guide, and
+    /// `parentHighlight` carries that case.
     private var litUntilRow: Int {
         guard let target = drag.target,
               target.mode == .before || target.mode == .after,
@@ -1780,22 +1700,17 @@ struct OutlineView: View {
     /// a delete, or nothing at all — the same rule the web applies, so a row
     /// emptied on the phone disappears exactly as it would in the browser.
     ///
-    /// Both Return and tapping away land here: on the phone they mean the same
-    /// thing. Return used to open a fresh row below, the way the web still
-    /// does, but the phone has a permanent "Add a task" field — so that was a
-    /// second route to one outcome, and it cost a keyboard dismiss-and-reopen
-    /// as focus jumped to the new row.
+    /// Both Return and tapping away land here.
     ///
     /// - Parameter from: the row the caller believes it is committing. A blur
     ///   arrives after the field has gone, so by then `editing` may already
     ///   name a different row; committing that one would end an edit the user
     ///   just started.
     /// - Parameter releasingFocus: false when the blur came from focus moving
-    ///   to another row. Clearing focus there is what made the keyboard slide
-    ///   away and back between every two rows: iOS dismisses it the moment
-    ///   nothing is focused, and the next field cannot claim focus until it has
-    ///   been built. Leaving focus alone hands it straight across, and the
-    ///   keyboard never learns the edit ended.
+    ///   to another row. iOS dismisses the keyboard the moment nothing is
+    ///   focused, and the next field cannot claim it until it has been built —
+    ///   so clearing focus here slid the keyboard away and back between every
+    ///   two rows.
     private func commitEdit(from: NodeId? = nil, releasingFocus: Bool = true) {
         guard edit.shouldCommit(from: from), let id = edit.editing else { return }
         let op = TreeOps.commitEdit(tree, id, edit.text)
@@ -1884,11 +1799,9 @@ struct OutlineView: View {
                 }
                 // Carry it the rest of the way out before swapping, so the view
                 // leaves rather than snapping back while the new scope appears
-                // underneath — that reads as the gesture failing at the moment
-                // it actually succeeded.
-                //
-                // The reset is unanimated and rides with the scope change, so
-                // the incoming view is already in place the frame it appears.
+                // underneath. The reset is unanimated and rides with the scope
+                // change, so the incoming view is in place the frame it
+                // appears.
                 withAnimation(.easeOut(duration: 0.18)) { backPull = slideOut }
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.18) {
                     var t = Transaction()
@@ -1906,13 +1819,8 @@ struct OutlineView: View {
     /// Drawn only during the swipe: at rest it is covered anyway, and keeping
     /// it out of the tree the rest of the time means it can never leak around
     /// the edges of a view that is exactly where it belongs.
-    /// The shade the revealed screen sits under.
-    ///
-    /// Once was the whole backdrop: a coloured panel and a label standing in
-    /// for a screen that was not being drawn. The screen is real now, so the
-    /// stand-in is gone and only the shading is left — a revealed screen at
-    /// full brightness reads as sitting *beside* the one being moved rather
-    /// than behind it, and this is what puts it back underneath.
+    /// The shade the revealed screen sits under. At full brightness it reads
+    /// as sitting *beside* the screen being moved rather than behind it.
     @ViewBuilder private var backdrop: some View {
         // Gated on the pull, not just dimmed by it. The shade is drawn at
         // `1 - t`, so at rest it is at *full* strength — left in the tree
@@ -1922,24 +1830,15 @@ struct OutlineView: View {
             // How far through the useful part of the pull we are, 0...1.
             let t = min(1, Double(backPull) / Double(backThreshold))
             // Darkest at the left edge, where the gap has been open longest.
-            // The eye reads the lightening as the screen arriving.
             //
-            // Deeper than it looks like it needs to be, because of dark mode.
-            // Black over a near-black ground has very little room to work: the
-            // shade that reads clearly on white is close to invisible there,
-            // and the revealed screen came up looking un-shaded. The strength
-            // here is set by what dark mode needs; light mode has plenty of
-            // contrast to spare either way.
+            // Deeper than it looks like it needs, because of dark mode: black
+            // over a near-black ground has very little room to work, and the
+            // shade that reads clearly on white is close to invisible there.
             //
-            // `1 - t` squared rather than linear, so the shade holds its depth
-            // through the early part of the pull and then lifts quickly. Linear
-            // spent most of its range already half-faded — the point of the
-            // shade is to be *there* when the gap first opens.
-            // Held rather than faded: `1 - t` cubed keeps the shade near full
-            // strength through the first half of the pull and drops it late.
-            // The earlier curves spent their range too early, so by the time
-            // the gap was wide enough to look into, the thing meant to be
-            // shading it had already mostly gone.
+            // Cubed rather than linear, which keeps the shade near full through
+            // the first half of the pull and drops it late. Linear spent its
+            // range too early, so by the time the gap was wide enough to look
+            // into, the shade had mostly gone.
             let k = pow(1 - t, 3)
             LinearGradient(
                 colors: [.black.opacity(0.78 * k), .black.opacity(0.34 * k)],
@@ -1951,16 +1850,12 @@ struct OutlineView: View {
 
     /// The fraction of the slab's width its edge must cross to zoom out.
     ///
-    /// The edge you can see, not the finger. Those were the same thing only
-    /// below the old 60pt threshold — past it the pull was damped to 0.35, so
-    /// landing the visible edge a fixed way across cost far more than that in
-    /// thumb travel, and pulling back to cancel moved the edge so little that
-    /// a swipe felt impossible to call off.
+    /// The edge you can see, not the finger: the pull is damped to 0.35, so a
+    /// threshold on the finger costs far more thumb travel than it looks, and
+    /// pulling back to cancel barely moves the edge.
     ///
-    /// Matches the row delete's `commitFraction`, and for a weaker reason than
-    /// that one: a back swipe costs a tap to undo where a delete costs a trip
-    /// to the trash. The number is shared because the two gestures live on the
-    /// same rows and should not commit at visibly different distances.
+    /// Shares the row delete's `commitFraction` because the two gestures live
+    /// on the same rows and should not commit at visibly different distances.
     private let backFraction: CGFloat = 0.25
 
     /// How far the view must travel before letting go zooms out.
@@ -1977,20 +1872,14 @@ struct OutlineView: View {
 
     /// Whether this touch began somewhere a back swipe could start.
     ///
-    /// Position only — no direction, because direction is not known on the first
-    /// callback and the row's leading `swipeActions` reveals before it becomes
-    /// known. Anything that waited for the direction was already too late.
+    /// Position only. Direction is not known on the first callback and the
+    /// row's own swipe reveals before it becomes known, so anything waiting for
+    /// direction is already too late — the near edge is claimed the moment a
+    /// finger lands there.
     ///
-    /// So the near edge is claimed the moment a finger lands there, and the row
-    /// swipe stays shut until the finger lifts. The cost of being early is a
-    /// scroll or a tap that starts in the strip and suppresses a row swipe
-    /// nobody was making; the cost of being late was a zoom revealing under a
-    /// screen already sliding away.
-    ///
-    /// Wider than `armed`'s 32pt on purpose. A thumb coming off the bezel
-    /// habitually lands past 32, which is exactly the swipe that reproduced the
-    /// bug — a strip that only covered where the pull *acts* left the row open
-    /// across the band where the pull is actually attempted.
+    /// Wider than `armed`'s 32pt on purpose: a thumb coming off the bezel
+    /// habitually lands past 32, so a strip covering only where the pull *acts*
+    /// leaves the row open across the band where it is attempted.
     private func claims(_ g: DragGesture.Value) -> Bool {
         canGoBack && !drag.isActive && !rowSwiping && g.startLocation.x < backClaim
     }
@@ -2021,12 +1910,9 @@ struct OutlineView: View {
 
     /// Whether the finger is travelling sideways rather than down.
     ///
-    /// Not `abs(height) < abs(width)`. That was the test, and it is far
-    /// stricter than it looks: it is evaluated on the *first* callback, 20pt
-    /// into the gesture, and a thumb coming off the bezel arcs — the opening
-    /// movement of a perfectly good swipe often carries more vertical than
-    /// horizontal. One early sample then disqualified the whole thing, which is
-    /// why the swipe had to be aimed to work at all.
+    /// Not `abs(height) < abs(width)`. That is evaluated on the *first*
+    /// callback, 20pt in, and a thumb coming off the bezel arcs — so one early
+    /// sample disqualified the whole gesture and the swipe had to be aimed.
     ///
     /// Two changes. The comparison is against a fraction of the width, so a
     /// swipe is allowed to drift while still reading as sideways; and once the
@@ -2378,11 +2264,9 @@ private struct ScopeTitle: View {
         // — and a target that changes size with the title is one you have to
         // look at to aim. This is the same rectangle every time.
         //
-        // Two boxes, nested. The inner one is where the name may go and keeps
-        // it off the border; the outer one is the target, and is the whole
-        // space between the buttons — so the padding comes out of the room the
-        // title had rather than out of the box's size, which is what a single
-        // padded box did.
+        // Two boxes, nested: the inner keeps the name off the border, the
+        // outer is the target. The padding comes out of the room the title had
+        // rather than out of the box's size.
         .padding(.horizontal, Space.row)
         // The biggest box that fits: the bar's width less the two button
         // zones, at the height of a button. A frame, not padding — padding
@@ -2443,19 +2327,15 @@ private struct SyncBanner: View {
 
 /// The vertical paddings this file is allowed to use.
 ///
-/// Six values became one question — "is this a 5 or a 6?" — that nobody could
-/// answer and everybody answered differently, so two rows doing the same job
-/// ended up different heights for no reason anyone could name. A scale answers
-/// it by not offering the choice: a padding is one of these, or it is derived
-/// from a target height, and there is no third way to get a number.
+/// A padding is one of these or it is derived from a target height; there is no
+/// third way to get a number.
 ///
-/// Multiples of 4, which is the grid the platform's own metrics land on. The
-/// exception is `OutlineRow.rowPadding` at 14, which is derived from the touch
-/// target rather than picked — see its comment.
+/// Multiples of 4, the grid the platform's own metrics land on. The exception is
+/// `OutlineRow.rowPadding` at 14, derived from the touch target — see its
+/// comment.
 ///
-/// No horizontal scale. Horizontal here is `railInset` and `columnLeft`, both
-/// derived from where the marks sit, and `gutter` for everything that only has
-/// to agree with the screen edge.
+/// No horizontal scale: `railInset` and `columnLeft` derive from where the marks
+/// sit, and `gutter` only has to agree with the screen edge.
 extension Binding where Value == Bool {
     /// The same binding, with every write wrapped in an animation.
     ///
@@ -2622,11 +2502,6 @@ private struct OutlineRow: View {
     /// X of depth 0 — the centre of the bullet column, which is where a depth
     /// guide runs.
     ///
-    /// The bullet leads the row, so this is half a mark rather than the full
-    /// width of two columns it used to be. That is the whole reason the bullet
-    /// and the checkbox swapped: a guide through bullet centres is only a
-    /// straight line if nothing else shares that column.
-    ///
     /// Measured from the list's leading edge, not the row's content box, so it
     /// carries `railInset`. The guides are drawn in the list's coordinate space
     /// while the inset is padding *inside* each row — nothing propagates it
@@ -2637,20 +2512,16 @@ private struct OutlineRow: View {
     /// X of the bullet column's left edge — where the bars above and below the
     /// outline start, so the column reads as sitting on one vertical line.
     ///
-    /// The *ring*'s edge, not the dot's. A leaf row shows only the 6pt dot, but
-    /// a parent draws an 18pt ring around it, and a collapsed one fills that
-    /// ring solid. Aligning to the dot at 30 would leave that ring hanging 6pt
-    /// out into the margin — which is the one thing the line is there to stop.
-    /// So the bars sit at the widest mark the column can ever draw, and nothing
-    /// crosses to the left of them.
+    /// The *ring*'s edge, not the dot's. A leaf shows a 6pt dot but a parent
+    /// draws an 18pt ring, so aligning to the dot would leave that ring hanging
+    /// out into the margin. The bars sit at the widest mark the column can
+    /// draw.
     static let columnLeft: CGFloat = railInset + (32 - 18) / 2
 
     /// How far the whole row sits in from the screen's leading edge.
     ///
-    /// `listRowInsets` is zeroed so the row frame is the entire cell — that is
-    /// what lets a guide segment fill its row and meet the ones above and below
-    /// — but it zeroed the leading margin along with everything else, leaving
-    /// the bullet almost against the bezel.
+    /// `listRowInsets` is zeroed so a guide segment can fill its row, which
+    /// takes the leading margin with it. This puts it back.
     ///
     /// The value is the row's own internal rhythm applied to its outside edge:
     /// the gap from the bullet's disk to the checkbox is 13pt of empty bullet
@@ -2835,53 +2706,29 @@ private struct OutlineRow: View {
                     .onChange(of: geo.size.height) { _, h in contentHeight = h }
             }
         }
-        // The whole row arms a drag, not just the bullet. Reaching across the
-        // screen for a 32pt column with the other hand was the cost of putting
-        // the handle in one place, and the 0.35s hold already separates a drag
-        // from everything else the row does.
+        // The whole row arms a drag, not just the bullet — the 0.35s hold
+        // already separates a drag from everything else the row does. One
+        // gesture, not one per column: two sequenced presses recognising at
+        // once over the bullet both armed the drag and lost its tracking.
         //
         // `.simultaneousGesture`, never `.highPriorityGesture`: the label is a
         // Button covering most of the row, and taking the touch is exactly what
-        // stops a Button firing — the same reason the bullet's own gesture
-        // cannot be a plain one. Simultaneous recognition lets the tap reach
-        // the Button while the press runs alongside it.
+        // stops a Button firing.
         //
-        // The whole row arms the drag. One gesture, not one per column: two
-        // sequenced presses recognizing at once over the bullet both wrote
-        // `armed` and both called `onDragBegan`, which armed the drag and
-        // immediately lost its tracking.
-        //
-        // No `.contentShape` here. It looks like it belongs — the gesture
-        // wants the whole row — but a shape on the cell makes the row an
-        // opaque hit-test surface *ahead of* `List`, and that is what
-        // swallows the scroll and the `swipeActions` swipe.
-        //
-        // Simultaneous, never high-priority: the label is a Button covering
-        // most of the row, and taking the touch is what stops a Button firing.
+        // No `.contentShape` here. It looks like it belongs, but a shape on the
+        // cell makes the row an opaque hit-test surface *ahead of* `List`,
+        // which swallows the scroll and the row's own swipe.
         .simultaneousGesture(armGesture)
-        // No row separators. The desktop has none — rows are told apart by
-        // whitespace and the hover background, and the vertical guides are the
-        // only lines in the outline. `List` draws them by default, so they have
-        // to be turned off rather than left out.
+        // No row separators — the vertical guides are the only lines in the
+        // outline. `List` draws them by default.
         .listRowSeparator(.hidden)
-        // Faded to a ghost while it is being carried, so the row under the
-        // finger is visibly the one in flight and not just another row the
-        // indicator happens to sit near. It stays in place rather than
-        // following the finger: the tree still has to be readable to aim at,
-        // and a row lifted out of it would take its own gap with it.
+        // Faded while carried, so the row in flight is visibly the one under
+        // the finger. It stays in place rather than following: the tree has to
+        // stay readable to aim at.
         .opacity(isDragging ? 0.35 : 1)
         .animation(.easeOut(duration: 0.12), value: isDragging)
-        // Outlined, not just washed. A 6% fill of `Color.primary` was the whole
-        // mark before, and in dark mode that is near-white at 6% over near-black
-        // — a couple of levels off the background, which is nothing. A stroke
-        // reads at far lower contrast than a wash does, so the same faint grey
-        // that vanishes as a fill still draws a legible edge. The fill stays,
-        // raised a little, because an outline alone around 35%-faded content
-        // reads as an empty box rather than a row that is elsewhere.
-        //
-        // `.secondary` rather than a fixed grey: it is the one colour that is
-        // already a muted version of the foreground in both themes, so the
-        // outline sits at the same remove from the text on black and on white.
+        // Outlined as well as washed: a stroke reads at far lower contrast than
+        // a fill, so the same faint grey still draws a legible edge.
         .listRowBackground(
             RoundedRectangle(cornerRadius: 6, style: .continuous)
                 .fill(isDragging ? Color.primary.opacity(0.09) : .clear)
@@ -3261,11 +3108,9 @@ private struct PinnedTaskRow: View {
                     // navigate there, and this row is the thing that means you
                     // do not have to.
                     //
-                    // `.secondary`, not `.tertiary`. Tertiary is 26% opacity,
-                    // about 1.8:1 against the list — and this line is what
-                    // makes the pin legible at all. It still reads as the
-                    // lesser of the two; `.caption2` against `.subheadline`
-                    // does that without dimming it.
+                    // `.secondary`, not `.tertiary` — tertiary is 26% opacity,
+                    // about 1.8:1 against the list. `.caption2` against
+                    // `.subheadline` already makes it the lesser of the two.
                     Text(projectName)
                         .font(.caption2)
                         .foregroundStyle(.secondary)

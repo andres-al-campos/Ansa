@@ -5,11 +5,9 @@ import Observation
 
 /// The app's tree, and the one place an edit is allowed to happen.
 ///
-/// Local-first: `apply` computes the new tree with the same pure op the server
-/// will run, hands it to the view immediately, and only then queues it for
-/// sending. The screen never waits on the network, and because both sides run
-/// the identical op, what the user sees is already what the server will
-/// compute.
+/// Local-first: `apply` runs the same pure op the server will, hands the result
+/// to the view immediately, then queues it for sending. The screen never waits
+/// on the network, and both sides compute the same thing.
 @MainActor
 @Observable
 final class OutlineStore {
@@ -20,19 +18,15 @@ final class OutlineStore {
     /// apart from "you have no projects" with this — before, both were an empty
     /// list and a new user saw the same screen as a slow connection.
     private(set) var loaded = false
-    /// Bumped every time a server tree is adopted, whether or not it differs
-    /// from the one on screen.
+    /// Bumped every time a server tree is adopted, differing or not.
     ///
-    /// The trash needs this and `tree` cannot give it. Permanently deleting a
-    /// trash entry does not change the tree — the node left `nodes` when it was
-    /// first deleted — so the server broadcasts an *unchanged* tree purely to
-    /// wake the other devices. `Tree` is `Equatable`, so `onChange(of: tree)`
-    /// correctly sees no change and skips, and the trash list stays stale. (The
-    /// web gets this for free only because its effect fires on reference
-    /// identity, which a fresh JSON parse always breaks.)
+    /// The trash needs this and `tree` cannot give it: permanently deleting a
+    /// trash entry does not change the tree, so the server broadcasts an
+    /// unchanged one and `onChange(of: tree)` correctly skips it, leaving the
+    /// trash stale.
     ///
-    /// A counter rather than a flag: two broadcasts in a row are two distinct
-    /// values, where a toggled Bool set twice to true is one.
+    /// A counter, not a flag — two broadcasts in a row are two distinct values,
+    /// where a Bool set twice to true is one.
     private(set) var adopted = 0
     /// False once the live connection has failed repeatedly — the app has
     /// stopped *receiving*. Writes are unaffected, so the UI should say changes
@@ -63,11 +57,9 @@ final class OutlineStore {
             self?.tree = tree
             self?.adopted += 1
         }
-        // Reads `client`, not `self.sync`: the two are the same object, but
-        // `self.sync` is assigned on the line below, so a guard on it drops any
-        // status change arriving before then. Nothing fires one that early
-        // today — which is what makes it the kind of bug that surfaces later as
-        // a banner that won't clear.
+        // Reads `client`, not `self.sync`: same object, but `self.sync` is
+        // assigned on the line below, so a guard on it would drop any status
+        // change arriving before then.
         //
         // `unowned` because this closure is stored *on* `client`, so a strong
         // capture is a cycle through itself that `stop()` does not break.
@@ -80,27 +72,23 @@ final class OutlineStore {
         client.start()
 
         Task {
-            // A first paint from the server before the socket has said
-            // anything. The socket is the steady-state channel, but its first
-            // broadcast only arrives when something *changes* — without this
-            // fetch, opening the app to an unchanged tree would show nothing
-            // until someone edited it.
+            // The socket's first broadcast only arrives when something
+            // *changes*, so without this fetch, opening the app to an unchanged
+            // tree would show nothing until someone edited it.
             if let served = await api.loadTree() { adoptInitial(served) }
-            // Set either way: a fetch that failed has still finished asking, and
-            // leaving this false would hold a spinner up forever on a device
-            // that is simply offline. The cached tree is what it shows then.
+            // Set either way: a failed fetch has still finished asking, and
+            // leaving this false holds a spinner up forever on an offline
+            // device that has a perfectly good cached tree.
             loaded = true
             await api.seedIfEmpty()
         }
     }
 
-    /// Every edit goes through here, so there is exactly one path from a
-    /// gesture to both the screen and the server.
+    /// Every edit goes through here, so there is one path from a gesture to
+    /// both the screen and the server.
     ///
-    /// Hands back the ids of any parents that flipped to done.
-    ///
-    /// Discarded by most callers. The completion ripple is the one that wants
-    /// them: they are how it knows a branch actually finished, as opposed to a
+    /// Hands back the ids of any parents that flipped to done — discarded by
+    /// most callers, but how the ripple knows a branch finished rather than a
     /// single task being ticked.
     @discardableResult
     func apply(_ op: Op) -> [NodeId] {

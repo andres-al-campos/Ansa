@@ -2,18 +2,12 @@ import SwiftUI
 
 /// The web's pin, drawn here so the same action looks the same on both screens.
 ///
-/// A pin standing up when clicking will pin, lying over at 45° when clicking
-/// will unpin. The phone used `pin` and `pin.slash`, and the slash is the thing
-/// the web's version deliberately avoids: a slash negates a *state* — you are
-/// muted, the layer is hidden — so on a button that says what the tap does,
-/// "pin, negated" reads as "this is not pinned" about as readily as "unpin
-/// this", which is backwards. A pin lying down is not a state you could mistake
-/// for the current one.
+/// Standing up when tapping will pin, lying over at 45° when tapping will
+/// unpin. Not `pin.slash`: a slash negates a *state*, so on a button that says
+/// what the tap does it reads backwards.
 ///
-/// The path is `PinIcon` from `src/Outliner.tsx`, on the same 14×14 grid. Kept
-/// as a `Shape` rather than a custom SF Symbol so the two definitions stay
-/// line-for-line comparable — an `.svg` in an asset catalogue is a file nobody
-/// diffs against the web's.
+/// The path is `PinIcon` from `src/Outliner.tsx`, on the same 14×14 grid. A
+/// `Shape` rather than an asset so the two definitions stay comparable.
 struct PinShape: Shape {
     /// Whether the pin lies over, which is what "tapping unpins" looks like.
     var over = false
@@ -64,12 +58,9 @@ struct PinIcon: View {
 }
 
 extension PinIcon {
-    /// The same pin, as a bitmap, for the one place a shape cannot go.
-    ///
-    /// A `Menu`'s rows are drawn by UIKit, which takes a `UIImage` and ignores
-    /// a SwiftUI view — so a menu row asking for this shape would silently show
-    /// nothing. Rendered as a template so the menu still tints it the way it
-    /// tints an SF Symbol beside it.
+    /// The same pin as a bitmap. A `Menu`'s rows are drawn by UIKit, which
+    /// takes a `UIImage` and silently shows nothing for a SwiftUI view.
+    /// Template-rendered so the menu tints it like an SF Symbol beside it.
     static func image(over: Bool, size: CGFloat = 17) -> UIImage {
         let bounds = CGRect(x: 0, y: 0, width: size, height: size)
         let image = UIGraphicsImageRenderer(size: bounds.size).image { ctx in

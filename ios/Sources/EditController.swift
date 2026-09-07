@@ -3,15 +3,12 @@ import SwiftUI
 
 /// Renaming a row, adding a run of them, and which row the next one lands below.
 ///
-/// These are one concern wearing three names. A new task is a row that starts
-/// empty and focused, so adding *is* renaming with the mode flag set — and
-/// where it lands is a fact only the edit path knows, since the last row
-/// touched is the anchor. Keeping them in one type puts that in one place
-/// instead of spreading it across a comment.
+/// One concern wearing three names: a new task is a row that starts empty and
+/// focused, so adding *is* renaming with the mode flag set, and the last row
+/// touched is the anchor for where the next one lands.
 ///
-/// Focus is deliberately not here. `@FocusState` only works declared on a View,
-/// so `editing` (which row has a field) lives here while the focus binding
-/// stays on the view, and `beginEdit` bridges the two.
+/// Focus is not here — `@FocusState` only works declared on a View, so the
+/// binding stays there and `beginEdit` bridges the two.
 @Observable
 final class EditController {
     /// The row being renamed, or nil when nothing is. This is what causes a
@@ -23,27 +20,17 @@ final class EditController {
 
     /// Whether the user is in a run of adding tasks.
     ///
-    /// Adding is a mode because Return has to mean one thing inside it: commit
-    /// this row and open the next. Without a mode the same key had to serve as
-    /// "next task", "stop adding" and "finish this rename" at once, and the
-    /// way that failed was silent — the keyboard came down and the next thing
-    /// typed went into a row that was already named.
-    ///
-    /// Separate from `editing`, which says a field is open. Every row in a run
-    /// is an edit; the mode is what makes the *next* one appear.
+    /// A mode because Return has to mean one thing inside it: commit this row
+    /// and open the next. Separate from `editing`, which only says a field is
+    /// open — the mode is what makes the *next* one appear.
     var adding = false
 
     /// The row a new task lands below, or nil for the bottom of the project.
     ///
     /// Set by touching any row, so the plus button files next to whatever was
-    /// last worked on rather than always at the end. Nil is not a missing
-    /// answer — it is the honest one for a project nothing has been tapped in
-    /// yet, and the bottom is where a first task belongs.
-    ///
-    /// Cleared whenever the context it was captured in stops being true:
-    /// leaving the project, or the row itself going away. Filing silently
-    /// somewhere other than where the user last was is worse than filing at the
-    /// bottom.
+    /// last worked on. Cleared when the context it was captured in stops being
+    /// true — leaving the project, or the row going away — because filing
+    /// somewhere other than where the user last was is worse than the bottom.
     var captureParent: NodeId?
 
     /// Whether a rename is open. What the busy flag actually asks.
@@ -56,11 +43,9 @@ final class EditController {
         begin(id: node.id, text: node.text)
     }
 
-    /// The same, for a row that does not exist in the tree yet.
-    ///
-    /// `addRow` opens the field before it applies the ops that create the node,
-    /// so there is nothing to pass a `Node` from — and that ordering is what
-    /// keeps the keyboard up across the rebuild.
+    /// The same, for a row not in the tree yet. `addRow` opens the field before
+    /// applying the ops that create the node, and that ordering is what keeps
+    /// the keyboard up across the rebuild.
     func begin(id: NodeId, text newText: String) {
         text = newText
         editing = id
@@ -70,11 +55,9 @@ final class EditController {
         captureParent = id
     }
 
-    /// Whether a commit from `from` should be honoured.
-    ///
-    /// A blur arrives after the field has gone, so by then `editing` may
-    /// already name a different row; committing that one would end an edit the
-    /// user just started.
+    /// Whether a commit from `from` should be honoured. A blur arrives after
+    /// the field has gone, so `editing` may already name a different row and
+    /// committing it would end an edit the user just started.
     func shouldCommit(from: NodeId?) -> Bool {
         guard let id = editing else { return false }
         return from == nil || from == id

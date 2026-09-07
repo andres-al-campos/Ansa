@@ -11,14 +11,12 @@ struct AnsaApp: App {
         // Configure before anything reads Clerk.shared — reading it first is a
         // hard crash inside ClerkKit, not a nil.
         //
-        // This assignment cannot become a property initializer (`= Clerk.shared`
-        // on the declaration). Swift runs those *before* init's body, so the
-        // read would happen before configure and crash on launch every time.
-        // It is a one-line change that looks equivalent and is not.
+        // This cannot become a property initializer (`= Clerk.shared` on the
+        // declaration). Swift runs those *before* init's body, so the read
+        // would happen before configure and crash on launch every time.
         guard let key = ClerkConfig.publishableKey else {
-            // No key: run unauthenticated against a dev-stub server rather than
-            // taking the app down. Clerk.shared is never touched in this mode —
-            // reading it unconfigured is a fatalError inside ClerkKit.
+            // No key: run unauthenticated against a dev-stub server.
+            // Clerk.shared is never touched in this mode.
             _clerk = State(initialValue: nil)
             return
         }
@@ -42,17 +40,13 @@ struct AnsaApp: App {
 
 /// Sign-in, or the outliner.
 ///
-/// Two conditions, and both matter:
+/// `isLoaded`: on a cold start with a stored session Clerk needs a moment
+/// before it knows who this is, and without the check the sign-in screen
+/// flashes at someone already signed in.
 ///
-/// `isLoaded` — on a cold start with a stored session, Clerk needs a moment
-/// before it knows who this is. Without this check the sign-in screen flashes
-/// at someone who is already signed in, inviting them to sign in again while a
-/// perfectly good session is still loading.
-///
-/// `isAuthFlowComplete` rather than `user != nil` — a user can exist while the
-/// flow is still mid-way through a second factor or a required field. Gating on
-/// the user alone drops someone into the outliner in a half-authenticated state
-/// whose token the server will refuse.
+/// `isAuthFlowComplete` rather than `user != nil`: a user can exist mid-way
+/// through a second factor, and gating on the user alone lands them in the
+/// outliner with a token the server will refuse.
 private struct RootView: View {
     @Environment(Clerk.self) private var clerk
 

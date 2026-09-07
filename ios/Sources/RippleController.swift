@@ -3,17 +3,11 @@ import SwiftUI
 import UIKit
 
 /// The completion ripple: rows wiggle one after another, top to bottom, when a
-/// branch finishes.
+/// branch finishes. The wave's shape is `Ripple` in AnsaCore, shared with the
+/// web; this holds the live wave and the timer that clears it.
 ///
-/// The arithmetic deciding the wave's shape is `Ripple` in AnsaCore, ported from
-/// the web so both platforms wiggle the same way. This holds only the live wave
-/// and the timer that clears it.
-///
-/// The phone adds one thing the web has no way to: a single haptic tap as the
-/// wave starts. One, not one per row — a twelve-child branch would otherwise
-/// buzz for a second straight, which reads as a malfunction rather than a
-/// reward. `.soft` rather than `.light` because the wiggle is a gentle sway and
-/// a crisp tick against it is a mismatch of register.
+/// One haptic as the wave starts, not one per row — a twelve-child branch
+/// would buzz for a second straight and read as a malfunction.
 @MainActor
 @Observable
 final class RippleController {
@@ -52,16 +46,13 @@ final class RippleController {
     func prepare() { haptic.prepare() }
 }
 
-/// The wiggle itself: a row sways right, then left, then settles.
+/// The wiggle itself: a row sways right, then left, then settles, matching the
+/// web's keyframes.
 ///
-/// `±2pt` over 0.4s, matching the web's keyframes. A sway rather than a shake —
-/// this marks something finished, and a shake reads as a rejection.
+/// The delay is a sleep because SwiftUI has no way to offset a
+/// `KeyframeAnimator`'s start.
 ///
-/// The delay is a sleep rather than an animation delay because SwiftUI has no
-/// way to offset a `KeyframeAnimator`'s start; holding the row still for its
-/// turn and then triggering is the same thing from the outside.
-///
-/// Reduce Motion drops the movement and keeps the haptic. Someone who has asked
+/// Reduce Motion drops the movement and keeps the haptic — someone who asked
 /// for less motion has not asked for less feedback.
 struct RippleWiggle: ViewModifier {
     /// This row's offset into the wave, or nil when it isn't in one.
