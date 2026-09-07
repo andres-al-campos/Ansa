@@ -684,10 +684,18 @@ struct OutlineView: View {
                     // edge to swallow the touch instead; that never ran, because
                     // `swipeActions` belongs to the `List` cell and an overlay on
                     // the row's content sits below it.
-                    .swipeActions(edge: .trailing) {
-                        // Alone on this edge, so the full swipe commits to it —
-                        // which needs no confirmation because it goes to the
-                        // trash and stays restorable for 30 days.
+                    // No full swipe. The only threshold `swipeActions` offers
+                    // is UIKit's own, three quarters of the way across the
+                    // screen, and that is too far to drag for a row you meant
+                    // to delete — long enough that the gesture stops feeling
+                    // like a flick and starts feeling like a haul.
+                    //
+                    // Off, the swipe reveals the button and the tap commits.
+                    // A short pull either way, and nothing fires by accident.
+                    // Setting a quarter instead is not on offer: the fraction
+                    // is not exposed, and reaching it means hand-rolling the
+                    // gesture and everything drawn behind the row with it.
+                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                         //
                         // Empty while a row is in the air, the same as the
                         // leading edge below: a reorder is a vertical carry
@@ -702,9 +710,12 @@ struct OutlineView: View {
                             }
                         }
                     }
-                    .swipeActions(edge: .leading) {
-                        // `allowsFullSwipe` is left on: the worst a full swipe
-                        // does here is land on a screen one Back tap away.
+                    // Off here too, so both edges answer the same way. Zoom
+                    // is the harmless one — the worst it does is land on a
+                    // screen one Back tap away — but an edge that commits on a
+                    // long pull beside one that does not is two rules for one
+                    // gesture, and the hand has to learn which side it is on.
+                    .swipeActions(edge: .leading, allowsFullSwipe: false) {
                         //
                         // Empty while a back swipe holds the touch, which is how
                         // that gesture takes this edge for as long as it is
