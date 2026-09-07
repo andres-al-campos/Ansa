@@ -2492,6 +2492,17 @@ private struct OutlineRow: View {
     /// threshold would be a buzz instead of a boundary.
     @State private var wasArmed = false
 
+    /// Whether the swipe's scenery — the row's own ground and the coloured band
+    /// behind it — is on screen.
+    ///
+    /// Separate from `swipe` being non-zero, which is the obvious test and the
+    /// wrong one. The spring back to rest runs inside a `withAnimation`, and
+    /// anything conditioned on `swipe` is therefore *removed* with an
+    /// animation too: the ground faded out over the 0.22s while the row was
+    /// still travelling, so the band showed through the white row on its way
+    /// home. Set outside that scope, so the scenery cuts while the row eases.
+    @State private var swipeOpen = false
+
     /// Felt when the pull crosses the commit point, in either direction.
     ///
     /// A threshold you can only feel entering is one you cannot feel backing
@@ -2674,6 +2685,19 @@ private struct OutlineRow: View {
         }
     }
 
+    /// Eases the row home from a pull that did not reach the threshold.
+    ///
+    /// The offset is animated; the scenery is not. `swipeOpen` is cleared after
+    /// the row lands rather than inside the `withAnimation`, so the ground stays
+    /// solid for the whole way back instead of fading over the band it is
+    /// meant to be hiding.
+    private func springBack() {
+        withAnimation(.easeOut(duration: 0.22)) { swipe = 0 }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.22) {
+            if swipe == 0 { swipeOpen = false }
+        }
+    }
+
     /// The pull that deletes or zooms.
     ///
     /// One recogniser for both edges. `swipeActions` used to own the leading
@@ -2726,6 +2750,7 @@ private struct OutlineRow: View {
                 let m = abs(d)
                 let shown = m <= commit ? m : commit + (m - commit) * Self.pastCommit
                 swipe = d < 0 ? -shown : shown
+                swipeOpen = true
                 let armed = m >= commit
                 if armed != wasArmed {
                     armHaptic.impactOccurred(intensity: armed ? 1 : 0.6)
@@ -2741,7 +2766,7 @@ private struct OutlineRow: View {
                 // Whichever way the finger was going when it lifted — the
                 // strip on screen at that moment is what runs.
                 guard !isDragging, !backHolding, let action else {
-                    withAnimation(.easeOut(duration: 0.22)) { swipe = 0 }
+                    springBack()
                     return
                 }
                 if abs(g.translation.width) >= screenWidth * Self.commitFraction {
@@ -2757,10 +2782,11 @@ private struct OutlineRow: View {
                         withAnimation(.easeIn(duration: 0.16)) { swipe = -width }
                     } else {
                         swipe = 0
+                        swipeOpen = false
                     }
                     action.run()
                 } else {
-                    withAnimation(.easeOut(duration: 0.22)) { swipe = 0 }
+                    springBack()
                 }
             }
     }
@@ -2893,7 +2919,11 @@ private struct OutlineRow: View {
         .padding(.vertical, Self.rowPadding / 2)
         // The same radius the long-press lift uses. Both say the row has come
         // loose from the list, so they should round it by the same amount.
-        .background(swipe == 0 ? nil : RoundedRectangle(
+        //
+        // Gated on `swipeOpen` rather than on `swipe`, so the spring back to
+        // rest does not fade it out while the row is still travelling. See
+        // that flag for why.
+        .background(!swipeOpen ? nil : RoundedRectangle(
             cornerRadius: 6, style: .continuous)
             .fill(Color(.systemBackground)))
         // Taken straight back off, so the row still occupies exactly the frame
@@ -2910,7 +2940,7 @@ private struct OutlineRow: View {
         // Behind the row's own ground, so it is revealed rather than drawn
         // over: the row is opaque and simply moves off it.
         .background {
-            if swipe != 0 {
+            if swipeOpen {
                 // The colour is one layer, the glyph another on top of it.
                 // Nothing behind the icon of its own: the ground it reads
                 // against is the half of this layer the row uncovered.
@@ -2987,7 +3017,7 @@ private struct OutlineRow: View {
         // Back at rest whenever the row reappears. `swipe` is `@State` and
         // survives the view being torn down and rebuilt — a zoom used to bring
         // a row back still holding the offset that carried it off.
-        .onAppear { swipe = 0; direction = nil; wasArmed = false }
+        .onAppear { swipe = 0; direction = nil; wasArmed = false; swipeOpen = false }
         // The whole row arms a drag, not just the bullet. Reaching across the
         // screen for a 32pt column with the other hand was the cost of putting
         // the handle in one place, and the 0.35s hold already separates a drag
