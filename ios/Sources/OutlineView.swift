@@ -2684,6 +2684,14 @@ private struct OutlineRow: View {
     /// `minimumDistance: 20` on purpose. Below that this competes with the
     /// list's scroll and with the row's own 0.35s press, and a row that slides
     /// sideways on a scroll that drifts is worse than one that starts late.
+    /// Whether the pull is past the point where releasing acts.
+    ///
+    /// Read by the corner and by the reveal, which have to agree: two separate
+    /// comparisons would be two chances to drift apart if the fraction moved.
+    private var swipeArmed: Bool {
+        abs(swipe) >= screenWidth * Self.commitFraction
+    }
+
     private var rowSwipe: some Gesture {
         DragGesture(minimumDistance: 20, coordinateSpace: .local)
             .onChanged { g in
@@ -2870,49 +2878,89 @@ private struct OutlineRow: View {
         // segments live outside this view and are slid by the call site, off
         // `onSwipeOffset` below, so that the row and its own piece of the
         // nesting line travel together the way they did under `swipeActions`.
+        // The sliding row's own ground, rounded from the moment the swipe
+        // starts rather than at the threshold — the corner says the row has
+        // come loose from the list, which is true as soon as it moves.
+        //
+        // It needs a ground at all because the row draws none of its own: at
+        // rest it is transparent over the list, so there is nothing for a
+        // corner to cut. Nil at rest, so nothing changes until a swipe.
+        // Padded out to the cell before the ground is drawn, so the corners
+        // are the cell's and not the content's. The call site adds this same
+        // padding outside this view, so a background here fills 40pt of a 54pt
+        // cell — and a 40pt ground's corners sit behind the rows above and
+        // below it, which is why rounding it changed nothing on screen.
+        .padding(.vertical, Self.rowPadding / 2)
+        // The same radius the long-press lift uses. Both say the row has come
+        // loose from the list, so they should round it by the same amount.
+        .background(swipe == 0 ? nil : RoundedRectangle(
+            cornerRadius: 6, style: .continuous)
+            .fill(Color(.systemBackground)))
+        // Taken straight back off, so the row still occupies exactly the frame
+        // it always did and nothing below it shifts.
+        .padding(.vertical, -Self.rowPadding / 2)
         .offset(x: swipe)
         .onChange(of: swipe) { _, x in onSwipeOffset(x) }
-        // The action the row slides off, sized to whatever has been uncovered
-        // so far. Not a Button: the one `swipeActions` revealed could not be
-        // tapped, and a second untappable button would only look like an
-        // invitation. It says what releasing will do — the release is the tap.
+        // What the row is sliding off. A fixed layer the full width of the
+        // cell, sitting behind the row for the whole gesture — not a strip
+        // that grows with the pull. Blue on the leading half, red on the
+        // trailing one, so whichever way the row goes uncovers the colour of
+        // what releasing will do.
         //
-        // Mirrored, not duplicated: the side it sits on and what it says both
-        // come from the direction, so the two edges cannot drift apart in
-        // threshold, colour or timing.
-        .background(alignment: swipe < 0 ? .trailing : .leading) {
-            if let action, swipe != 0 {
-                let commit = screenWidth * Self.commitFraction
-                let armed = abs(swipe) >= commit
-                Image(systemName: action.label)
-                    // Dimmed until armed, so the glyph carries the state as
-                    // well as the ground does. White on both would leave the
-                    // background the only thing that changed.
-                    .foregroundStyle(.white.opacity(armed ? 1 : 0.6))
-                    .font(.system(size: armed ? 19 : 16))
-                    // Armed is worth feeling before the finger lifts, since
-                    // neither of these asks anything after it.
-                    .animation(.easeOut(duration: 0.12), value: armed)
-                    // Centred in the strip uncovered so far, so the glyph rides
-                    // out with the row rather than appearing once there is room.
+        // Behind the row's own ground, so it is revealed rather than drawn
+        // over: the row is opaque and simply moves off it.
+        .background {
+            if swipe != 0 {
+                // The colour is one layer, the glyph another on top of it.
+                // Nothing behind the icon of its own: the ground it reads
+                // against is the half of this layer the row uncovered.
+                //
+                // The halves brighten on arming rather than only the glyph
+                // doing so. Muted, not absent, until then — this band is the
+                // only thing that says releasing will act, so the unarmed
+                // state has to read as a real colour that then intensifies
+                // rather than a wash that looks like it failed to draw.
+                //
+                // A step at the threshold, not a ramp with the pull: the
+                // crossing is one event, and saying it once where the haptic
+                // ticks reads more clearly than a colour creeping toward it.
+                ZStack(alignment: swipe < 0 ? .trailing : .leading) {
+                    HStack(spacing: 0) {
+                        Color.accentColor
+                            .opacity(swipe > 0 && swipeArmed ? 1 : 0.5)
+                        Color.red
+                            .opacity(swipe < 0 && swipeArmed ? 1 : 0.5)
+                    }
+                    // Centred in the gap uncovered so far, so the glyph rides
+                    // out with the row rather than sitting still at the edge
+                    // waiting for the row to reach it. The gap is `abs(swipe)`
+                    // wide at whichever edge the row came off, which is the
+                    // alignment above.
                     //
-                    // The colour is painted around it rather than behind it,
-                    // because a `.background` is sized by its own content: the
-                    // height had to come from a frame the strip itself sets,
-                    // not from the row it sits behind.
-                    // The padding is added back because it is applied at the
-                    // call site, outside this view — so the frame measured
-                    // below is the content's, 14pt short of the cell the strip
-                    // has to fill. Measuring here and forgetting that left a
-                    // 40pt strip against a 54pt cell, which is the same gap a
-                    // hardcoded height had left before it.
-                    .frame(width: abs(swipe), height: contentHeight + Self.rowPadding)
-                    // Muted, not absent. This is the only thing that says
-                    // releasing will act — there is no confirmation behind it —
-                    // so the unarmed state has to read as a real colour that
-                    // then intensifies, rather than a wash that looks like the
-                    // strip failed to draw.
-                    .background(armed ? action.tint : action.tint.opacity(0.5))
+                    // Only one glyph, picked by the direction: the other side
+                    // is still covered by the row, so drawing it would just be
+                    // a second icon nobody can see.
+                    //
+                    // Sized near the row's own height rather than to a small
+                    // mark centred in the gap. A little glyph floating in a
+                    // growing coloured shape reads as a face — two eyes on a
+                    // red ground — where one filling the band reads as what it
+                    // is, an icon on a panel, the way Mail and Reminders draw
+                    // the same swipe.
+                    if let action {
+                        Image(systemName: action.label)
+                            .foregroundStyle(.white.opacity(swipeArmed ? 1 : 0.85))
+                            .font(.system(size: swipeArmed ? 24 : 21,
+                                          weight: .medium))
+                            .frame(width: abs(swipe))
+                    }
+                }
+                .animation(.easeOut(duration: 0.12), value: swipeArmed)
+                // The same padding trick the ground above uses: the call site
+                // adds the vertical padding outside this view, so a background
+                // here would fill 40pt of a 54pt cell and leave a band of list
+                // showing above and below the colour.
+                .padding(.vertical, -Self.rowPadding / 2)
             }
         }
         // Measured rather than assumed, in both axes: the width a commit
