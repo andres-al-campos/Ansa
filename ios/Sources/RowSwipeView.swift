@@ -8,6 +8,9 @@ struct RowSwipeView<Content: View>: View {
     /// Which way the row is travelling. Also picks the action and the colour.
     enum Direction { case left, right }
 
+    /// Which row this is. Watched, not just stored: SwiftUI reuses this view
+    /// for a different row, and the swipe state has to come with it.
+    let rowId: NodeId
     let vPadding: CGFloat
     let screenWidth: CGFloat
     /// True while some *other* interaction owns this touch. The swipe stands
@@ -57,12 +60,13 @@ struct RowSwipeView<Content: View>: View {
                 motion.stopReturn()
                 if direction != nil { onSwipingChanged(false) }
             }
-            .onAppear {
-                motion.offset = 0
-                direction = nil
-                settling = nil
-                wasArmed = false
-            }
+            .onAppear { rest() }
+            // `onAppear` is not enough. A row you zoom into leaves the list and
+            // comes back with the same id when you navigate back, so SwiftUI
+            // matches it to the identity it already has and never appears it
+            // again — the row returned still holding the swipe that zoomed you
+            // in, and slid home in front of you.
+            .onChange(of: rowId) { _, _ in rest() }
     }
 
     // MARK: - Layers
@@ -160,6 +164,12 @@ struct RowSwipeView<Content: View>: View {
                     motion.stopReturn()
                     withAnimation(.easeIn(duration: 0.16)) { motion.offset = -width }
                 } else {
+                    // Stop the return before writing `offset`, like every
+                    // other writer. Without it a tick already scheduled lands
+                    // after this and leaves the row parked mid-swipe — which
+                    // only shows up on the way back, when the row returns to
+                    // the list still holding the swipe that zoomed you in.
+                    motion.stopReturn()
                     motion.offset = 0
                     settling = nil
                 }
@@ -168,6 +178,16 @@ struct RowSwipeView<Content: View>: View {
     }
 
     // MARK: - The return
+
+    /// Put the row back at rest, with nothing in flight. Called when the view
+    /// appears and whenever it is handed a different row.
+    private func rest() {
+        motion.stopReturn()
+        motion.offset = 0
+        direction = nil
+        settling = nil
+        wasArmed = false
+    }
 
     /// Deliberately not `withAnimation` — eight attempts at it read as a snap
     /// on the device. Why was never established, so don't assume it's fixed and

@@ -2797,6 +2797,7 @@ private struct OutlineRow: View {
 
     var body: some View {
         RowSwipeView(
+            rowId: node.id,
             vPadding: Self.rowPadding / 2,
             screenWidth: screenWidth,
             // A carry or a back swipe owns the touch outright; this one stands
