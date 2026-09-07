@@ -1484,6 +1484,10 @@ struct OutlineView: View {
                 }
             }
             .frame(height: h, alignment: .topLeading)
+            // `h` is the cell, but this is a background of the content box,
+            // which starts half the row padding lower. Without the lift every
+            // segment hangs that far below its own row and the joins gap.
+            .offset(y: -OutlineRow.rowPadding / 2)
         }
     }
 
