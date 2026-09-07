@@ -17,7 +17,11 @@ struct OutlineView: View {
     /// parent, which is nowhere you have been. This records the trail instead,
     /// and `parentScope` falls back to the tree when it is empty — a resumed
     /// session has no trail but still has somewhere sensible to go.
-    @State private var backTrail: [NodeId?] = []
+    @State private var backTrail: [BackStep] = []
+    /// Where the list should be put once a zoom out has landed, consumed by the
+    /// slab that appears. Both the preview behind a back swipe and the screen
+    /// it becomes read this, so the two agree and the landing does not jump.
+    @State private var restore: ScrollAnchor?
 
     /// True until the user navigates themselves.
     ///
@@ -169,11 +173,13 @@ struct OutlineView: View {
                 // `inTrash` is read by `slab` itself, so the copy behind a
                 // trash pull has to be drawn with it already false — otherwise
                 // the screen revealed is a second trash.
-                slab(for: inTrash ? nil : parentScope, interactive: false, trash: false)
+                slab(for: inTrash ? nil : backTrail.last?.scope ?? parentScope,
+                     interactive: false, trash: false,
+                     restoring: inTrash ? nil : backTrail.last?.at)
                 // Over the revealed screen, under the one being lifted off it.
                 backdrop
             }
-            slab(for: scope, interactive: true, trash: inTrash)
+            slab(for: scope, interactive: true, trash: inTrash, restoring: restore)
             .background {
                 GeometryReader { geo in
                     Color.clear
@@ -503,9 +509,10 @@ struct OutlineView: View {
     ///   the three things that would collide with the live copy — focus, row
     ///   geometry, and gestures — at the source rather than letting a second
     ///   set of writes land and be sorted out afterwards.
-    @ViewBuilder private func slab(for scope: NodeId?, interactive: Bool, trash: Bool)
-        -> some View
-    {
+    @ViewBuilder private func slab(
+        for scope: NodeId?, interactive: Bool, trash: Bool,
+        restoring: ScrollAnchor? = nil
+    ) -> some View {
             VStack(spacing: 0) {
                 header(for: scope, interactive: interactive, trash: trash)
 
@@ -541,7 +548,8 @@ struct OutlineView: View {
                     // to carry as a caption. Only here — the grid and the trash
                     // have no scope to be a fraction of.
                     ScopeProgress(progress: adjusted(TreeOps.scopeProgress(tree, scope)))
-                    outline(for: scope, interactive: interactive)
+                    outline(for: scope, interactive: interactive,
+                            restoring: restoring)
                 }
 
             }
@@ -577,7 +585,9 @@ struct OutlineView: View {
 
     /// The rows themselves. Only drawn inside a project — the root shows the
     /// project grid instead.
-    private func outline(for scope: NodeId?, interactive: Bool) -> some View {
+    private func outline(
+        for scope: NodeId?, interactive: Bool, restoring: ScrollAnchor?
+    ) -> some View {
         ScrollViewReader { proxy in
         List {
             ForEach(rows(of: scope), id: \.node.id) { row in
@@ -715,6 +725,25 @@ struct OutlineView: View {
         // able to scroll. Without this a swipe carrying any vertical drift did
         // both at once, the same way the back swipe used to.
         .scrollDisabled(interactive && (backPull > 0 || drag.isActive || rowSwiping))
+        // Put the list back where it was when this scope was last left.
+        //
+        // A turn late and unanimated: the rows for the new scope have to lay
+        // out before one of them can be scrolled to, and the whole point is
+        // that the position is already right on the first frame you see. The
+        // preview behind a back swipe reads the same anchor, so what slides in
+        // and what lands are the same picture.
+        .onAppear {
+            guard let restoring else { return }
+            DispatchQueue.main.async {
+                var t = Transaction()
+                t.disablesAnimations = true
+                withTransaction(t) {
+                    proxy.scrollTo(restoring.row,
+                                   anchor: UnitPoint(x: 0, y: restoring.fraction))
+                }
+                if interactive { restore = nil }
+            }
+        }
         // The carry, for every row at once.
         //
         // One recogniser on the list rather than one per row. Per-row was what
@@ -1285,7 +1314,7 @@ struct OutlineView: View {
         // once the trail runs out, which is where it walked before there was a
         // trail at all.
         if id != scope {
-            backTrail.append(scope)
+            backTrail.append(BackStep(scope: scope, at: topRowAnchor()))
             if backTrail.count > 200 { backTrail.removeFirst() }
         }
         scope = id
@@ -2008,7 +2037,9 @@ struct OutlineView: View {
         edit.stopAdding()
         edit.captureParent = nil
         autoScope = false
-        scope = popBack()
+        let step = popBack()
+        scope = step.scope
+        restore = step.at
     }
 
     /// The next scope back: the last one visited that still exists, or the tree
@@ -2017,13 +2048,45 @@ struct OutlineView: View {
     /// Deleted scopes are skipped rather than landed on — a trail outlives the
     /// nodes in it, and stepping back into something that is gone shows an
     /// empty screen that reads as the app failing.
-    private func popBack() -> NodeId? {
+    private func popBack() -> BackStep {
         while let previous = backTrail.popLast() {
-            guard let previous else { return nil }
-            if TreeOps.byId(tree, previous) != nil { return previous }
+            guard let id = previous.scope else { return previous }
+            if TreeOps.byId(tree, id) != nil { return previous }
         }
-        return parentScope
+        // Off the end of the trail: the tree parent, with nowhere remembered.
+        return BackStep(scope: parentScope, at: nil)
     }
+
+    /// The topmost row on screen and how far down the viewport it sits — enough
+    /// to put the list back where it was, and stable across edits in a way a
+    /// raw content offset is not. Nil when nothing has been measured yet.
+    private func topRowAnchor() -> ScrollAnchor? {
+        let bounds = drag.bounds
+        guard bounds.height > 0 else { return nil }
+        let top = drag.frames
+            .filter { $0.value.maxY > bounds.minY }
+            .min { $0.value.minY < $1.value.minY }
+        guard let top, let fraction = viewportFraction(of: top.key) else { return nil }
+        return ScrollAnchor(row: top.key, fraction: fraction)
+    }
+}
+
+/// Where a list was left, as a row and how far down the viewport it sat.
+///
+/// A node and a fraction rather than a content offset, because the tree can
+/// change while you are away: rows get added, deleted and reordered, and an
+/// offset that was right on the way in points somewhere else on the way back.
+/// A row that no longer exists simply fails to scroll, which leaves the list at
+/// the top — the behaviour there was before any of this.
+struct ScrollAnchor: Equatable {
+    let row: NodeId
+    let fraction: CGFloat
+}
+
+/// One step of the back trail: the scope, and where the list was looking.
+struct BackStep {
+    let scope: NodeId?
+    let at: ScrollAnchor?
 }
 
 /// The scope's progress, as a thin row under the nav bar.
