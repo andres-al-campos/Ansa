@@ -2,13 +2,8 @@ import SwiftUI
 import AnsaCore
 
 /// The horizontal swipe on an outline row: the gesture, the offset it drives,
-/// and the two layers under the row that the offset uncovers.
-///
-/// Extracted from `OutlineRow`, which held five pieces of `@State` for this
-/// tangled among the ones for editing, dragging and focus. The decisions about
-/// thresholds live a level further out again, in `AnsaCore.RowSwipe`, so they
-/// can be tested without a simulator. What is left here is the part that needs
-/// a view: the state machine and the three layers.
+/// and the two layers under the row that the offset uncovers. Thresholds and
+/// curves live in `AnsaCore.RowSwipe`, where they're testable without a device.
 struct RowSwipeView<Content: View>: View {
     /// Which way the row is travelling. Also picks the action and the colour.
     enum Direction { case left, right }
@@ -21,22 +16,14 @@ struct RowSwipeView<Content: View>: View {
     let onDelete: () -> Void
     let onZoom: () -> Void
     let onSwipingChanged: (Bool) -> Void
-    /// The content, handed a flag saying whether a tap arriving now is the
-    /// tail of a swipe rather than a tap.
-    ///
-    /// A Button inside a List does not lose its touch to a sibling
-    /// DragGesture: the row slid sideways under the finger and the release
-    /// still read as a tap, so every cancelled swipe opened the editor on the
-    /// row it had just let go. The window is the spring back's own duration.
+    /// The content, told whether a tap arriving now is a swipe's tail. A Button
+    /// in a List keeps its tap through a sibling DragGesture, so without this
+    /// every cancelled swipe opened the editor.
     @ViewBuilder let content: (_ justSwiped: Bool) -> Content
 
-    /// Owns `offset` and the clock that returns it to zero. A class, not
-    /// `@State` on the view: a display link's tick closure captures whatever it
-    /// was built with, and `@State` accessors belong to one body evaluation —
-    /// so the first tick's write re-rendered the view and left the closure
-    /// writing to a version of the row that no longer existed. It fired once
-    /// and stopped. A reference the view holds across evaluations is still
-    /// there on the second frame.
+    /// Owns `offset` and the clock that returns it to zero. A class because a
+    /// display link's tick has to reach state that outlives one body
+    /// evaluation; as `@State` it fired once and stopped.
     @State private var motion = RowSwipeMotion()
     /// The row's own width, so a committing delete knows how far to carry it.
     @State private var width: CGFloat = 0
@@ -80,11 +67,8 @@ struct RowSwipeView<Content: View>: View {
 
     // MARK: - Layers
 
-    /// The row's own opaque ground, drawn only while a swipe is open.
-    ///
-    /// The row draws none of its own — at rest it is transparent over the list
-    /// — so without this the band behind it would show straight through the
-    /// text.
+    /// The row is transparent at rest, so it needs a ground of its own while a
+    /// swipe is open or the band shows through the text.
     @ViewBuilder private var ground: some View {
         if settling != nil {
             Rectangle()
@@ -93,12 +77,8 @@ struct RowSwipeView<Content: View>: View {
         }
     }
 
-    /// What the row slides off to reveal: blue on the leading half, red on the
-    /// trailing one, so whichever way the row goes uncovers the colour of what
-    /// releasing will do.
-    ///
-    /// Both halves read `settling` rather than `offset`. Reading a value that
-    /// is animating to zero made each comparison go false partway home, and
+    /// What the row slides off to reveal, coloured by what releasing will do.
+    /// Reads `settling`, not `offset`: keyed off a value on its way to zero,
     /// the band vanished from under a row that was still travelling.
     @ViewBuilder private var band: some View {
         if let settling {
@@ -146,8 +126,7 @@ struct RowSwipeView<Content: View>: View {
         DragGesture(minimumDistance: 20, coordinateSpace: .local)
             .onChanged { g in
                 guard !inert else { return }
-                // The finger is back. It writes `offset` from here on, so a
-                // return still ticking would be fighting it for the same value.
+                // The finger writes `offset` from here on.
                 motion.stopReturn()
                 let d = g.translation.width
                 direction = abs(d) < 20 ? nil : (d < 0 ? .left : .right)
@@ -175,10 +154,8 @@ struct RowSwipeView<Content: View>: View {
                     springBack()
                     return
                 }
-                // Only a delete rides out. That row is leaving, so carrying it
-                // the rest of the way is what stops it vanishing from under the
-                // finger. A zoom keeps the row — the screen changes around it —
-                // so sliding it off would park a live row off screen.
+                // Only a delete rides out; that row is leaving. A zoom keeps
+                // the row, so sliding it off would park a live row off screen.
                 if direction == .left {
                     motion.stopReturn()
                     withAnimation(.easeIn(duration: 0.16)) { motion.offset = -width }
@@ -192,37 +169,20 @@ struct RowSwipeView<Content: View>: View {
 
     // MARK: - The return
 
-    /// Eases the row home from a pull that did not reach the threshold, by
-    /// writing `offset` once per frame — the same thing the finger does.
-    ///
-    /// Not `withAnimation`. Eight attempts at it all read as a snap on the
-    /// device. Why is not established: the probes that were supposed to settle
-    /// it ran on the simulator, which renders this app at about 3fps, so a
-    /// 0.22s return gets one intermediate frame there however it is driven —
-    /// a working animation and a jump look identical. Do not read the switch
-    /// as proof `withAnimation` was broken.
-    ///
-    /// What is known is that the finger path moves this row correctly, writing
-    /// `offset` directly on every `onChanged`. This borrows that: the same
-    /// write, driven by a clock instead of a touch.
-    ///
-    /// Clearing `settling` on arrival comes with it. The old code guessed with
-    /// an `asyncAfter` timed to an animation it could not observe; a driver
-    /// knows when it is finished.
+    /// Deliberately not `withAnimation` — eight attempts at it read as a snap
+    /// on the device. Why was never established, so don't assume it's fixed and
+    /// switch back.
     private func springBack() {
         motion.returnHome { settling = nil }
     }
 }
 
 /// How far the row is drawn from rest, and the clock that walks it back to zero.
-///
-/// A class because the return is driven a frame at a time by a `CADisplayLink`,
-/// and a link's tick has to reach state that outlives one body evaluation.
 @MainActor
 @Observable
 final class RowSwipeMotion {
-    /// The row's translation in points. Written directly by the finger, and by
-    /// this class's own tick on the way home.
+    /// The row's translation in points. Written by the finger, and by `tick` on
+    /// the way home.
     var offset: CGFloat = 0
 
     @ObservationIgnored private var link: CADisplayLink?
@@ -231,9 +191,7 @@ final class RowSwipeMotion {
     @ObservationIgnored private var onArrival: (() -> Void)?
 
     /// Walks `offset` to zero over `RowSwipe.returnDuration`, then calls
-    /// `onArrival` — which is how the caller knows the layers under the row can
-    /// go. Replaces an `asyncAfter` that was timing an animation it could not
-    /// observe; a driver knows when it is finished.
+    /// `onArrival` — how the caller knows the layers under the row can go.
     func returnHome(onArrival: @escaping () -> Void) {
         stopReturn()
         guard offset != 0 else { onArrival(); return }
@@ -245,9 +203,8 @@ final class RowSwipeMotion {
         self.link = link
     }
 
-    /// Ends a return in progress, leaving `offset` wherever it had reached.
-    /// Called before starting another and whenever a finger takes the row back,
-    /// so the two never write `offset` in the same frame.
+    /// Ends a return in progress, leaving `offset` where it reached. Must be
+    /// called before anything else writes `offset`, or the two fight per frame.
     func stopReturn() {
         link?.invalidate()
         link = nil
