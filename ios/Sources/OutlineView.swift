@@ -31,7 +31,7 @@ struct OutlineView: View {
     @State private var edit = EditController()
     /// One drag's worth of state and the geometry it reads. Grouped into a type
     /// because these pieces are meaningless apart and always changed together.
-    @State private var drag = DragController()
+    @State private var drag = ReorderDrag()
     /// The completion ripple — the wave of wiggles down a branch that just
     /// finished. See `RippleController`.
     @State private var ripple = RippleController()
@@ -1697,7 +1697,7 @@ struct OutlineView: View {
     /// starts.
     private func beginEdit(_ node: Node) {
         // The tap that lands on releasing a drag is the drop, not a request to
-        // rename. See `DragController.justEnded` for why the Button fires at all.
+        // rename. See `ReorderDrag.justEnded` for why the Button fires at all.
         guard !drag.justEnded else { return }
         let wasEditing = edit.isEditing
         edit.begin(node)

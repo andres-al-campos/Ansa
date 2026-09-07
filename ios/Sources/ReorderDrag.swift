@@ -1,7 +1,10 @@
 import AnsaCore
 import SwiftUI
 
-/// One drag's worth of state, plus the geometry a drag reads.
+/// The press-and-carry-a-row-to-a-new-parent gesture: its state, and the
+/// geometry it reads. Not the swipe, which lives in `RowSwipeView`, and not the
+/// back swipe — a row has three drags on it, so this one is named for what it
+/// does.
 ///
 /// Pulled out of `OutlineView` because these pieces are meaningless apart and
 /// always change together — `endDrag` clearing them as a unit was the tell. The
@@ -19,7 +22,7 @@ import SwiftUI
 /// capturing view state into a `@Sendable` closure and hoping.
 @MainActor
 @Observable
-final class DragController {
+final class ReorderDrag {
     /// The row in flight, or nil when no drag is armed.
     private(set) var dragging: NodeId?
     /// Where the finger is, in global space.
