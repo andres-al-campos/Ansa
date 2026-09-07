@@ -2480,6 +2480,17 @@ private struct OutlineRow: View {
     /// Without it every cancelled swipe opened the row it had just let go of.
     @State private var swipeEndedAt: Date?
 
+    /// The direction the ground and band are drawn for, held until the row is
+    /// actually home.
+    ///
+    /// `swipe` cannot answer this during a spring back. SwiftUI decides
+    /// structure from the *final* value of an animated write, so a band drawn
+    /// under `if swipe != 0` leaves the tree the instant `springBack` runs —
+    /// the text then slides home over nothing, which is the snap. This holds
+    /// the layers alive for the whole gesture, including the animation, and
+    /// pins their alignment so it cannot flip sides as the pull passes zero.
+    @State private var settling: SwipeDirection?
+
     /// Felt when the pull crosses the commit point, in either direction.
     ///
     /// A threshold you can only feel entering is one you cannot feel backing
@@ -2660,7 +2671,12 @@ private struct OutlineRow: View {
 
     /// Eases the row home from a pull that did not reach the threshold.
     private func springBack() {
-        withAnimation(.easeOut(duration: 0.22)) { swipe = 0 }
+        withAnimation(.easeOut(duration: 0.22)) { swipe = 0 } completion: {
+            // Only once the row is actually home. Clearing it with the write
+            // would take the ground and band out of the tree at the start of
+            // the animation and leave the text sliding over the list.
+            settling = nil
+        }
     }
 
     /// The pull that deletes or zooms.
@@ -2679,6 +2695,10 @@ private struct OutlineRow: View {
                 guard !isDragging, !backHolding else { return }
                 let d = g.translation.width
                 direction = abs(d) < 20 ? nil : (d < 0 ? .left : .right)
+                // Latched, unlike `direction`: this one has to outlive the
+                // release to keep the layers under the row alive while it
+                // travels home.
+                if let direction { settling = direction }
                 // Ours from the moment there is a direction until the finger
                 // lifts, so the back swipe cannot start partway through it.
                 onSwipingChanged(direction != nil)
@@ -2718,6 +2738,7 @@ private struct OutlineRow: View {
                     withAnimation(.easeIn(duration: 0.16)) { swipe = -width }
                 } else {
                     swipe = 0
+                    settling = nil
                 }
                 action.run()
             }
@@ -2738,7 +2759,7 @@ private struct OutlineRow: View {
     private var rowGround: some View {
         Rectangle()
             .fill(Color(.systemBackground))
-            .opacity(swipe == 0 ? 0 : 1)
+            .opacity(settling == nil ? 0 : 1)
             .padding(.vertical, -Self.rowPadding / 2)
     }
 
@@ -2754,8 +2775,8 @@ private struct OutlineRow: View {
     /// crossing is one event, and saying it once where the haptic ticks reads
     /// more clearly than a colour creeping toward it.
     @ViewBuilder private var revealBand: some View {
-        if swipe != 0 {
-            ZStack(alignment: swipe < 0 ? .trailing : .leading) {
+        if let settling {
+            ZStack(alignment: settling == .left ? .trailing : .leading) {
                 HStack(spacing: 0) {
                     Color.accentColor
                         .opacity(swipe > 0 && swipeArmed ? 1 : 0.5)
@@ -2950,7 +2971,7 @@ private struct OutlineRow: View {
         // Back at rest whenever the row reappears. `swipe` is `@State` and
         // survives the view being torn down and rebuilt — a zoom used to bring
         // a row back still holding the offset that carried it off.
-        .onAppear { swipe = 0; direction = nil; wasArmed = false }
+        .onAppear { swipe = 0; direction = nil; wasArmed = false; settling = nil }
         // The whole row arms a drag, not just the bullet. Reaching across the
         // screen for a 32pt column with the other hand was the cost of putting
         // the handle in one place, and the 0.35s hold already separates a drag
