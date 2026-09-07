@@ -2671,11 +2671,15 @@ private struct OutlineRow: View {
 
     /// Eases the row home from a pull that did not reach the threshold.
     private func springBack() {
-        withAnimation(.easeOut(duration: 0.22)) { swipe = 0 } completion: {
-            // Only once the row is actually home. Clearing it with the write
-            // would take the ground and band out of the tree at the start of
-            // the animation and leave the text sliding over the list.
-            settling = nil
+        withAnimation(.easeOut(duration: 0.22)) { swipe = 0 }
+        // Cleared outside the animation, not in its completion closure. A
+        // completion runs inside the same transaction, so `settling = nil`
+        // there *animates* the scenery away — the ground fades over the 0.22s
+        // while the row is still travelling, and the band shows through it the
+        // whole way home. That was ac6211b's bug, reintroduced by a different
+        // route. The offset eases; the scenery cuts.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.22) {
+            if swipe == 0 { settling = nil }
         }
     }
 
