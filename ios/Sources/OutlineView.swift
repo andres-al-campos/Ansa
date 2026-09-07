@@ -856,17 +856,26 @@ struct OutlineView: View {
         }
         .buttonStyle(.plain)
         .disabled(!interactive)
-        // Uneven on purpose. This rides a `safeAreaInset`, so the bottom
-        // padding sits on top of the ~34pt the system reserves for the home
-        // indicator — the gap under the button is far wider than 16. Evening
-        // the two up needs ~50pt on the trailing edge, which no longer reads as
-        // a corner button, or a negative bottom, which puts the target in the
-        // swipe-up strip. 20 leans toward it and stops there.
+        // Equidistant from the two edges it sits between. This rides a
+        // `safeAreaInset`, so the bottom padding stacks on top of whatever the
+        // system reserves for the home indicator — 16 there is ~50 on a phone
+        // that has one, and a matching 16 on the trailing edge left the button
+        // visibly tighter to the right than to the bottom. Read rather than
+        // hardcoded, since the reserved strip is 0 on a phone with a button.
         .padding(.bottom, Space.gutter)
-        .padding(.trailing, 20)
+        .padding(.trailing, Space.gutter + homeIndicator)
         .accessibilityLabel(adding ? "Done adding" : "Add a task")
     }
 
+
+    /// The strip the system reserves at the bottom for the home indicator, or 0
+    /// on a phone with a physical button. What the capture button's trailing
+    /// padding has to match to sit the same distance from both edges.
+    private var homeIndicator: CGFloat {
+        UIApplication.shared.connectedScenes
+            .compactMap { ($0 as? UIWindowScene)?.keyWindow?.safeAreaInsets.bottom }
+            .first ?? 0
+    }
 
     private func title(of scope: NodeId?) -> String {
         scope.flatMap { TreeOps.byId(tree, $0)?.text } ?? "Ansa"
