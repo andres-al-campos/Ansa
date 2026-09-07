@@ -79,4 +79,33 @@ struct RowSwipeTests {
         #expect(RowSwipe.commitFraction == 0.25)
         #expect(RowSwipe.pastCommit == 0.35)
     }
+
+    @Test("The return starts where the finger left off and ends at rest")
+    func returnSpansTheWholeDistance() {
+        #expect(RowSwipe.returnOffset(from: -70, elapsed: 0) == -70)
+        #expect(RowSwipe.returnOffset(from: -70,
+                                      elapsed: RowSwipe.returnDuration) == 0)
+    }
+
+    @Test("The return is past halfway at half the time")
+    func returnEasesOut() {
+        let half = RowSwipe.returnOffset(from: -100,
+                                         elapsed: RowSwipe.returnDuration / 2)
+        // Ease-out: fastest at the release. A linear return would sit at -50.
+        #expect(half > -50)
+        #expect(half < 0)
+    }
+
+    @Test("A tick that arrives late does not overshoot past rest")
+    func returnClampsAfterTheEnd() {
+        // The driver stops itself at the end, but a display link can hand back
+        // an elapsed well past the duration when frames are dropped, and the
+        // row must not sail out the other side.
+        #expect(RowSwipe.returnOffset(from: -70, elapsed: 5) == 0)
+    }
+
+    @Test("A tap stops being refused exactly when the row stops moving")
+    func deafnessMatchesTheReturn() {
+        #expect(RowSwipe.tapDeafness == RowSwipe.returnDuration)
+    }
 }
