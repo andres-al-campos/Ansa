@@ -856,14 +856,18 @@ struct OutlineView: View {
         }
         .buttonStyle(.plain)
         .disabled(!interactive)
-        // Equidistant from the two edges it sits between. This rides a
-        // `safeAreaInset`, so the bottom padding stacks on top of whatever the
-        // system reserves for the home indicator — 16 there is ~50 on a phone
-        // that has one, and a matching 16 on the trailing edge left the button
-        // visibly tighter to the right than to the bottom. Read rather than
-        // hardcoded, since the reserved strip is 0 on a phone with a button.
-        .padding(.bottom, Space.gutter)
-        .padding(.trailing, Space.gutter + homeIndicator)
+        // 36 from both edges, stated once. This rides a `safeAreaInset`, so
+        // the bottom padding stacks on whatever the system reserves for the
+        // home indicator: the same number on both sides sat it ~50 from the
+        // bottom and 16 from the right. Subtracting the strip on one side and
+        // adding it on the other is what makes the two distances equal on a
+        // phone that has one and on a phone that does not.
+        //
+        // Clamped at 0 because 36 is less than the ~34pt strip by only 2 — a
+        // deeper inset on some future device would otherwise push the button
+        // down into the swipe-up area rather than stopping at its edge.
+        .padding(.bottom, max(0, Space.corner - homeIndicator))
+        .padding(.trailing, Space.corner)
         .accessibilityLabel(adding ? "Done adding" : "Add a task")
     }
 
@@ -2475,6 +2479,8 @@ enum Space {
     /// The screen edge. Anything that has to line up with another section's
     /// left edge measures from here.
     static let gutter: CGFloat = 16
+    /// How far a corner control sits from the two screen edges it floats over.
+    static let corner: CGFloat = 36
 }
 
 private struct OutlineRow: View {
