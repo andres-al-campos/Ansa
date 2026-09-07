@@ -2431,20 +2431,6 @@ private struct OutlineRow: View {
     /// narrower, which is the indent deciding how hard it is to delete.
     let screenWidth: CGFloat
 
-    /// How far the row has been pulled, in points. Signed: negative is a pull
-    /// left to delete, positive a pull right to zoom in. Zero at rest.
-    ///
-    /// The single source for the whole gesture. Every earlier version kept
-    /// something beside it — a flag for the ground, a timer to clear it, a
-    /// copy of the offset hoisted to the call site to move the guides — and
-    /// each one was a chance for a part of the row to disagree with the rest,
-    /// which is what read as the row snapping while its text slid. Now the
-    /// only thing that moves is the one view the offset is applied to, so an
-    /// animated write to this carries the whole row home together.
-    @State private var swipe: CGFloat = 0
-    /// The row's own width. Only what the row is carried off by on a commit —
-    /// the threshold is a fraction of the screen, not of this.
-    @State private var width: CGFloat = 0
     /// This view's own height — the row's *content*, without the vertical
     /// padding the call site wraps it in. `cellHeight` is this plus that.
     ///
@@ -2456,50 +2442,6 @@ private struct OutlineRow: View {
     /// Seeded at the single-line content height so a freshly appeared row's
     /// first swipe frame is not a zero-height strip.
     @State private var contentHeight: CGFloat = 40
-    /// Which way the pull is going, or nil while it is inside the dead zone.
-    ///
-    /// Follows the finger for the whole gesture rather than latching on the
-    /// first movement: a pull that starts right and comes back left is a zoom
-    /// the user changed their mind about, and the row should say so.
-    @State private var direction: SwipeDirection?
-
-    /// Whether the pull was past the commit point on the previous callback.
-    ///
-    /// Kept so the haptic fires on the *crossing* rather than on the state:
-    /// `onChanged` runs many times a second, and a tick per callback past the
-    /// threshold would be a buzz instead of a boundary.
-    @State private var wasArmed = false
-
-    /// When a swipe last let go of this row.
-    ///
-    /// The tap that opens the editor has to be refused after a swipe, and
-    /// every piece of live gesture state is the wrong thing to ask: a Button
-    /// inside a List keeps its touch through a sibling drag, and by the time
-    /// it resolves, `direction` has been cleared and `swipe` is mid-animation
-    /// back to zero. A timestamp is the only thing still true at that moment.
-    /// Without it every cancelled swipe opened the row it had just let go of.
-    @State private var swipeEndedAt: Date?
-
-    /// The direction the ground and band are drawn for, held until the row is
-    /// actually home.
-    ///
-    /// `swipe` cannot answer this during a spring back. SwiftUI decides
-    /// structure from the *final* value of an animated write, so a band drawn
-    /// under `if swipe != 0` leaves the tree the instant `springBack` runs —
-    /// the text then slides home over nothing, which is the snap. This holds
-    /// the layers alive for the whole gesture, including the animation, and
-    /// pins their alignment so it cannot flip sides as the pull passes zero.
-    @State private var settling: SwipeDirection?
-
-    /// Felt when the pull crosses the commit point, in either direction.
-    ///
-    /// A threshold you can only feel entering is one you cannot feel backing
-    /// out of, and backing out is exactly when the finger is over the band and
-    /// the eyes are not.
-    private let armHaptic = UIImpactFeedbackGenerator(style: .light)
-
-    private enum SwipeDirection { case left, right }
-
     /// True from the moment this row's press arms a drag until the carry ends.
     ///
     /// Derived from `isDragging` rather than held as state: the list owns the
@@ -2617,213 +2559,9 @@ private struct OutlineRow: View {
     /// taller than this.
     static let cellHeight: CGFloat = 40 + rowPadding
 
-    /// The fraction of the *screen's* width a pull must cross to delete on
-    /// release. Constant across rows, whatever their depth.
-    ///
-    /// `swipeActions` sets its own and does not expose it, which is why this
-    /// edge is hand-rolled: the revealed button could not be tapped, so the
-    /// full swipe was the only way to delete and its distance was the whole
-    /// gesture rather than a shortcut past a button.
-    ///
-
-
-    /// The pull that deletes.
-    ///
-    /// Trailing only. The leading edge stays on `swipeActions`, so this is one
-    /// new recogniser rather than a replacement for both — and the back swipe,
-    /// which travels the other way, is untouched.
-    ///
-    /// `minimumDistance: 20` on purpose. Below that this competes with the
-    /// list's scroll and with the row's own 0.35s press, and a row that slides
-    /// sideways on a scroll that drifts is worse than one that starts late.
-    /// Hands the touch back if this row leaves while its swipe is running.
-    ///
-    /// A committed delete removes the row, and a view that is gone does not get
-    /// `onEnded` — which would strand `rowSwiping` true and leave the back
-    /// swipe dead for the rest of the session.
-    private func releaseSwipeClaim() {
-        if direction != nil { onSwipingChanged(false) }
-    }
-
-    /// What either edge commits to. The two are one gesture mirrored, so the
-    /// direction picks the action rather than there being two recognisers.
-    private var action: (label: String, tint: Color, run: () -> Void)? {
-        switch direction {
-        case .left: return ("trash.fill", .red, onDelete)
-        case .right: return ("chevron.right", .accentColor, onZoom)
-        case nil: return nil
-        }
-    }
-
-    /// Whether the pull is past the point where releasing acts.
-    private var swipeArmed: Bool {
-        RowSwipe.isArmed(swipe, screenWidth: screenWidth)
-    }
-
-    /// Whether a swipe let go of this row too recently for a tap to be meant.
-    ///
-    /// The window is the spring back's own duration: a tap during the return
-    /// is the tail of the swipe, and one after it is a new intention.
-    private var justSwiped: Bool {
-        !RowSwipe.acceptsTap(
-            elapsed: swipeEndedAt.map { Date().timeIntervalSince($0) })
-    }
-
-    /// Eases the row home from a pull that did not reach the threshold.
-    private func springBack() {
-        withAnimation(.easeOut(duration: 0.22)) { swipe = 0 }
-        // Cleared outside the animation, not in its completion closure. A
-        // completion runs inside the same transaction, so `settling = nil`
-        // there *animates* the scenery away — the ground fades over the 0.22s
-        // while the row is still travelling, and the band shows through it the
-        // whole way home. That was ac6211b's bug, reintroduced by a different
-        // route. The offset eases; the scenery cuts.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.22) {
-            if swipe == 0 { settling = nil }
-        }
-    }
-
-    /// The pull that deletes or zooms.
-    ///
-    /// One recogniser for both edges. `swipeActions` used to own the leading
-    /// one, but its commit threshold is UIKit's and is not exposed — so the
-    /// two edges of the same row committed at visibly different distances and
-    /// only one of them could show an armed state.
-    ///
-    /// `minimumDistance: 20` on purpose. Below that this competes with the
-    /// list's scroll and with the row's own 0.35s press, and a row that slides
-    /// sideways on a scroll that drifts is worse than one that starts late.
-    private var rowSwipe: some Gesture {
-        DragGesture(minimumDistance: 20, coordinateSpace: .local)
-            .onChanged { g in
-                guard !isDragging, !backHolding else { return }
-                let d = g.translation.width
-                direction = abs(d) < 20 ? nil : (d < 0 ? .left : .right)
-                // Latched, unlike `direction`: this one has to outlive the
-                // release to keep the layers under the row alive while it
-                // travels home.
-                if let direction { settling = direction }
-                // Ours from the moment there is a direction until the finger
-                // lifts, so the back swipe cannot start partway through it.
-                onSwipingChanged(direction != nil)
-                // Warmed while the pull is still short of the threshold, so
-                // the tick lands on the crossing rather than a beat after it.
-                if direction != nil { armHaptic.prepare() }
-                guard action != nil else { return }
-                swipe = RowSwipe.offset(for: d, screenWidth: screenWidth)
-                let armed = RowSwipe.isArmed(d, screenWidth: screenWidth)
-                if armed != wasArmed {
-                    armHaptic.impactOccurred(intensity: armed ? 1 : 0.6)
-                    wasArmed = armed
-                }
-            }
-            .onEnded { g in
-                defer {
-                    onSwipingChanged(false)
-                    if direction != nil { swipeEndedAt = Date() }
-                    direction = nil
-                    wasArmed = false
-                }
-                guard !isDragging, !backHolding, let action else {
-                    springBack()
-                    return
-                }
-                guard RowSwipe.isArmed(g.translation.width,
-                                       screenWidth: screenWidth) else {
-                    springBack()
-                    return
-                }
-                // Only a delete rides out. That row is leaving, so carrying it
-                // the rest of the way is what stops it vanishing from under
-                // the finger. A zoom keeps the row — the screen changes around
-                // it — so sliding it off would park a live row off screen with
-                // its cell still holding a row's worth of height.
-                if direction == .left {
-                    withAnimation(.easeIn(duration: 0.16)) { swipe = -width }
-                } else {
-                    swipe = 0
-                    settling = nil
-                }
-                action.run()
-            }
-    }
-
-    /// What the row is drawn on while it is off its resting place.
-    ///
-    /// The row draws no ground of its own at rest — it is transparent over the
-    /// list — so a swipe needs one, or the band behind shows straight through
-    /// the text. A plain rectangle: no corner radius. Rounding it meant
-    /// deciding when the corner appears, and every answer to that was a second
-    /// thing changing at a moment when only the offset should be.
-    ///
-    /// Padded out to the cell and straight back in. The call site adds this
-    /// row's vertical padding *outside* this view, so a background drawn here
-    /// fills the 40pt content and leaves a strip of band showing above and
-    /// below it.
-    /// Present or absent, never faded. `.opacity` is animatable, so a ground
-    /// that is always in the tree at `opacity(settling == nil ? 0 : 1)` fades
-    /// out over the spring back's own 0.22s no matter where the flag is
-    /// cleared — the row's text slides home while the white under it dissolves
-    /// and the band shows through. Four attempts moved *when* the flag cleared
-    /// and none of them could help, because the mechanism was the bug. A view
-    /// leaving the tree cuts.
-    @ViewBuilder private var rowGround: some View {
-        if settling != nil {
-            Rectangle()
-                .fill(Color(.systemBackground))
-                .padding(.vertical, -Self.rowPadding / 2)
-        }
-    }
-
-    /// What the row slides off to reveal.
-    ///
-    /// A fixed layer the full width of the cell, sitting still behind the row
-    /// for the whole gesture — not a strip that grows with the pull. Blue on
-    /// the leading half, red on the trailing one, so whichever way the row
-    /// goes uncovers the colour of what releasing will do.
-    ///
-    /// The halves brighten on arming rather than only the glyph doing so, and
-    /// as a step at the threshold rather than a ramp with the pull: the
-    /// crossing is one event, and saying it once where the haptic ticks reads
-    /// more clearly than a colour creeping toward it.
-    @ViewBuilder private var revealBand: some View {
-        if let settling {
-            ZStack(alignment: settling == .left ? .trailing : .leading) {
-                HStack(spacing: 0) {
-                    // Driven by `settling`, not by `swipe`. Both halves read
-                    // the sign of a value that is animating to zero, so on a
-                    // spring back each comparison went false partway home and
-                    // the band faded out from under the row while it was still
-                    // travelling — the row appeared to jump because what it
-                    // was sliding over had already gone.
-                    Color.accentColor
-                        .opacity(settling == .right && swipeArmed ? 1 : 0.5)
-                    Color.red
-                        .opacity(settling == .left && swipeArmed ? 1 : 0.5)
-                }
-                // Centred in the gap uncovered so far, so the glyph rides out
-                // with the row rather than sitting at the edge waiting for the
-                // row to reach it. Only one, picked by the direction: the
-                // other side is still covered.
-                if let action {
-                    Image(systemName: action.label)
-                        .foregroundStyle(.white.opacity(swipeArmed ? 1 : 0.85))
-                        .font(.system(size: swipeArmed ? 24 : 21,
-                                      weight: .medium))
-                        // Read off the live offset, so the glyph rides out
-                        // with the row. It collapses on the way home, which is
-                        // right: the gap it is centred in is closing.
-                        .frame(width: abs(swipe))
-                }
-            }
-            .animation(.easeOut(duration: 0.12), value: swipeArmed)
-            .padding(.vertical, -Self.rowPadding / 2)
-        }
-    }
-
     /// The row's marks and label. Split out from `body` only because the two
     /// together sat over the type checker's limit for one expression.
-    private var rowContent: some View {
+    private func rowContent(justSwiped: Bool) -> some View {
         HStack(spacing: 10) {
             // Square, where the bullet is round. Both marks used to be circles
             // differing by fill and colour — the same two channels that carry
@@ -2909,15 +2647,9 @@ private struct OutlineRow: View {
                     // The frame goes *inside* the contentShape. Reversed, the
                     // shape is taken from the text's own size and the space
                     // past a short word stays dead, which is most rows.
-                    // Deaf while a swipe is open or springing home. A Button
-                    // inside a List does not lose the touch to a sibling
-                    // DragGesture: the row slid sideways under the finger and
-                    // the release still read as a tap, so every cancelled
-                    // swipe opened the editor on the row it had just let go.
-                    //
-                    // Deaf for a moment after a swipe lets go — see
-                    // `swipeEndedAt` for why neither `direction` nor `swipe`
-                    // can answer this.
+                    // Deaf while a swipe is open or springing home — see
+                    // `RowSwipeView.justSwiped`, which is where the flag
+                    // handed in here comes from.
                     Button(action: { if !justSwiped { onBeginEdit() } }) {
                         Text(node.text)
                             .strikethrough(node.done)
@@ -2937,62 +2669,44 @@ private struct OutlineRow: View {
     }
 
     var body: some View {
-        rowContent
-        .padding(.leading, Self.railInset + CGFloat(depth) * Self.indent)
-        // On the content, never on the row. The nesting guides are a
-        // `.background` of the row, so a row-level offset would sway the lines
-        // along with the marks and the whole structure would appear to lean.
-        .modifier(RippleWiggle(delay: rippleDelay))
-        // Everything from here down is the swipe, and it is deliberately three
-        // flat modifiers rather than the layered arrangement this replaced.
-        //
-        // The rule the old one kept breaking: whatever moves has to be *one*
-        // view. It had the content sliding on `.offset`, an opaque ground
-        // conditionally beside it, and the guide segments a level further out
-        // at the call site being slid by a copy of the offset shipped through
-        // a closure. Under a finger that looks fine, because nothing is
-        // animating — the finger is the animation and every layer redraws each
-        // frame regardless. On release it comes apart: `withAnimation`
-        // interpolates only what reads the value it changed from inside its
-        // scope, so the text slid while the marks and the lines jumped.
-        //
-        // Here the ground, the content and the guides are the same view, and
-        // the band is behind it. One `.offset` moves all of it.
-        // The guides are drawn here, inside the row, so they travel on the
-        // same `.offset` as everything else. They used to be a `.background`
-        // of the cell one level out, slid by a copy of this offset shipped to
-        // the call site through a closure — a second path to the same number,
-        // outside the `withAnimation` that eases it home, which is why the
-        // lines jumped while the row slid.
-        .background(alignment: .topLeading) { guides }
-        .background(rowGround)
-        .offset(x: swipe)
-        .background(revealBand)
-        // Measured rather than assumed, in both axes: the width a commit
-        // carries the row off by is the list's less an indent that grows with
-        // depth, and the height is a line's or two of them, depending on how
-        // far the title wrapped.
-        //
-        // This is the content box, not the cell — the call site's vertical
-        // padding sits outside it. Whoever reads `contentHeight` adds it back.
+        RowSwipeView(
+            vPadding: Self.rowPadding / 2,
+            screenWidth: screenWidth,
+            // A carry or a back swipe owns the touch outright; this one stands
+            // down rather than competing for it.
+            inert: isDragging || backHolding,
+            onDelete: onDelete,
+            onZoom: onZoom,
+            onSwipingChanged: onSwipingChanged
+        ) { justSwiped in
+            rowContent(justSwiped: justSwiped)
+                .padding(.leading,
+                         Self.railInset + CGFloat(depth) * Self.indent)
+                // On the marks and the text, never on the row: the guides
+                // are a `.background` one step further out, so a wiggle
+                // applied outside them would sway the lines along with the
+                // marks and the whole structure would appear to lean.
+                .modifier(RippleWiggle(delay: rippleDelay))
+                // Inside the swipe's content, so the guides travel on the same
+                // offset as the marks and the text. They used to be a
+                // `.background` of the cell one level out, slid by a copy of
+                // the offset shipped to the call site through a closure — a
+                // second path to the same number, outside the `withAnimation`
+                // that eases it home, which is why the lines jumped while the
+                // row slid.
+                .background(alignment: .topLeading) { guides }
+        }
+        // Measured rather than assumed. This is the content box, not the cell —
+        // the call site's vertical padding sits outside it, so whoever reads
+        // `contentHeight` adds it back. A line's worth, or two of them,
+        // depending on how far the title wrapped.
         .background {
             GeometryReader { geo in
                 Color.clear
-                    .onAppear { width = geo.size.width; contentHeight = geo.size.height }
-                    .onChange(of: geo.size.width) { _, w in width = w }
+                    .onAppear { contentHeight = geo.size.height }
                     .onChange(of: geo.size.height) { _, h in contentHeight = h }
             }
         }
-        // Alongside the press, never instead of it: the two are separated by
-        // time and direction — this one needs 20pt of sideways travel, that
-        // one needs 0.35s of stillness — so both can watch the same touch and
-        // only one will ever act on it.
-        .simultaneousGesture(rowSwipe)
-        .onDisappear(perform: releaseSwipeClaim)
-        // Back at rest whenever the row reappears. `swipe` is `@State` and
-        // survives the view being torn down and rebuilt — a zoom used to bring
-        // a row back still holding the offset that carried it off.
-        .onAppear { swipe = 0; direction = nil; wasArmed = false; settling = nil }
         // The whole row arms a drag, not just the bullet. Reaching across the
         // screen for a 32pt column with the other hand was the cost of putting
         // the handle in one place, and the 0.35s hold already separates a drag
