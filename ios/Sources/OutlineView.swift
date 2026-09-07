@@ -170,9 +170,9 @@ struct OutlineView: View {
                 // `inTrash` is read by `slab` itself, so the copy behind a
                 // trash pull has to be drawn with it already false — otherwise
                 // the screen revealed is a second trash.
-                slab(for: inTrash ? nil : backTrail.last?.scope ?? parentScope,
+                slab(for: inTrash ? nil : peekBack.scope,
                      interactive: false, trash: false,
-                     restoring: inTrash ? nil : backTrail.last?.at)
+                     restoring: inTrash ? nil : peekBack.at)
                 // Over the revealed screen, under the one being lifted off it.
                 backdrop
             }
@@ -2049,16 +2049,34 @@ struct OutlineView: View {
         restore = step.at
     }
 
-    /// The next scope back: the last one visited that still exists, or the tree
-    /// parent once the trail runs out.
+    /// Take the next step back, spending it. `peekBack` decides where; this
+    /// clears the trail down to it.
+    private func popBack() -> BackStep {
+        let step = peekBack
+        // Drop everything down to and including what the peek settled on, so
+        // the skipped-over dead scopes do not sit waiting for the next back.
+        if let i = backTrail.lastIndex(where: { $0.scope == step.scope }) {
+            backTrail.removeSubrange(i...)
+        } else {
+            backTrail.removeAll()
+        }
+        return step
+    }
+
+    /// Where back would land, without spending the step.
     ///
-    /// Deleted scopes are skipped rather than landed on — a trail outlives the
+    /// The preview behind a back swipe reads this so it draws the screen you
+    /// will actually get. It used to take the top of the trail raw, which is a
+    /// different answer whenever the entry above points at a deleted scope —
+    /// one screen slid in and another landed.
+    ///
+    /// Deleted scopes are skipped rather than landed on: a trail outlives the
     /// nodes in it, and stepping back into something that is gone shows an
     /// empty screen that reads as the app failing.
-    private func popBack() -> BackStep {
-        while let previous = backTrail.popLast() {
-            guard let id = previous.scope else { return previous }
-            if TreeOps.byId(tree, id) != nil { return previous }
+    private var peekBack: BackStep {
+        for step in backTrail.reversed() {
+            guard let id = step.scope else { return step }
+            if TreeOps.byId(tree, id) != nil { return step }
         }
         // Off the end of the trail: the tree parent, with nowhere remembered.
         return BackStep(scope: parentScope, at: nil)
