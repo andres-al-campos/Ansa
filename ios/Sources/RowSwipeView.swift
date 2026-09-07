@@ -30,8 +30,14 @@ struct RowSwipeView<Content: View>: View {
     /// row it had just let go. The window is the spring back's own duration.
     @ViewBuilder let content: (_ justSwiped: Bool) -> Content
 
-    /// How far the row is drawn from rest. The single animated value.
-    @State private var offset: CGFloat = 0
+    /// Owns `offset` and the clock that returns it to zero. A class, not
+    /// `@State` on the view: a display link's tick closure captures whatever it
+    /// was built with, and `@State` accessors belong to one body evaluation —
+    /// so the first tick's write re-rendered the view and left the closure
+    /// writing to a version of the row that no longer existed. It fired once
+    /// and stopped. A reference the view holds across evaluations is still
+    /// there on the second frame.
+    @State private var motion = RowSwipeMotion()
     /// The row's own width, so a committing delete knows how far to carry it.
     @State private var width: CGFloat = 0
     /// The live direction of the finger, nil before the gesture commits to one.
@@ -41,6 +47,9 @@ struct RowSwipeView<Content: View>: View {
     @State private var settling: Direction?
     @State private var wasArmed = false
     @State private var endedAt: Date?
+
+    /// How far the row is drawn from rest, in points.
+    private var offset: CGFloat { motion.offset }
 
     private let armHaptic = UIImpactFeedbackGenerator(style: .light)
 
@@ -58,10 +67,11 @@ struct RowSwipeView<Content: View>: View {
             }
             .simultaneousGesture(gesture)
             .onDisappear {
+                motion.stopReturn()
                 if direction != nil { onSwipingChanged(false) }
             }
             .onAppear {
-                offset = 0
+                motion.offset = 0
                 direction = nil
                 settling = nil
                 wasArmed = false
@@ -136,13 +146,16 @@ struct RowSwipeView<Content: View>: View {
         DragGesture(minimumDistance: 20, coordinateSpace: .local)
             .onChanged { g in
                 guard !inert else { return }
+                // The finger is back. It writes `offset` from here on, so a
+                // return still ticking would be fighting it for the same value.
+                motion.stopReturn()
                 let d = g.translation.width
                 direction = abs(d) < 20 ? nil : (d < 0 ? .left : .right)
                 if let direction { settling = direction }
                 onSwipingChanged(direction != nil)
                 if direction != nil { armHaptic.prepare() }
                 guard action != nil else { return }
-                offset = RowSwipe.offset(for: d, screenWidth: screenWidth)
+                motion.offset = RowSwipe.offset(for: d, screenWidth: screenWidth)
                 let nowArmed = RowSwipe.isArmed(d, screenWidth: screenWidth)
                 if nowArmed != wasArmed {
                     armHaptic.impactOccurred(intensity: nowArmed ? 1 : 0.6)
@@ -167,20 +180,89 @@ struct RowSwipeView<Content: View>: View {
                 // finger. A zoom keeps the row — the screen changes around it —
                 // so sliding it off would park a live row off screen.
                 if direction == .left {
-                    withAnimation(.easeIn(duration: 0.16)) { offset = -width }
+                    motion.stopReturn()
+                    withAnimation(.easeIn(duration: 0.16)) { motion.offset = -width }
                 } else {
-                    offset = 0
+                    motion.offset = 0
                     settling = nil
                 }
                 action.run()
             }
     }
 
-    /// Eases the row home from a pull that did not reach the threshold.
+    // MARK: - The return
+
+    /// Eases the row home from a pull that did not reach the threshold, by
+    /// writing `offset` once per frame — the same thing the finger does.
+    ///
+    /// Not `withAnimation`. Eight attempts at it all read as a snap on the
+    /// device. Why is not established: the probes that were supposed to settle
+    /// it ran on the simulator, which renders this app at about 3fps, so a
+    /// 0.22s return gets one intermediate frame there however it is driven —
+    /// a working animation and a jump look identical. Do not read the switch
+    /// as proof `withAnimation` was broken.
+    ///
+    /// What is known is that the finger path moves this row correctly, writing
+    /// `offset` directly on every `onChanged`. This borrows that: the same
+    /// write, driven by a clock instead of a touch.
+    ///
+    /// Clearing `settling` on arrival comes with it. The old code guessed with
+    /// an `asyncAfter` timed to an animation it could not observe; a driver
+    /// knows when it is finished.
     private func springBack() {
-        withAnimation(.easeOut(duration: 0.22)) { offset = 0 }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.22) {
-            if offset == 0 { settling = nil }
+        motion.returnHome { settling = nil }
+    }
+}
+
+/// How far the row is drawn from rest, and the clock that walks it back to zero.
+///
+/// A class because the return is driven a frame at a time by a `CADisplayLink`,
+/// and a link's tick has to reach state that outlives one body evaluation.
+@MainActor
+@Observable
+final class RowSwipeMotion {
+    /// The row's translation in points. Written directly by the finger, and by
+    /// this class's own tick on the way home.
+    var offset: CGFloat = 0
+
+    @ObservationIgnored private var link: CADisplayLink?
+    @ObservationIgnored private var from: CGFloat = 0
+    @ObservationIgnored private var start: CFTimeInterval = 0
+    @ObservationIgnored private var onArrival: (() -> Void)?
+
+    /// Walks `offset` to zero over `RowSwipe.returnDuration`, then calls
+    /// `onArrival` — which is how the caller knows the layers under the row can
+    /// go. Replaces an `asyncAfter` that was timing an animation it could not
+    /// observe; a driver knows when it is finished.
+    func returnHome(onArrival: @escaping () -> Void) {
+        stopReturn()
+        guard offset != 0 else { onArrival(); return }
+        from = offset
+        start = CACurrentMediaTime()
+        self.onArrival = onArrival
+        let link = CADisplayLink(target: self, selector: #selector(tick))
+        link.add(to: .main, forMode: .common)
+        self.link = link
+    }
+
+    /// Ends a return in progress, leaving `offset` wherever it had reached.
+    /// Called before starting another and whenever a finger takes the row back,
+    /// so the two never write `offset` in the same frame.
+    func stopReturn() {
+        link?.invalidate()
+        link = nil
+        onArrival = nil
+    }
+
+    @objc private func tick() {
+        let elapsed = CACurrentMediaTime() - start
+        guard elapsed < RowSwipe.returnDuration else {
+            offset = 0
+            let arrived = onArrival
+            stopReturn()
+            arrived?()
+            return
         }
+        offset = RowSwipe.returnOffset(from: from, elapsed: elapsed)
     }
 }

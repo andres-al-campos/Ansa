@@ -27,6 +27,29 @@ public enum RowSwipe {
     /// opens the editor on the row it just released.
     public static let tapDeafness: TimeInterval = 0.22
 
+    /// How long the row takes to travel home from a pull that did not commit.
+    ///
+    /// Also the window a tap is refused for — the two are the same duration on
+    /// purpose, so the row stops being deaf exactly when it stops moving.
+    public static let returnDuration: TimeInterval = 0.22
+
+    /// The eased fraction of the return that is complete at `t`, where `t` runs
+    /// 0 to 1 over `returnDuration`.
+    ///
+    /// Quadratic ease-out: fastest at the release, settling as it arrives. The
+    /// return is driven a tick at a time rather than handed to SwiftUI, so this
+    /// curve is applied by hand — and being here rather than in the view is
+    /// what lets it be checked without a simulator.
+    public static func returnEase(_ t: Double) -> Double {
+        let t = min(max(t, 0), 1)
+        return 1 - (1 - t) * (1 - t)
+    }
+
+    /// Where the row sits `elapsed` seconds into a return that began at `from`.
+    public static func returnOffset(from: CGFloat, elapsed: TimeInterval) -> CGFloat {
+        from * CGFloat(1 - returnEase(elapsed / returnDuration))
+    }
+
     /// What either edge commits to.
     public enum Action: Equatable, Sendable {
         case zoom
