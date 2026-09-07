@@ -2760,11 +2760,19 @@ private struct OutlineRow: View {
     /// row's vertical padding *outside* this view, so a background drawn here
     /// fills the 40pt content and leaves a strip of band showing above and
     /// below it.
-    private var rowGround: some View {
-        Rectangle()
-            .fill(Color(.systemBackground))
-            .opacity(settling == nil ? 0 : 1)
-            .padding(.vertical, -Self.rowPadding / 2)
+    /// Present or absent, never faded. `.opacity` is animatable, so a ground
+    /// that is always in the tree at `opacity(settling == nil ? 0 : 1)` fades
+    /// out over the spring back's own 0.22s no matter where the flag is
+    /// cleared — the row's text slides home while the white under it dissolves
+    /// and the band shows through. Four attempts moved *when* the flag cleared
+    /// and none of them could help, because the mechanism was the bug. A view
+    /// leaving the tree cuts.
+    @ViewBuilder private var rowGround: some View {
+        if settling != nil {
+            Rectangle()
+                .fill(Color(.systemBackground))
+                .padding(.vertical, -Self.rowPadding / 2)
+        }
     }
 
     /// What the row slides off to reveal.
@@ -2802,6 +2810,9 @@ private struct OutlineRow: View {
                         .foregroundStyle(.white.opacity(swipeArmed ? 1 : 0.85))
                         .font(.system(size: swipeArmed ? 24 : 21,
                                       weight: .medium))
+                        // Read off the live offset, so the glyph rides out
+                        // with the row. It collapses on the way home, which is
+                        // right: the gap it is centred in is closing.
                         .frame(width: abs(swipe))
                 }
             }
