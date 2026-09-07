@@ -2778,10 +2778,16 @@ private struct OutlineRow: View {
         if let settling {
             ZStack(alignment: settling == .left ? .trailing : .leading) {
                 HStack(spacing: 0) {
+                    // Driven by `settling`, not by `swipe`. Both halves read
+                    // the sign of a value that is animating to zero, so on a
+                    // spring back each comparison went false partway home and
+                    // the band faded out from under the row while it was still
+                    // travelling — the row appeared to jump because what it
+                    // was sliding over had already gone.
                     Color.accentColor
-                        .opacity(swipe > 0 && swipeArmed ? 1 : 0.5)
+                        .opacity(settling == .right && swipeArmed ? 1 : 0.5)
                     Color.red
-                        .opacity(swipe < 0 && swipeArmed ? 1 : 0.5)
+                        .opacity(settling == .left && swipeArmed ? 1 : 0.5)
                 }
                 // Centred in the gap uncovered so far, so the glyph rides out
                 // with the row rather than sitting at the edge waiting for the
