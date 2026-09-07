@@ -732,17 +732,18 @@ struct OutlineView: View {
         // that the position is already right on the first frame you see. The
         // preview behind a back swipe reads the same anchor, so what slides in
         // and what lands are the same picture.
+        // `.onChange` and not `.onAppear`: zooming out swaps this slab's rows
+        // but does not rebuild the slab, so its `onAppear` fired once at launch
+        // and never again. The preview behind the swipe is created fresh each
+        // time and so restored correctly — the live one, which is the one you
+        // land on, sat there ignoring it.
+        .onChange(of: restoring) { _, anchor in
+            guard let anchor else { return }
+            applyAnchor(anchor, with: proxy, live: interactive)
+        }
         .onAppear {
             guard let restoring else { return }
-            DispatchQueue.main.async {
-                var t = Transaction()
-                t.disablesAnimations = true
-                withTransaction(t) {
-                    proxy.scrollTo(restoring.row,
-                                   anchor: UnitPoint(x: 0, y: restoring.fraction))
-                }
-                if interactive { restore = nil }
-            }
+            applyAnchor(restoring, with: proxy, live: interactive)
         }
         // The carry, for every row at once.
         //
@@ -1001,6 +1002,20 @@ struct OutlineView: View {
                 proxy.scrollTo(id, anchor: UnitPoint(x: 0, y: anchor))
             }
         }
+    }
+
+    /// Puts the list back on a saved anchor, a turn late so the new scope's
+    /// rows have laid out, and unanimated so the position is simply correct on
+    /// the first frame rather than seen to travel.
+    private func applyAnchor(
+        _ anchor: ScrollAnchor, with proxy: ScrollViewProxy, live: Bool
+    ) {
+        var t = Transaction()
+        t.disablesAnimations = true
+        withTransaction(t) {
+            proxy.scrollTo(anchor.row, anchor: UnitPoint(x: 0, y: anchor.fraction))
+        }
+        if live { restore = nil }
     }
 
     /// How far down the viewport a row's top sits, 0 at the top edge and 1 at
