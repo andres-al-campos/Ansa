@@ -847,8 +847,7 @@ struct OutlineView: View {
                 // it, because it was never a transition.
                 .drawingGroup()
                 .frame(width: 52, height: 52)
-                .background(Circle().fill(.regularMaterial))
-                .shadow(color: .black.opacity(0.12), radius: 6, y: 2)
+                .modifier(CaptureButtonSurface())
                 // Deliberately no `.id(adding)` and no transition. Either one
                 // makes the two states separate views, so SwiftUI removes one
                 // and inserts the other, which is a second way to get two
@@ -2106,6 +2105,27 @@ struct OutlineView: View {
             .min { $0.value.minY < $1.value.minY }
         guard let top, let fraction = viewportFraction(of: top.key) else { return nil }
         return ScrollAnchor(row: top.key, fraction: fraction)
+    }
+}
+
+/// The capture button's disc: Liquid Glass where the OS has it, and the
+/// material it used before everywhere else.
+///
+/// A fork on availability rather than a raised deployment target. The glass is
+/// one control's appearance, and the floor is what decides which phones can run
+/// the app at all — not a trade worth making for a button.
+///
+/// The system's glass draws its own shading, so the hand-rolled shadow goes with
+/// it: kept underneath, it reads as a second, flatter disc behind the real one.
+private struct CaptureButtonSurface: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(iOS 26, *) {
+            content.glassEffect(.regular.interactive(), in: .circle)
+        } else {
+            content
+                .background(Circle().fill(.regularMaterial))
+                .shadow(color: .black.opacity(0.12), radius: 6, y: 2)
+        }
     }
 }
 
