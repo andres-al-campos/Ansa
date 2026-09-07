@@ -684,18 +684,21 @@ struct OutlineView: View {
                     // edge to swallow the touch instead; that never ran, because
                     // `swipeActions` belongs to the `List` cell and an overlay on
                     // the row's content sits below it.
-                    // No full swipe. The only threshold `swipeActions` offers
-                    // is UIKit's own, three quarters of the way across the
-                    // screen, and that is too far to drag for a row you meant
-                    // to delete — long enough that the gesture stops feeling
-                    // like a flick and starts feeling like a haul.
+                    // Full swipe on, because on this row it is the only thing
+                    // that works. The revealed button never takes a tap here —
+                    // the touch reaches the row and the action does not run.
+                    // Measured, not assumed: with the same build the full swipe
+                    // fires the delete and a tap on the trash it reveals does
+                    // nothing. Neither the row's arm gesture, the list's carry,
+                    // nor the screen's back swipe is the cause; disabling all
+                    // three changes nothing.
                     //
-                    // Off, the swipe reveals the button and the tap commits.
-                    // A short pull either way, and nothing fires by accident.
-                    // Setting a quarter instead is not on offer: the fraction
-                    // is not exposed, and reaching it means hand-rolling the
-                    // gesture and everything drawn behind the row with it.
-                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                    // So `false` is not the safer setting, it is no delete at
+                    // all. The cost is UIKit's threshold, three quarters of the
+                    // way across — further than this gesture should ask for.
+                    // The fraction is not exposed, so moving it means hand
+                    // rolling the gesture and everything drawn behind the row.
+                    .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                         //
                         // Empty while a row is in the air, the same as the
                         // leading edge below: a reorder is a vertical carry
