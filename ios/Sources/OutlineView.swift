@@ -91,9 +91,6 @@ struct OutlineView: View {
     /// Cleared when the finger lifts, so a back swipe that is abandoned gives
     /// the row swipe straight back.
     @State private var backHolding = false
-    /// Whether the back pull was past its threshold on the previous callback,
-    /// so the haptic marks the crossing instead of every frame beyond it.
-    @State private var backWasArmed = false
 
     /// Whether a row's delete swipe currently has the touch.
     ///
@@ -1857,21 +1854,16 @@ struct OutlineView: View {
                 backPull = d <= backThreshold
                     ? d
                     : backThreshold + (d - backThreshold) * 0.35
-                // The same tick a row's swipe gives at its own threshold. The
-                // two gestures commit at the same fraction and travel the same
-                // way, so feeling different at the crossing would be the one
-                // place they disagreed.
-                let armedNow = d >= backThreshold
-                if armedNow != backWasArmed {
-                    haptic.impactOccurred(intensity: armedNow ? 1 : 0.6)
-                    backWasArmed = armedNow
-                }
+                // No haptic at the crossing, deliberately. The row swipe taps
+                // at its threshold and this used to match it for consistency,
+                // but the system's own interactive pop is silent — and this
+                // gesture is measured against every other app on the phone,
+                // not against the row swipe.
             }
             .onEnded { g in
                 // Released, so the row swipe is available again — a cancelled
                 // back swipe hands the row back rather than leaving it inert.
                 backHolding = false
-                backWasArmed = false
                 guard armed(g), g.translation.width > backThreshold else {
                     // Short of the threshold: back where it came from, which is
                     // what tells you the gesture was seen and declined.
