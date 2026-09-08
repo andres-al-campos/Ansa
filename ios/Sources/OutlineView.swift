@@ -2409,6 +2409,12 @@ enum Space {
     /// A block set apart from what surrounds it.
     static let block: CGFloat = 12
 
+    /// Above a section header, and above a headerless section's card so the two
+    /// kinds of break read the same. Half `block`: the header's own height is
+    /// most of what sets a section off, so the space above it only has to keep
+    /// it from touching the card before it.
+    static let sectionBreak: CGFloat = 6
+
     /// The shortest a row on the home screen is allowed to be.
     ///
     /// Above Apple's 44pt minimum, which the rows already met on content alone
@@ -3128,7 +3134,7 @@ private struct ProjectGrid: View {
                     .modifier(
                         HomeCard(
                             slot: .only, lifted: false, separator: false,
-                            gapAbove: Space.block))
+                            gapAbove: Space.sectionBreak))
                 }
             }
             .listStyle(.plain)
@@ -3208,7 +3214,7 @@ private struct SectionHeader: View {
         .font(.subheadline.weight(.semibold))
         .listRowInsets(
             EdgeInsets(
-                top: Space.block, leading: Space.gutter,
+                top: Space.sectionBreak, leading: Space.gutter,
                 bottom: Space.row, trailing: Space.gutter))
     }
 }
