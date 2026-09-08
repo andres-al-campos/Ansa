@@ -49,6 +49,7 @@ public enum Op: Equatable, Sendable {
         id: NodeId, anchorId: NodeId, depth: Int, side: TreeOps.DropSide, scope: NodeId?)
     case toggleCollapsed(id: NodeId)
     case setPinned(id: NodeId, pinned: Bool)
+    case setPinOrder(id: NodeId, order: Int)
     case markOpened(id: NodeId, at: Double)
 
     /// The `op` discriminator on the wire. Must match `OP_KINDS` in ops.ts
@@ -67,6 +68,7 @@ public enum Op: Equatable, Sendable {
         case .insertAtDepth: "insertAtDepth"
         case .toggleCollapsed: "toggleCollapsed"
         case .setPinned: "setPinned"
+        case .setPinOrder: "setPinOrder"
         case .markOpened: "markOpened"
         }
     }
@@ -103,7 +105,7 @@ extension TreeOps.SubtreeSpec {
 extension Op: Codable {
     private enum K: String, CodingKey {
         case op, id, ids, parentId, text, done, index, at, nodes, trash
-        case anchorId, depth, side, scope, pinned
+        case anchorId, depth, side, scope, pinned, order
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -147,6 +149,9 @@ extension Op: Codable {
         case let .setPinned(id, pinned):
             try c.encode(id, forKey: .id)
             try c.encode(pinned, forKey: .pinned)
+        case let .setPinOrder(id, order):
+            try c.encode(id, forKey: .id)
+            try c.encode(order, forKey: .order)
         case let .markOpened(id, at):
             try c.encode(id, forKey: .id)
             try c.encode(at, forKey: .at)
@@ -211,6 +216,8 @@ extension Op: Codable {
             self = .toggleCollapsed(id: try id())
         case "setPinned":
             self = .setPinned(id: try id(), pinned: try c.decode(Bool.self, forKey: .pinned))
+        case "setPinOrder":
+            self = .setPinOrder(id: try id(), order: try c.decode(Int.self, forKey: .order))
         case "markOpened":
             self = .markOpened(id: try id(), at: try c.decode(Double.self, forKey: .at))
         default:
@@ -293,6 +300,8 @@ extension TreeOps {
             return (toggleCollapsed(tree, id), [])
         case let .setPinned(id, pinned):
             return (setPinned(tree, id, pinned), [])
+        case let .setPinOrder(id, order):
+            return (setPinOrder(tree, id, order), [])
         case let .markOpened(id, at):
             return (markOpened(tree, id, at: at), [])
         }

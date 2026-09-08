@@ -51,6 +51,7 @@ let samples: [Op] = [
     .insertAtDepth(id: "a", anchorId: "b", depth: 2, side: .before, scope: "s"),
     .toggleCollapsed(id: "a"),
     .setPinned(id: "a", pinned: true),
+    .setPinOrder(id: "a", order: 3),
     .markOpened(id: "a", at: 1),
 ]
 print(String(decoding: try JSONEncoder().encode(samples), as: UTF8.self))

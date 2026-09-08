@@ -570,6 +570,86 @@ struct ProjectTests {
         #expect(TreeOps.pinnedTasks(fixture()).isEmpty)
     }
 
+    /// Pin these ids and arrange them densely, in the order given.
+    func shelf(_ ids: [NodeId]) -> Tree {
+        pinning(ids).map { node in
+            guard let i = ids.firstIndex(of: node.id) else { return node }
+            var n = node
+            n.pinOrder = i
+            return n
+        }
+    }
+
+    @Test("the shelf holds projects and tasks in one list")
+    func shelfIsOneList() {
+        // Arranged by hand, so it cannot also be grouped by kind — the two
+        // rules would disagree the moment a task was dragged above a project.
+        #expect(
+            TreeOps.pinnedItems(shelf(["gather", "taxes"])).map(\.node.id)
+                == ["gather", "taxes"])
+    }
+
+    @Test("a pinned project has an empty trail")
+    func projectTrail() {
+        // Which is also what says it is a project — a root has nothing above it.
+        #expect(TreeOps.pinnedItems(pinning(["taxes"]))[0].trail.isEmpty)
+    }
+
+    @Test("an unarranged pin sorts after every arranged one")
+    func absentSortsLast() {
+        // Absent means never dragged, so a new pin lands at the end rather than
+        // displacing an order someone set by hand.
+        let tree = TreeOps.setPinOrder(pinning(["taxes", "gather"]), "gather", 0)
+        #expect(TreeOps.pinnedItems(tree).map(\.node.id) == ["gather", "taxes"])
+    }
+
+    @Test("an untouched shelf falls back to depth then order")
+    func shelfFallback() {
+        // The old rule, kept so shipping pinOrder needs no backfill.
+        #expect(
+            TreeOps.pinnedItems(pinning(["p2b1", "gather"])).map(\.node.id)
+                == ["gather", "p2b1"])
+    }
+
+    @Test("a deleted node takes its shelf entry with it")
+    func shelfDropsDeleted() {
+        // Membership is still the flag, so no stale pinOrder can resurrect it.
+        #expect(TreeOps.pinnedItems(TreeOps.removeNode(shelf(["p2b1"]), "p2b")).isEmpty)
+    }
+
+    @Test("reordering renumbers only what moved")
+    func reorderMinimal() {
+        // Every pin below the swap keeps its position, so an op for it would be
+        // a write that changes nothing.
+        let ops = TreeOps.reorderPinsOps(shelf(["taxes", "gather", "p2b1"]), from: 0, to: 1)
+        #expect(ops.count == 2)
+        #expect(ops.map(\.kind) == ["setPinOrder", "setPinOrder"])
+    }
+
+    @Test("reordering an unarranged shelf writes every position")
+    func reorderArranges() {
+        // Nothing has a pinOrder yet, so the first drag is what takes the list
+        // off the depth fallback.
+        let ops = TreeOps.reorderPinsOps(pinning(["taxes", "gather"]), from: 1, to: 0)
+        #expect(ops.count == 2)
+    }
+
+    @Test("a pin dropped where it started writes nothing")
+    func reorderNoop() {
+        #expect(TreeOps.reorderPinsOps(shelf(["taxes", "gather"]), from: 0, to: 0).isEmpty)
+        #expect(TreeOps.reorderPinsOps(shelf(["taxes"]), from: 5, to: 0).isEmpty)
+    }
+
+    @Test("the ops and the shelf's own sort agree")
+    func reorderRoundTrip() {
+        // One is derived from the other, so a disagreement would mean a drag
+        // that lands somewhere other than where it was dropped.
+        let tree = shelf(["taxes", "gather", "p2b1"])
+        let moved = TreeOps.reorderPinsOps(tree, from: 2, to: 0)
+            .reduce(tree) { TreeOps.applyOp($0, $1).tree }
+        #expect(TreeOps.pinnedItems(moved).map(\.node.id) == ["p2b1", "taxes", "gather"])
+    }
+
     @Test("depthOf counts edges from the root")
     func depth() {
         let t = fixture()

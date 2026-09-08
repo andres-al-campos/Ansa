@@ -95,6 +95,9 @@ extension TreeOps {
     ///
     /// Ordered by depth then manual order, so shallower pins — the ones nearer a
     /// project, and so more likely to be a checkpoint — come first.
+    ///
+    /// Tasks only. The shelf itself is `pinnedItems`, which includes pinned
+    /// roots; this stays for callers that want the tasks apart from the projects.
     public static func pinnedTasks(_ tree: Tree) -> [(node: Node, trail: [Node])] {
         tree
             .filter { $0.pinned == true && $0.parentId != nil }
@@ -104,6 +107,52 @@ extension TreeOps {
                     ? $0.trail.count < $1.trail.count
                     : $0.node.order < $1.node.order
             }
+    }
+
+    /// The Pinned shelf: every pinned node, projects and tasks in one order.
+    ///
+    /// One list because the shelf is arranged by hand — a grouping the machine
+    /// imposes would fight the order the user set. A root carries an empty
+    /// trail, which is also what says it is a project.
+    ///
+    /// `pinOrder` is the arrangement; the depth-then-order sort behind it is
+    /// what an unarranged shelf falls back to. Absent sorts last, so a pin that
+    /// has never been dragged sits after the ones that have rather than jumping
+    /// to the top, and shipping this needs no backfill.
+    public static func pinnedItems(_ tree: Tree) -> [(node: Node, trail: [Node])] {
+        tree
+            .filter { $0.pinned == true }
+            .map { (node: $0, trail: Array(lineageOf(tree, $0.id).dropLast())) }
+            .sorted {
+                let a = $0.node.pinOrder ?? Int.max
+                let b = $1.node.pinOrder ?? Int.max
+                if a != b { return a < b }
+                return $0.trail.count != $1.trail.count
+                    ? $0.trail.count < $1.trail.count
+                    : $0.node.order < $1.node.order
+            }
+    }
+
+    /// The ops that move the pin at `from` to `to` on the shelf.
+    ///
+    /// Derived here rather than in a view, like `indentOp`: the shelf's order is
+    /// `pinnedItems`' sort, so the index a drag reports only means something
+    /// against that same list, and a copy of the rule in a view is how the two
+    /// drift apart.
+    ///
+    /// Renumbers densely from 0, so a shelf that was only partly arranged comes
+    /// out fully arranged and the `?? Int.max` fallback stops applying to it.
+    /// Only the nodes whose position actually changed get an op.
+    public static func reorderPinsOps(_ tree: Tree, from: Int, to: Int) -> [Op] {
+        var items = pinnedItems(tree).map(\.node)
+        guard from >= 0, from < items.count else { return [] }
+        let at = max(0, min(to, items.count - 1))
+        guard at != from else { return [] }
+        let moved = items.remove(at: from)
+        items.insert(moved, at: at)
+        return items.enumerated().compactMap { i, n in
+            n.pinOrder == i ? nil : .setPinOrder(id: n.id, order: i)
+        }
     }
 
     /// Flat list of every project — pinned first, then the rest in manual order.

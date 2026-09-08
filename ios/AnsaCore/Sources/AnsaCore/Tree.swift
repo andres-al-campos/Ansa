@@ -24,8 +24,12 @@ public struct Node: Codable, Equatable, Sendable, Identifiable {
     public var order: Int
     /// folded in place — a view concern, but persisted so it survives reload
     public var collapsed: Bool
-    /// favourited to the top of the projects list. Only meaningful on a root.
+    /// favourited onto the home screen's Pinned shelf. Set on any node, not
+    /// just a root — `projectSections` is what filters roots, not this flag.
     public var pinned: Bool?
+    /// manual position on the Pinned shelf. Absent until the pin is dragged,
+    /// and absent sorts last — see `pinnedItems`.
+    public var pinOrder: Int?
     /// when this project was last opened, so Recents can sort by it. Root-only.
     public var lastOpenedAt: Double?
     public var createdAt: Double
@@ -48,6 +52,7 @@ public struct Node: Codable, Equatable, Sendable, Identifiable {
         try c.encode(order, forKey: .order)
         try c.encode(collapsed, forKey: .collapsed)
         try c.encodeIfPresent(pinned, forKey: .pinned)
+        try c.encodeIfPresent(pinOrder, forKey: .pinOrder)
         try c.encodeIfPresent(lastOpenedAt, forKey: .lastOpenedAt)
         try c.encode(createdAt, forKey: .createdAt)
     }
@@ -60,6 +65,7 @@ public struct Node: Codable, Equatable, Sendable, Identifiable {
         order: Int,
         collapsed: Bool = false,
         pinned: Bool? = nil,
+        pinOrder: Int? = nil,
         lastOpenedAt: Double? = nil,
         createdAt: Double = 0
     ) {
@@ -70,6 +76,7 @@ public struct Node: Codable, Equatable, Sendable, Identifiable {
         self.order = order
         self.collapsed = collapsed
         self.pinned = pinned
+        self.pinOrder = pinOrder
         self.lastOpenedAt = lastOpenedAt
         self.createdAt = createdAt
     }
@@ -436,6 +443,15 @@ public enum TreeOps {
             guard node.id == id else { return node }
             var n = node
             n.collapsed.toggle()
+            return n
+        }
+    }
+
+    public static func setPinOrder(_ tree: Tree, _ id: NodeId, _ order: Int) -> Tree {
+        tree.map { node in
+            guard node.id == id else { return node }
+            var n = node
+            n.pinOrder = order
             return n
         }
     }
