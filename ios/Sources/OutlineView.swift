@@ -2909,6 +2909,25 @@ private struct ProjectGrid: View {
     /// this only drives the "nothing to show you" note.
     let onOpenTrash: () -> Void
 
+    /// The lift buzz for a reorder drag, matching the outline's.
+    ///
+    /// `.onMove` reports only the finished move, so there is no lift callback to
+    /// hang this on. A `LongPressGesture` running alongside observes the same
+    /// press without consuming it — `List` still gets the press and still starts
+    /// its own drag; this only fires the impact.
+    ///
+    /// Which means the duration is a guess at `List`'s, not a setting: there is
+    /// no API for the real one. Too early and the buzz promises a drag that has
+    /// not armed; 0.5 is Apple's documented press-and-hold, so it errs late.
+    private let liftHaptic = UIImpactFeedbackGenerator(style: .heavy)
+
+    /// Apply to a row that `.onMove` makes draggable.
+    private func liftFeedback(_ row: some View) -> some View {
+        row.simultaneousGesture(
+            LongPressGesture(minimumDuration: 0.5, maximumDistance: 10)
+                .onEnded { _ in liftHaptic.impactOccurred() })
+    }
+
     /// The unpinned roots. Pinned ones move up to their own section rather than
     /// showing twice — the same rule the web's sidebar follows.
     private var projects: [Node] { TreeOps.projectSections(tree).unpinned }
@@ -2972,13 +2991,14 @@ private struct ProjectGrid: View {
                         // row within the list it is drawn in.
                         ForEach(shownPins, id: \.node.id) { pin in
                             if pin.trail.isEmpty {
-                                projectRow(pin.node)
+                                liftFeedback(projectRow(pin.node))
                             } else {
-                                PinnedTaskRow(
-                                    node: pin.node,
-                                    trail: pin.trail,
-                                    progress: TreeOps.progressOf(tree, pin.node.id),
-                                    onOpen: { onOpen(pin.node.id) })
+                                liftFeedback(
+                                    PinnedTaskRow(
+                                        node: pin.node,
+                                        trail: pin.trail,
+                                        progress: TreeOps.progressOf(tree, pin.node.id),
+                                        onOpen: { onOpen(pin.node.id) }))
                                     // The sidebar style's own row padding sits on
                                     // top of the row's, and the two together made a
                                     // two-line row as tall as a project card. Set
@@ -3027,7 +3047,7 @@ private struct ProjectGrid: View {
 
                 Section(isExpanded: $projectsOpen.animated) {
                     ForEach(projects) { project in
-                        projectRow(project)
+                        liftFeedback(projectRow(project))
                     }
                     .onMove(perform: onMoveProject)
                 } header: {
