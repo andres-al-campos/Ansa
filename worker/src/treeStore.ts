@@ -37,6 +37,7 @@ import {
   removeNode,
   roots,
   setDone,
+  setPinOrder,
   setPinned,
   setText,
   subtreeOf,
@@ -66,6 +67,7 @@ interface Row {
   order: number
   collapsed: number
   pinned: number
+  pinOrder: number | null
   lastOpenedAt: number | null
   createdAt: number
 }
@@ -104,11 +106,27 @@ export class TreeStore {
         "order"   INTEGER NOT NULL DEFAULT 0,
         collapsed INTEGER NOT NULL DEFAULT 0,
         pinned    INTEGER NOT NULL DEFAULT 0,
+        pinOrder  INTEGER,
         lastOpenedAt INTEGER,
         createdAt INTEGER NOT NULL
       );
     `)
     this.sql.exec('CREATE INDEX IF NOT EXISTS idx_nodes_parent ON nodes(parentId);')
+
+    // `CREATE TABLE IF NOT EXISTS` does nothing to a table that already exists,
+    // so a column added to the statement above never reaches a Durable Object
+    // created before it. Every store already out there needs this ALTER; the
+    // ones created since already have the column, and the ALTER throws a
+    // duplicate-column error that is the success case for them.
+    //
+    // Caught rather than guarded by PRAGMA table_info, which SqlStorage does not
+    // expose as a read. Swallowing every error here is safe because the only
+    // thing this statement can do is add a column that is already there.
+    try {
+      this.sql.exec('ALTER TABLE nodes ADD COLUMN pinOrder INTEGER;')
+    } catch {
+      // already migrated
+    }
 
     // The trash: subtrees that were deleted, kept so a delete can be cheap.
     //
@@ -144,6 +162,7 @@ export class TreeStore {
         "order"   INTEGER NOT NULL DEFAULT 0,
         collapsed INTEGER NOT NULL DEFAULT 0,
         pinned    INTEGER NOT NULL DEFAULT 0,
+        pinOrder  INTEGER,
         lastOpenedAt INTEGER,
         createdAt INTEGER NOT NULL,
         PRIMARY KEY (entryId, id)
@@ -166,6 +185,7 @@ export class TreeStore {
       order: r.order,
       collapsed: !!r.collapsed,
       pinned: !!r.pinned,
+      ...(r.pinOrder != null ? { pinOrder: r.pinOrder } : {}),
       ...(r.lastOpenedAt != null ? { lastOpenedAt: r.lastOpenedAt } : {}),
       createdAt: r.createdAt,
     }))
@@ -219,13 +239,15 @@ export class TreeStore {
       } else if (!sameNode(old, n)) {
         this.sql.exec(
           `UPDATE nodes SET parentId = ?, text = ?, done = ?, "order" = ?,
-             collapsed = ?, pinned = ?, lastOpenedAt = ?, createdAt = ? WHERE id = ?`,
+             collapsed = ?, pinned = ?, pinOrder = ?, lastOpenedAt = ?, createdAt = ?
+             WHERE id = ?`,
           n.parentId,
           n.text,
           n.done ? 1 : 0,
           n.order,
           n.collapsed ? 1 : 0,
           n.pinned ? 1 : 0,
+          n.pinOrder ?? null,
           n.lastOpenedAt ?? null,
           n.createdAt,
           n.id,
@@ -240,8 +262,9 @@ export class TreeStore {
 
   private insert(n: Tree[number]): void {
     this.sql.exec(
-      `INSERT INTO nodes (id, parentId, text, done, "order", collapsed, pinned, lastOpenedAt, createdAt)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO nodes (id, parentId, text, done, "order", collapsed, pinned, pinOrder,
+         lastOpenedAt, createdAt)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       n.id,
       n.parentId,
       n.text,
@@ -249,6 +272,7 @@ export class TreeStore {
       n.order,
       n.collapsed ? 1 : 0,
       n.pinned ? 1 : 0,
+      n.pinOrder ?? null,
       n.lastOpenedAt ?? null,
       n.createdAt,
     )
@@ -340,10 +364,11 @@ export class TreeStore {
     for (const n of [node, ...subtreeOf(tree, id)]) {
       this.sql.exec(
         `INSERT INTO trash_nodes (entryId, id, parentId, text, done, "order",
-           collapsed, pinned, lastOpenedAt, createdAt)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           collapsed, pinned, pinOrder, lastOpenedAt, createdAt)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         entryId, n.id, n.parentId, n.text, n.done ? 1 : 0, n.order,
-        n.collapsed ? 1 : 0, n.pinned ? 1 : 0, n.lastOpenedAt ?? null, n.createdAt,
+        n.collapsed ? 1 : 0, n.pinned ? 1 : 0, n.pinOrder ?? null,
+        n.lastOpenedAt ?? null, n.createdAt,
       )
     }
   }
@@ -438,6 +463,7 @@ export class TreeStore {
         pinned: !!r.pinned,
         createdAt: r.createdAt,
       }
+      if (r.pinOrder !== null) n.pinOrder = r.pinOrder
       if (r.lastOpenedAt !== null) n.lastOpenedAt = r.lastOpenedAt
       // Only the subtree's own root is re-homed; everything under it already
       // points at a node coming back in the same batch.
@@ -510,6 +536,10 @@ export class TreeStore {
 
   setPinned(id: NodeId, pinned: boolean): Tree {
     return this.writeField(setPinned(this.load(), id, pinned), id, 'pinned', pinned ? 1 : 0)
+  }
+
+  setPinOrder(id: NodeId, order: number): Tree {
+    return this.writeField(setPinOrder(this.load(), id, order), id, 'pinOrder', order)
   }
 
   markOpened(id: NodeId): Tree {
@@ -594,6 +624,7 @@ function sameNode(a: Tree[number], b: Tree[number]): boolean {
     a.order === b.order &&
     a.collapsed === b.collapsed &&
     !!a.pinned === !!b.pinned &&
+    (a.pinOrder ?? null) === (b.pinOrder ?? null) &&
     (a.lastOpenedAt ?? null) === (b.lastOpenedAt ?? null) &&
     a.createdAt === b.createdAt
   )

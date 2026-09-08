@@ -239,6 +239,68 @@ describe('single-field ops write one row', () => {
     expect(stored(storeA)).toEqual(new Map(tree.map((n) => [n.id, n])))
   })
 
+  it('setPinOrder persists the shelf position', () => {
+    const { id } = storeA.addChild(null, 'project')
+    storeA.setPinned(id, true)
+    const tree = storeA.setPinOrder(id, 3)
+    expect(storeA.load().find((n) => n.id === id)!.pinOrder).toBe(3)
+    expect(stored(storeA)).toEqual(new Map(tree.map((n) => [n.id, n])))
+  })
+
+  it('a node with no shelf position omits the field rather than sending null', () => {
+    // `pinOrder` absent is what makes the shelf sort it last. A null read back
+    // as 0 would put every undragged pin at the top instead.
+    const { id } = storeA.addChild(null, 'project')
+    expect('pinOrder' in storeA.load().find((n) => n.id === id)!).toBe(false)
+  })
+
+  it('adds pinOrder to a table that predates the column', () => {
+    // The real migration case: `CREATE TABLE IF NOT EXISTS` skips a table that
+    // already exists, so a store created before this column has to be altered
+    // on open. Building the old table by hand is the only way to test the path
+    // every existing Durable Object actually takes.
+    const path = join(dir, 'old.db')
+    const old = sqlAdapter(path)
+    old.exec(`
+      CREATE TABLE nodes (
+        id        TEXT PRIMARY KEY,
+        parentId  TEXT,
+        text      TEXT NOT NULL,
+        done      INTEGER NOT NULL DEFAULT 0,
+        "order"   INTEGER NOT NULL DEFAULT 0,
+        collapsed INTEGER NOT NULL DEFAULT 0,
+        pinned    INTEGER NOT NULL DEFAULT 0,
+        lastOpenedAt INTEGER,
+        createdAt INTEGER NOT NULL
+      );
+    `)
+    old.exec(
+      `INSERT INTO nodes (id, parentId, text, done, "order", collapsed, pinned, createdAt)
+       VALUES ('kept', NULL, 'from before', 0, 0, 0, 1, 1)`,
+    )
+
+    const store = new TreeStore(old)
+    const node = store.load().find((n) => n.id === 'kept')!
+    // The row survived the migration, and the new column reads as absent.
+    expect(node.text).toBe('from before')
+    expect(node.pinned).toBe(true)
+    expect('pinOrder' in node).toBe(false)
+    // And it is writable now, which is what the ALTER was for.
+    store.setPinOrder('kept', 2)
+    expect(store.load().find((n) => n.id === 'kept')!.pinOrder).toBe(2)
+    old.close()
+  })
+
+  it('opening a migrated store twice does not fail on the ALTER', () => {
+    // The duplicate-column error is the success case for an already-migrated
+    // store, so a second open has to swallow it rather than throw.
+    const path = join(dir, 'twice.db')
+    const one = sqlAdapter(path)
+    new TreeStore(one)
+    expect(() => new TreeStore(one)).not.toThrow()
+    one.close()
+  })
+
   it('markOpened persists the stamp', () => {
     const { id } = storeA.addChild(null, 'project')
     const tree = storeA.markOpened(id)
