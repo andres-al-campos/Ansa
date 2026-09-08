@@ -640,6 +640,18 @@ struct ProjectTests {
         #expect(TreeOps.reorderPinsOps(shelf(["taxes"]), from: 5, to: 0).isEmpty)
     }
 
+    @Test("a drag down the shelf lands where it was dropped")
+    func reorderDownward() {
+        // SwiftUI's `onMove` reports the destination before the row is lifted
+        // out, so a downward drag arrives one past where it lands. The view
+        // subtracts that; this pins the convention `reorderPinsOps` expects —
+        // an index into the list *without* the moved row.
+        let tree = shelf(["taxes", "gather", "p2b1"])
+        let moved = TreeOps.reorderPinsOps(tree, from: 0, to: 2)
+            .reduce(tree) { TreeOps.applyOp($0, $1).tree }
+        #expect(TreeOps.pinnedItems(moved).map(\.node.id) == ["gather", "p2b1", "taxes"])
+    }
+
     @Test("the ops and the shelf's own sort agree")
     func reorderRoundTrip() {
         // One is derived from the other, so a disagreement would mean a drag

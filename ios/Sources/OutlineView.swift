@@ -498,6 +498,8 @@ struct OutlineView: View {
                         // people do, so this is a plain commit either way.
                         onSubmit: submitProjectName,
                         onDelete: confirmDeleteProject,
+                        onMoveProject: moveProject,
+                        onMovePin: movePin,
                         onOpenTrash: { openTrash() })
                 } else {
                     // Under the bar, above the list: the figure the title used
@@ -870,6 +872,46 @@ struct OutlineView: View {
     /// it for the server. Nothing here mutates the tree directly.
     private func apply(_ op: Op) {
         store.apply(op)
+    }
+
+    /// A project dragged to a new position in the home list.
+    ///
+    /// `from` and `to` index the *unpinned* projects, which is what that list
+    /// draws, while `moveNode` counts positions among every root. Pinned
+    /// projects sit in the shelf above and still hold root positions, so the
+    /// two only agree when nothing is pinned — hence the translation through
+    /// the neighbour's own index rather than passing `to` straight through.
+    private func moveProject(from: IndexSet, to: Int) {
+        let unpinned = TreeOps.projectSections(tree).unpinned
+        guard let src = from.first, src < unpinned.count else { return }
+        let roots = TreeOps.roots(tree)
+
+        // The row it lands above, in the list the drag was reading. Past the
+        // end there is none, and the move goes to the end of the roots.
+        let movedId = unpinned[src].id
+        let landsAbove = to < unpinned.count ? unpinned[to].id : nil
+        let destination =
+            landsAbove.flatMap { id in roots.firstIndex { $0.id == id } } ?? roots.count
+        guard let current = roots.firstIndex(where: { $0.id == movedId }),
+              destination != current
+        else { return }
+
+        apply(.moveNode(id: movedId, parentId: nil, index: destination))
+    }
+
+    /// A pin dragged to a new position on the shelf.
+    ///
+    /// One drag is several ops — the shelf renumbers densely — and `AnsaCore`
+    /// derives them, so the rule that decides the order lives beside the sort
+    /// that reads it.
+    private func movePin(from: IndexSet, to: Int) {
+        guard let src = from.first else { return }
+        // `onMove` reports a destination *before* the row is lifted out, so a
+        // downward drag is one past where it lands. `reorderPinsOps` takes an
+        // index into the list without the moved row, which is the other
+        // convention.
+        let dest = to > src ? to - 1 : to
+        for op in TreeOps.reorderPinsOps(tree, from: src, to: dest) { apply(op) }
     }
 
     /// Whether this row's box should read as "the whole group is finished".
@@ -2856,6 +2898,12 @@ private struct ProjectGrid: View {
     let onBeginEdit: (Node) -> Void
     let onSubmit: () -> Void
     let onDelete: (NodeId) -> Void
+    /// A project dragged to a new place in the list. Indices are into the
+    /// unpinned projects — what this view draws — not into every root.
+    let onMoveProject: (IndexSet, Int) -> Void
+    /// A pin dragged to a new place on the shelf. Indices are into
+    /// `pinnedItems`, which is the order the shelf is drawn in.
+    let onMovePin: (IndexSet, Int) -> Void
 
     /// Whether the trash row was tapped. The trash view does not exist yet, so
     /// this only drives the "nothing to show you" note.
@@ -2864,8 +2912,10 @@ private struct ProjectGrid: View {
     /// The unpinned roots. Pinned ones move up to their own section rather than
     /// showing twice — the same rule the web's sidebar follows.
     private var projects: [Node] { TreeOps.projectSections(tree).unpinned }
-    private var pinnedProjects: [Node] { TreeOps.projectSections(tree).pinned }
-    private var pinnedTasks: [(node: Node, trail: [Node])] { TreeOps.pinnedTasks(tree) }
+
+    /// The shelf: pinned projects and pinned tasks in one hand-set order. A
+    /// project is the entry with an empty trail.
+    private var pins: [(node: Node, trail: [Node])] { TreeOps.pinnedItems(tree) }
 
     /// Collapse state, per device rather than per tree: which sections you keep
     /// shut is a preference about this phone's screen, not a fact about the
@@ -2876,9 +2926,7 @@ private struct ProjectGrid: View {
     /// Nothing pinned at all — neither a project nor a task. The section is
     /// hidden entirely then rather than shown empty, so a phone that has never
     /// pinned anything sees the list it used to see.
-    private var nothingPinned: Bool {
-        pinnedProjects.isEmpty && pinnedTasks.isEmpty
-    }
+    private var nothingPinned: Bool { pins.isEmpty }
 
     /// Whether the shelf is showing everything it has. Per device and not
     /// persisted: expanding it is a thing you do to find one pin, not a setting
@@ -2890,18 +2938,10 @@ private struct ProjectGrid: View {
     /// and the projects it sits above start falling off the screen.
     private let pinCap = 5
 
-    private var pinCount: Int { pinnedProjects.count + pinnedTasks.count }
+    private var pinCount: Int { pins.count }
 
-    /// Both halves of the shelf share one budget: they are one thing to the
-    /// reader, so capping them separately would let the shelf reach ten rows.
-    private var shownPinnedProjects: [Node] {
-        showAllPins ? pinnedProjects : Array(pinnedProjects.prefix(pinCap))
-    }
-
-    private var shownPinnedTasks: [(node: Node, trail: [Node])] {
-        showAllPins
-            ? pinnedTasks
-            : Array(pinnedTasks.prefix(max(0, pinCap - pinnedProjects.count)))
+    private var shownPins: [(node: Node, trail: [Node])] {
+        showAllPins ? pins : Array(pins.prefix(pinCap))
     }
 
     var body: some View {
@@ -2927,27 +2967,33 @@ private struct ProjectGrid: View {
                 // screen; a short one is the reason you came to this screen.
                 if !nothingPinned {
                     Section(isExpanded: $pinnedOpen.animated) {
-                        // Pinned projects first: a project is a place you go, so
-                        // it sits above the specific things to do inside one.
-                        ForEach(shownPinnedProjects) { project in
-                            projectRow(project)
+                        // One `ForEach` over projects and tasks together: the
+                        // shelf is arranged by hand, and a drag can only move a
+                        // row within the list it is drawn in.
+                        ForEach(shownPins, id: \.node.id) { pin in
+                            if pin.trail.isEmpty {
+                                projectRow(pin.node)
+                            } else {
+                                PinnedTaskRow(
+                                    node: pin.node,
+                                    trail: pin.trail,
+                                    progress: TreeOps.progressOf(tree, pin.node.id),
+                                    onOpen: { onOpen(pin.node.id) })
+                                    // The sidebar style's own row padding sits on
+                                    // top of the row's, and the two together made a
+                                    // two-line row as tall as a project card. Set
+                                    // explicitly so the row's own padding is the
+                                    // only thing deciding its height.
+                                    .listRowInsets(
+                                        EdgeInsets(
+                                            top: Space.inner, leading: Space.gutter,
+                                            bottom: Space.inner, trailing: Space.gutter))
+                            }
                         }
-                        ForEach(shownPinnedTasks, id: \.node.id) { pin in
-                            PinnedTaskRow(
-                                node: pin.node,
-                                trail: pin.trail,
-                                progress: TreeOps.progressOf(tree, pin.node.id),
-                                onOpen: { onOpen(pin.node.id) })
-                                // The sidebar style's own row padding sits on
-                                // top of the row's, and the two together made a
-                                // two-line row as tall as a project card. Set
-                                // explicitly so the row's own padding is the
-                                // only thing deciding its height.
-                                .listRowInsets(
-                                    EdgeInsets(
-                                        top: Space.inner, leading: Space.gutter,
-                                        bottom: Space.inner, trailing: Space.gutter))
-                        }
+                        // Only while the whole shelf is showing. A drag inside a
+                        // capped list would renumber against positions the user
+                        // cannot see.
+                        .onMove(perform: showAllPins || pinCount <= pinCap ? onMovePin : nil)
 
                         // A row rather than an inner scroll view. Nesting one
                         // scroller inside the page's would make a single drag
@@ -2983,6 +3029,7 @@ private struct ProjectGrid: View {
                     ForEach(projects) { project in
                         projectRow(project)
                     }
+                    .onMove(perform: onMoveProject)
                 } header: {
                     Text("Projects")
                 }
@@ -3045,18 +3092,10 @@ private struct ProjectGrid: View {
             focused: focused,
             onOpen: { onOpen(project.id) },
             onSubmit: onSubmit)
-            // Long-press rather than tap-the-title. A tap on a card
-            // already means open, and a tap that sometimes opens
-            // and sometimes edits is the overloading this whole
-            // redesign was about removing.
-            .contextMenu {
-                Button("Rename", systemImage: "pencil") {
-                    onBeginEdit(project)
-                }
-                Button("Delete", systemImage: "trash", role: .destructive) {
-                    onDelete(project.id)
-                }
-            }
+            // No context menu. Long-press is the reorder drag here, and a
+            // menu on the same press wins it outright — the drag never starts.
+            // Rename lives in the project's own `...`; delete is the swipe
+            // below, which it already was.
             // The same insets as a pinned row. Without this the card took
             // the sidebar's defaults while the pinned row declared 16, so the
             // two sections started at different x — the most visible unearned
