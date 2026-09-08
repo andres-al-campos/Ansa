@@ -21,8 +21,12 @@ export interface Node {
   order: number
   /** folded in place — a view concern, but persisted so it survives reload */
   collapsed: boolean
-  /** favourited to the top of the projects list. Only meaningful on a root. */
+  /** favourited onto the home screen's Pinned shelf. Set on any node, not just
+   * a root — `projectSections` is what filters roots, not this flag. */
   pinned?: boolean
+  /** manual position on the Pinned shelf. Absent until the pin is dragged, and
+   * absent sorts last — see `pinnedItems`. */
+  pinOrder?: number
   /** when this project was last opened, so Recents can sort by it. Root-only. */
   lastOpenedAt?: number
   createdAt: number
@@ -454,6 +458,10 @@ export function setPinned(tree: Tree, id: NodeId, pinned: boolean): Tree {
   return tree.map((n) => (n.id === id ? { ...n, pinned } : n))
 }
 
+export function setPinOrder(tree: Tree, id: NodeId, order: number): Tree {
+  return tree.map((n) => (n.id === id ? { ...n, pinOrder: order } : n))
+}
+
 /** Stamp a project as just-opened, so Recents can sort by last visit. */
 export function markOpened(tree: Tree, id: NodeId, at: number = Date.now()): Tree {
   return tree.map((n) => (n.id === id ? { ...n, lastOpenedAt: at } : n))
@@ -492,6 +500,9 @@ export function projectSections(tree: Tree): { pinned: Node[]; unpinned: Node[] 
  *
  * Ordered by depth then manual order, so shallower pins — the ones nearer a
  * project, and so more likely to be a checkpoint — come first.
+ *
+ * Tasks only. The shelf itself is `pinnedItems`, which includes pinned roots;
+ * this stays for callers that want the tasks apart from the projects.
  */
 export function pinnedTasks(tree: Tree): { node: Node; trail: Node[] }[] {
   return tree
@@ -499,6 +510,31 @@ export function pinnedTasks(tree: Tree): { node: Node; trail: Node[] }[] {
     .map((node) => ({ node, trail: lineageOf(tree, node.id).slice(0, -1) }))
     .sort((a, b) => a.trail.length - b.trail.length || a.node.order - b.node.order)
 }
+
+/**
+ * The Pinned shelf: every pinned node, projects and tasks in one order.
+ *
+ * One list because the shelf is arranged by hand — a grouping the machine
+ * imposes would fight the order the user set. A root carries an empty trail,
+ * which is also what says it is a project.
+ *
+ * `pinOrder` is the arrangement; the depth-then-order sort behind it is what an
+ * unarranged shelf falls back to. Absent sorts last, so a pin that has never
+ * been dragged sits after the ones that have rather than jumping to the top,
+ * and shipping this needs no backfill.
+ */
+export function pinnedItems(tree: Tree): { node: Node; trail: Node[] }[] {
+  return tree
+    .filter((n) => n.pinned)
+    .map((node) => ({ node, trail: lineageOf(tree, node.id).slice(0, -1) }))
+    .sort((a, b) => {
+      const ao = a.node.pinOrder ?? Infinity
+      const bo = b.node.pinOrder ?? Infinity
+      if (ao !== bo) return ao - bo
+      return a.trail.length - b.trail.length || a.node.order - b.node.order
+    })
+}
+
 
 /** Flat list of every project — pinned first, then the rest in manual order. */
 export function projectList(tree: Tree): Node[] {

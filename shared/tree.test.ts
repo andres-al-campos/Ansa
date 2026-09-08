@@ -17,6 +17,7 @@ import {
   moveNode,
   moveRow,
   outdent,
+  pinnedItems,
   pinnedTasks,
   progressOf,
   reconcileDone,
@@ -820,5 +821,56 @@ describe('pinnedTasks — the sidebar\'s checkpoints', () => {
 
   it('has nothing to show when nothing is pinned', () => {
     expect(pinnedTasks(fixture())).toEqual([])
+  })
+})
+
+describe('pinnedItems — the shelf, arranged by hand', () => {
+  const pin = (tree: Tree, ...ids: string[]) =>
+    tree.map((n) => (ids.includes(n.id) ? { ...n, pinned: true } : n))
+  const at = (tree: Tree, id: string, pinOrder: number) =>
+    tree.map((n) => (n.id === id ? { ...n, pinOrder } : n))
+
+  it('holds projects and tasks in one list', () => {
+    // The shelf is arranged by hand, so it cannot also be grouped by kind —
+    // the two rules would disagree the moment a task was dragged above a
+    // project.
+    const tree = pin(fixture(), 'taxes', 'g2')
+    expect(pinnedItems(tree).map((p) => p.node.id).sort()).toEqual(['g2', 'taxes'])
+  })
+
+  it('gives a pinned project an empty trail', () => {
+    // Which is also what says it is a project — a root has no lineage above it.
+    const [{ trail }] = pinnedItems(pin(fixture(), 'taxes'))
+    expect(trail).toEqual([])
+  })
+
+  it('follows pinOrder when it is set', () => {
+    const tree = at(at(pin(fixture(), 'taxes', 'g2'), 'g2', 0), 'taxes', 1)
+    expect(pinnedItems(tree).map((p) => p.node.id)).toEqual(['g2', 'taxes'])
+  })
+
+  it('sorts an unarranged pin after every arranged one', () => {
+    // Absent means never dragged. Sorting those last means a new pin appears at
+    // the end rather than displacing an order someone set by hand.
+    const tree = at(pin(fixture(), 'taxes', 'g2'), 'g2', 0)
+    expect(pinnedItems(tree).map((p) => p.node.id)).toEqual(['g2', 'taxes'])
+  })
+
+  it('falls back to depth then order with nothing arranged', () => {
+    // The old shelf's rule, kept as the fallback so shipping pinOrder needs no
+    // backfill and an untouched shelf looks the same as it did.
+    const tree = pin(fixture(), 'p2b1', 'gather')
+    expect(pinnedItems(tree).map((p) => p.node.id)).toEqual(['gather', 'p2b1'])
+  })
+
+  it('drops a pin when its node is deleted', () => {
+    // Membership is still the flag, so a deleted node takes its shelf entry
+    // with it and no stale pinOrder can resurrect it.
+    const tree = removeNode(at(pin(fixture(), 'p2b1'), 'p2b1', 0), 'p2b')
+    expect(pinnedItems(tree)).toEqual([])
+  })
+
+  it('has nothing to show when nothing is pinned', () => {
+    expect(pinnedItems(fixture())).toEqual([])
   })
 })

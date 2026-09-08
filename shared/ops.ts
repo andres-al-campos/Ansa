@@ -32,8 +32,10 @@ import {
   moveNode,
   outdent,
   reconcileDone,
+  pinnedItems,
   removeNode,
   setDone,
+  setPinOrder,
   setPinned,
   setText,
   toggleCollapsed,
@@ -87,6 +89,7 @@ export type Op =
     }
   | { op: 'toggleCollapsed'; id: NodeId }
   | { op: 'setPinned'; id: NodeId; pinned: boolean }
+  | { op: 'setPinOrder'; id: NodeId; order: number }
   | { op: 'markOpened'; id: NodeId; at: number }
 
 export type OpKind = Op['op']
@@ -105,6 +108,7 @@ export const OP_KINDS = [
   'insertAtDepth',
   'toggleCollapsed',
   'setPinned',
+  'setPinOrder',
   'markOpened',
 ] as const satisfies readonly OpKind[]
 
@@ -192,6 +196,8 @@ export function applyOp(tree: Tree, op: Op): { tree: Tree; completed: NodeId[] }
       return { tree: toggleCollapsed(tree, op.id), completed: [] }
     case 'setPinned':
       return { tree: setPinned(tree, op.id, op.pinned), completed: [] }
+    case 'setPinOrder':
+      return { tree: setPinOrder(tree, op.id, op.order), completed: [] }
     case 'markOpened':
       return { tree: markOpened(tree, op.id, op.at), completed: [] }
   }
@@ -296,6 +302,11 @@ export function parseOp(input: unknown): { op: Op } | { error: string } {
       if (pinned === undefined) return miss('pinned', 'a boolean')
       return { op: { op: 'setPinned', id: id!, pinned } }
     }
+    case 'setPinOrder': {
+      const order = num('order')
+      if (order === undefined) return miss('order', 'a number')
+      return { op: { op: 'setPinOrder', id: id!, order } }
+    }
     case 'markOpened': {
       const at = num('at')
       if (at === undefined) return miss('at', 'a number')
@@ -323,4 +334,27 @@ export function parseSpecs(val: unknown, path: string): SubtreeSpec[] | string {
     out.push(spec)
   }
   return out
+}
+
+/**
+ * The ops that move the pin at `from` to `to` on the shelf.
+ *
+ * Derived here rather than in a view: the shelf's order is `pinnedItems`' sort,
+ * so the index a drag reports only means something against that same list, and
+ * a copy of the rule in a client is how the two drift apart.
+ *
+ * Renumbers densely from 0, so a shelf that was only partly arranged comes out
+ * fully arranged and the `?? Infinity` fallback stops applying to it. Only the
+ * nodes whose position actually changed get an op.
+ */
+export function reorderPinsOps(tree: Tree, from: number, to: number): Op[] {
+  const items = pinnedItems(tree).map((i) => i.node)
+  if (from < 0 || from >= items.length) return []
+  const at = Math.max(0, Math.min(to, items.length - 1))
+  if (at === from) return []
+  const moved = items.splice(from, 1)[0]
+  items.splice(at, 0, moved)
+  return items.flatMap((n, i) =>
+    n.pinOrder === i ? [] : [{ op: 'setPinOrder' as const, id: n.id, order: i }],
+  )
 }

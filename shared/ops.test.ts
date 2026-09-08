@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { applyOp, parseOp, OP_KINDS, type Op } from './ops'
+import { applyOp, parseOp, reorderPinsOps, OP_KINDS, type Op } from './ops'
 import {
   adoptFollowing,
   byId,
@@ -8,9 +8,11 @@ import {
   insertAtDepth,
   moveNode,
   outdent,
+  pinnedItems,
   reconcileDone,
   removeNode,
   setDone,
+  setPinOrder,
   setPinned,
   setText,
   toggleCollapsed,
@@ -128,6 +130,13 @@ describe('applyOp matches the pure op it names', () => {
     )
   })
 
+  it('setPinOrder', () => {
+    const t = fixture()
+    expect(applyOp(t, { op: 'setPinOrder', id: 'flat', order: 2 }).tree).toEqual(
+      setPinOrder(t, 'flat', 2),
+    )
+  })
+
   it('markOpened stores the timestamp the op carried, not the clock', () => {
     const t = fixture()
     const at = 1_700_000_000_000
@@ -225,6 +234,7 @@ describe('applyOp is total', () => {
     { op: 'insertAtDepth', id: 'ghost', anchorId: 'p1', depth: 0, side: 'after', scope: null },
     { op: 'toggleCollapsed', id: 'ghost' },
     { op: 'setPinned', id: 'ghost', pinned: true },
+    { op: 'setPinOrder', id: 'ghost', order: 0 },
     { op: 'markOpened', id: 'ghost', at: 1 },
   ]
 
@@ -300,6 +310,7 @@ describe('parseOp', () => {
       insertAtDepth: { op: 'insertAtDepth', id: 'a', anchorId: 'b', depth: 0, side: 'after', scope: null },
       toggleCollapsed: { op: 'toggleCollapsed', id: 'a' },
       setPinned: { op: 'setPinned', id: 'a', pinned: true },
+      setPinOrder: { op: 'setPinOrder', id: 'a', order: 0 },
       markOpened: { op: 'markOpened', id: 'a', at: 1 },
     }
     for (const kind of OP_KINDS) {
@@ -366,5 +377,61 @@ describe('reconcile is scoped to the projects the op touched', () => {
     // 'a' lost its only unfinished child; 'b' gained one.
     expect(byId(out, 'a')!.done).toBe(true)
     expect(byId(out, 'b')!.done).toBe(false)
+  })
+})
+
+describe('reorderPinsOps — dragging a pin on the shelf', () => {
+  /** Pin ids in order, arranging them densely from 0. */
+  const shelf = (tree: Tree, ...ids: string[]) =>
+    tree.map((n) =>
+      ids.includes(n.id) ? { ...n, pinned: true, pinOrder: ids.indexOf(n.id) } : n,
+    )
+
+  it('renumbers only what moved', () => {
+    // A drag past one neighbour swaps two positions; every pin below is
+    // untouched, so an op for it would be a write that changes nothing.
+    const t = shelf(fixture(), 'taxes', 'g2', 'gather')
+    expect(reorderPinsOps(t, 0, 1)).toEqual([
+      { op: 'setPinOrder', id: 'g2', order: 0 },
+      { op: 'setPinOrder', id: 'taxes', order: 1 },
+    ])
+  })
+
+  it('arranges a shelf that was never dragged', () => {
+    // Everything starts absent, so the first drag has to write a position for
+    // every pin — that is what takes the list off the depth fallback.
+    const t = fixture().map((n) =>
+      ['taxes', 'g2'].includes(n.id) ? { ...n, pinned: true } : n,
+    )
+    expect(reorderPinsOps(t, 1, 0)).toEqual([
+      { op: 'setPinOrder', id: 'g2', order: 0 },
+      { op: 'setPinOrder', id: 'taxes', order: 1 },
+    ])
+  })
+
+  it('is a no-op when the pin lands where it started', () => {
+    const t = shelf(fixture(), 'taxes', 'g2')
+    expect(reorderPinsOps(t, 0, 0)).toEqual([])
+  })
+
+  it('clamps a drop past the end', () => {
+    const t = shelf(fixture(), 'taxes', 'g2', 'gather')
+    expect(reorderPinsOps(t, 0, 99)).toEqual([
+      { op: 'setPinOrder', id: 'g2', order: 0 },
+      { op: 'setPinOrder', id: 'gather', order: 1 },
+      { op: 'setPinOrder', id: 'taxes', order: 2 },
+    ])
+  })
+
+  it('ignores a source index that is not on the shelf', () => {
+    const t = shelf(fixture(), 'taxes')
+    expect(reorderPinsOps(t, 5, 0)).toEqual([])
+  })
+
+  it('applies to the order the shelf then reads back', () => {
+    // The ops and the sort have to agree, since one is derived from the other.
+    const t = shelf(fixture(), 'taxes', 'g2', 'gather')
+    const moved = reorderPinsOps(t, 2, 0).reduce((acc, op) => applyOp(acc, op).tree, t)
+    expect(pinnedItems(moved).map((p) => p.node.id)).toEqual(['gather', 'taxes', 'g2'])
   })
 })
