@@ -1121,10 +1121,9 @@ struct OutlineView: View {
 
     /// Create the empty row the user types into, below the anchor.
     ///
-    /// Placement is the rule the capture field already used: a sibling below
-    /// whatever row was last touched, or the bottom of the project when nothing
-    /// has been. Depth is deliberately not guessed — a new task goes beside the
-    /// last one, never inside it.
+    /// Placement follows `slot(below:)`: inside the anchor when it is a parent,
+    /// beside it when it is a leaf, or the bottom of the project when no row has
+    /// been touched.
     private func addRow() {
         // The id and the timestamp are minted here and carried by the op, so the
         // server applies it to exactly the node this device created.
@@ -1144,17 +1143,16 @@ struct OutlineView: View {
         // it is built a moment later.
         edit.begin(id: id, text: "")
         focusedRow = id
+        let place = slot(below: anchor)
         apply(.addChild(
-            id: id, parentId: anchor?.parentId ?? scope, text: "",
+            id: id, parentId: place?.parent ?? scope, text: "",
             at: Date().timeIntervalSince1970 * 1000))
         // `addChild` appends, so the row lands at the end of its parent's
-        // children and then moves up into the slot below the anchor. Two ops
+        // children and then moves up into the slot the rule picked. Two ops
         // rather than one because there is no op that inserts a *new* node at a
         // position — `insertAtDepth` moves a node that already exists.
-        if let anchor,
-           let i = TreeOps.childrenOf(tree, anchor.parentId)
-            .firstIndex(where: { $0.id == anchor.id }) {
-            apply(.moveNode(id: id, parentId: anchor.parentId, index: i + 1))
+        if let place {
+            apply(.moveNode(id: id, parentId: place.parent, index: place.index))
         }
         // Not routed through `beginEdit` any more. That path defers focus to
         // the next runloop turn for a row that already exists; here the field
@@ -1165,6 +1163,29 @@ struct OutlineView: View {
         // this: a bar pinned to the bottom edge sits above the keyboard by
         // construction, while a row does not.
         scrollInto(id)
+    }
+
+    /// Where a new row goes relative to the row last touched.
+    ///
+    /// A parent takes it as its first child, a leaf as the sibling under it.
+    /// Tapping a row with a list under it reads as "add to this list", and
+    /// tapping one with nothing under it as "add next to this" — the same rule
+    /// an outline uses on Return. First child rather than last so the new row
+    /// appears directly beneath the one that was tapped, wherever the list ends.
+    ///
+    /// Expands a collapsed parent, since otherwise the row being typed into is
+    /// inside a fold and off screen.
+    ///
+    /// nil when there is no anchor at all; the caller appends to the project.
+    private func slot(below anchor: Node?) -> (parent: NodeId?, index: Int)? {
+        guard let anchor else { return nil }
+        if !TreeOps.childrenOf(tree, anchor.id).isEmpty {
+            if anchor.collapsed { apply(.toggleCollapsed(id: anchor.id)) }
+            return (anchor.id, 0)
+        }
+        guard let i = TreeOps.childrenOf(tree, anchor.parentId)
+            .firstIndex(where: { $0.id == anchor.id }) else { return nil }
+        return (anchor.parentId, i + 1)
     }
 
     /// Bring a row clear of the keyboard.
@@ -1239,14 +1260,12 @@ struct OutlineView: View {
         // certain here rather than to trust every caller to have cleared it.
         dropSpare()
         let id = TreeOps.newId()
-        guard let anchor = TreeOps.byId(tree, anchorId) else { return }
+        guard let anchor = TreeOps.byId(tree, anchorId),
+              let place = slot(below: anchor) else { return }
         apply(.addChild(
-            id: id, parentId: anchor.parentId, text: "",
+            id: id, parentId: place.parent, text: "",
             at: Date().timeIntervalSince1970 * 1000))
-        if let i = TreeOps.childrenOf(tree, anchor.parentId)
-            .firstIndex(where: { $0.id == anchorId }) {
-            apply(.moveNode(id: id, parentId: anchor.parentId, index: i + 1))
-        }
+        apply(.moveNode(id: id, parentId: place.parent, index: place.index))
         spareRow = id
     }
 
