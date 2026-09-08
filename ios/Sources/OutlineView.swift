@@ -2403,20 +2403,19 @@ enum Space {
     /// A row inside a container that already carries its own padding.
     static let inner: CGFloat = 4
 
-    /// Added to a row that would otherwise sit shorter than its neighbours.
-    ///
-    /// The grid's three rows hold different things — a pinned row stacks two
-    /// lines of text, a project row one line and a progress bar, the trash one
-    /// line — so equal insets do not make equal heights. This is what the two
-    /// shorter ones add to meet the tallest, levelling up so the row carrying
-    /// the most keeps its space.
-    static let lift: CGFloat = 2
-
     /// A single-line row that stands on its own and takes a tap.
     static let row: CGFloat = 8
 
     /// A block set apart from what surrounds it.
     static let block: CGFloat = 12
+
+    /// The shortest a row on the home screen is allowed to be.
+    ///
+    /// Above Apple's 44pt minimum, which the rows already met on content alone
+    /// — this is for the room, not the tap target. A minimum rather than a
+    /// fixed height: the rows hold different things, and at large Dynamic Type
+    /// a fixed one would clip whichever row outgrew it.
+    static let tap: CGFloat = 48
 
     /// The screen edge. Anything that has to line up with another section's
     /// left edge measures from here.
@@ -3055,15 +3054,9 @@ private struct ProjectGrid: View {
                             Image(systemName: "trash")
                                 .foregroundStyle(.secondary)
                         }
-                        // Padding stands in for the line this row does not
-                        // have: a project row is two lines — name, then the
-                        // progress bar — and this is one. `row` would be too
-                        // much, as it was when this row also took the sidebar's
-                        // default insets and so paid for that second line twice.
-                        //
-                        // The extra 2 over `inner` is the same 2 a project row
-                        // adds, and for the same reason — see `Space.lift`.
-                        .padding(.vertical, Space.inner + Space.lift)
+                        // One line where a project row has two, so the shared
+                        // minimum is what gives this row its height.
+                        .frame(minHeight: Space.tap, alignment: .leading)
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
@@ -3176,6 +3169,7 @@ private struct PinnedTaskRow: View {
             // the project card uses, so both sections share a vertical rhythm
             // and differ only where they mean to. No pin glyph either — every
             // row here is pinned, so the marker said what the header said.
+            .frame(minHeight: Space.tap, alignment: .leading)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -3259,12 +3253,11 @@ private struct ProjectRow: View {
                         }
                     }
             }
-        // Insets carry the rest — see the pinned row. This 2 is the one thing
-        // on top of them: a pinned row stacks two lines of text where this
-        // stacks one line and a 4pt bar, so it stands ~4pt taller on content
-        // alone. Levelling up rather than down, so the row with the most in it
-        // keeps its space and nothing gets cramped to match.
-        .padding(.vertical, Space.lift)
+        // The three row kinds hold different things and so come out different
+        // heights on content alone. A shared minimum levels them and gives each
+        // one a full tap target; `maxHeight: .infinity` lets a row that needs
+        // more still take it.
+        .frame(minHeight: Space.tap, alignment: .leading)
         .contentShape(Rectangle())
     }
 }
