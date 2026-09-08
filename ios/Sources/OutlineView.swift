@@ -2199,7 +2199,7 @@ private struct ScopeTitle: View {
         Group {
             TextField("Name", text: $editText)
                 .textFieldStyle(.plain)
-                .font(.title3.weight(.semibold))
+                .font(.subheadline.weight(.semibold))
                 .multilineTextAlignment(.center)
                 .focused(typing)
                 .submitLabel(.done)
@@ -2287,7 +2287,7 @@ private struct ScopeTitle: View {
         // splitting it with a caption.
         HStack(spacing: 4) {
             Text(title)
-                .font(.title3.weight(.semibold))
+                .font(.subheadline.weight(.semibold))
                 .lineLimit(1)
                 .truncationMode(.tail)
 
@@ -2932,6 +2932,10 @@ private struct ProjectGrid: View {
     /// about how you like the screen.
     @State private var showAllPins = false
 
+    /// True while a row is off the ground, from `ListLiftFeedback`. A lifted
+    /// row's card is square — see `HomeCard`.
+    @State private var lifted = false
+
     /// How many pins the shelf shows before it stops. A shelf is only a shelf
     /// while you can take it in at a glance — past that it is a second list,
     /// and the projects it sits above start falling off the screen.
@@ -2941,6 +2945,13 @@ private struct ProjectGrid: View {
 
     private var shownPins: [(node: Node, trail: [Node])] {
         showAllPins ? pins : Array(pins.prefix(pinCap))
+    }
+
+    /// How many rows the shelf's card is drawn over — the pins, and the "show
+    /// all" button when there is one. It is what decides which row rounds its
+    /// bottom corners.
+    private var pinRowCount: Int {
+        shownPins.count + (pinCount > pinCap && !showAllPins ? 1 : 0)
     }
 
     var body: some View {
@@ -2965,72 +2976,97 @@ private struct ProjectGrid: View {
                 // An uncapped one at the top would push the projects off the
                 // screen; a short one is the reason you came to this screen.
                 if !nothingPinned {
-                    Section(isExpanded: $pinnedOpen.animated) {
-                        // One `ForEach` over projects and tasks together: the
-                        // shelf is arranged by hand, and a drag can only move a
-                        // row within the list it is drawn in.
-                        ForEach(shownPins, id: \.node.id) { pin in
-                            if pin.trail.isEmpty {
-                                projectRow(pin.node)
-                            } else {
-                                PinnedTaskRow(
-                                    node: pin.node,
-                                    trail: pin.trail,
-                                    progress: TreeOps.progressOf(tree, pin.node.id),
-                                    onOpen: { onOpen(pin.node.id) })
-                                    // The sidebar style's own row padding sits on
-                                    // top of the row's, and the two together made a
-                                    // two-line row as tall as a project card. Set
-                                    // explicitly so the row's own padding is the
-                                    // only thing deciding its height.
-                                    .listRowInsets(
-                                        EdgeInsets(
-                                            top: Space.inner, leading: Space.gutter,
-                                            bottom: Space.inner, trailing: Space.gutter))
-                            }
-                        }
-                        // Only while the whole shelf is showing. A drag inside a
-                        // capped list would renumber against positions the user
-                        // cannot see.
-                        .onMove(perform: showAllPins || pinCount <= pinCap ? onMovePin : nil)
-
-                        // A row rather than an inner scroll view. Nesting one
-                        // scroller inside the page's would make a single drag
-                        // ambiguous about which list it moves, and hand off
-                        // mid-gesture when the inner one hits its end.
-                        if pinCount > pinCap && !showAllPins {
-                            Button {
-                                // Explicit, because a bare state write here
-                                // pops five rows in on one frame and takes the
-                                // button out from under the finger in the same
-                                // one. The fold above animates itself; this is
-                                // a plain `@State` change and gets nothing
-                                // unless it asks.
-                                withAnimation(.easeOut(duration: 0.2)) {
-                                    showAllPins = true
+                    Section {
+                        // Folded by hand rather than with `Section(isExpanded:)`,
+                        // which only folds under `.sidebar` and `.insetGrouped` —
+                        // and those are the styles that draw the card whose
+                        // corners cannot be squared. Emitting no rows folds the
+                        // section under any style.
+                        if pinnedOpen {
+                            // One `ForEach` over projects and tasks together: the
+                            // shelf is arranged by hand, and a drag can only move
+                            // a row within the list it is drawn in.
+                            ForEach(Array(shownPins.enumerated()), id: \.element.node.id) { i, pin in
+                                Group {
+                                    if pin.trail.isEmpty {
+                                        projectRow(pin.node)
+                                    } else {
+                                        PinnedTaskRow(
+                                            node: pin.node,
+                                            trail: pin.trail,
+                                            progress: TreeOps.progressOf(tree, pin.node.id),
+                                            onOpen: { onOpen(pin.node.id) })
+                                    }
                                 }
-                            } label: {
-                                Text("Show all \(pinCount)")
-                                    .font(.subheadline)
-                                    .foregroundStyle(.tint)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                    .padding(.vertical, Space.row)
-                                    .contentShape(Rectangle())
+                                // Declared here for every row in the section, so
+                                // the two kinds start at the same x. The card
+                                // below is inset by the same gutter.
+                                .listRowInsets(
+                                    EdgeInsets(
+                                        top: Space.inner, leading: Space.gutter,
+                                        bottom: Space.inner, trailing: Space.gutter))
+                                .modifier(
+                                    HomeCard(
+                                        slot: CardSlot.at(i, of: pinRowCount),
+                                        lifted: lifted,
+                                        separator: i < pinRowCount - 1))
                             }
-                            .buttonStyle(.plain)
+                            // Only while the whole shelf is showing. A drag inside
+                            // a capped list would renumber against positions the
+                            // user cannot see.
+                            .onMove(perform: showAllPins || pinCount <= pinCap ? onMovePin : nil)
+
+                            // A row rather than an inner scroll view. Nesting one
+                            // scroller inside the page's would make a single drag
+                            // ambiguous about which list it moves, and hand off
+                            // mid-gesture when the inner one hits its end.
+                            if pinCount > pinCap && !showAllPins {
+                                Button {
+                                    // Explicit, because a bare state write here
+                                    // pops five rows in on one frame and takes the
+                                    // button out from under the finger in the same
+                                    // one. The fold above animates itself; this is
+                                    // a plain `@State` change and gets nothing
+                                    // unless it asks.
+                                    withAnimation(.easeOut(duration: 0.2)) {
+                                        showAllPins = true
+                                    }
+                                } label: {
+                                    Text("Show all \(pinCount)")
+                                        .font(.subheadline)
+                                        .foregroundStyle(.tint)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                        .padding(.vertical, Space.row)
+                                        .contentShape(Rectangle())
+                                }
+                                .buttonStyle(.plain)
+                                .listRowInsets(
+                                    EdgeInsets(
+                                        top: Space.inner, leading: Space.gutter,
+                                        bottom: Space.inner, trailing: Space.gutter))
+                                .modifier(
+                                    HomeCard(slot: .bottom, lifted: false, separator: false))
+                            }
                         }
                     } header: {
-                        Text("Pinned")
+                        SectionHeader(title: "Pinned", open: $pinnedOpen.animated)
                     }
                 }
 
-                Section(isExpanded: $projectsOpen.animated) {
-                    ForEach(projects) { project in
-                        projectRow(project)
+                Section {
+                    if projectsOpen {
+                        ForEach(Array(projects.enumerated()), id: \.element.id) { i, project in
+                            projectRow(project)
+                                .modifier(
+                                    HomeCard(
+                                        slot: CardSlot.at(i, of: projects.count),
+                                        lifted: lifted,
+                                        separator: i < projects.count - 1))
+                        }
+                        .onMove(perform: onMoveProject)
                     }
-                    .onMove(perform: onMoveProject)
                 } header: {
-                    Text("Projects")
+                    SectionHeader(title: "Projects", open: $projectsOpen.animated)
                 }
 
                 // Its own section with no header, so it reads as a place of its
@@ -3068,15 +3104,23 @@ private struct ProjectGrid: View {
                         EdgeInsets(
                             top: Space.inner, leading: Space.gutter,
                             bottom: Space.inner, trailing: Space.gutter))
+                    .modifier(HomeCard(slot: .only, lifted: false, separator: false))
                     // On a row, not on the `List`: the recognizer has to reach
                     // the collection view, and a `.background` on the list is
                     // hosted outside it — the walk up finds no scroll view and
                     // silently attaches nothing. This row is always here and
                     // there is only ever one of it.
-                    .background(ListLiftFeedback().frame(width: 0, height: 0))
+                    .background(
+                        ListLiftFeedback(onDragChanged: { lifted = $0 })
+                            .frame(width: 0, height: 0))
                 }
             }
-            .listStyle(.sidebar)
+            .listStyle(.plain)
+            // The grouped grey the cards sit on. `.sidebar` painted this; under
+            // `.plain` the list's own background is the page's, so it has to be
+            // said.
+            .scrollContentBackground(.hidden)
+            .background(Color(.systemGroupedBackground))
         }
     }
 
@@ -3116,6 +3160,138 @@ private struct ProjectGrid: View {
                     Label("Delete", systemImage: "trash")
                 }
             }
+    }
+}
+
+/// A home-screen section header that folds its section.
+///
+/// The chevron and the tap are drawn here because `Section(isExpanded:)` only
+/// folds under the list styles whose card this screen had to stop using.
+private struct SectionHeader: View {
+    let title: String
+    @Binding var open: Bool
+
+    var body: some View {
+        Button {
+            open.toggle()
+        } label: {
+            HStack {
+                Text(title)
+                Spacer()
+                Image(systemName: "chevron.down")
+                    // Rotated rather than swapped for `chevron.right`: a glyph
+                    // swap cuts, and the turn is what says the section moved.
+                    .rotationEffect(.degrees(open ? 0 : -90))
+                    .font(.footnote.weight(.semibold))
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(.secondary)
+        .textCase(nil)
+        .font(.subheadline.weight(.semibold))
+        .listRowInsets(
+            EdgeInsets(
+                top: Space.block, leading: Space.gutter,
+                bottom: Space.row, trailing: Space.gutter))
+    }
+}
+
+/// Where a row sits in its section's card, which is what its corners round to.
+private enum CardSlot {
+    case only, top, middle, bottom
+
+    var corners: UIRectCorner {
+        switch self {
+        case .only: return .allCorners
+        case .top: return [.topLeft, .topRight]
+        case .middle: return []
+        case .bottom: return [.bottomLeft, .bottomRight]
+        }
+    }
+
+    static func at(_ i: Int, of n: Int) -> CardSlot {
+        if n <= 1 { return .only }
+        if i == 0 { return .top }
+        if i == n - 1 { return .bottom }
+        return .middle
+    }
+}
+
+/// The grouped card the home screen's rows sit on, drawn here rather than by
+/// `.listStyle(.sidebar)`.
+///
+/// The system draws the same card, but its rounding is unreachable — every
+/// layer on the cell reports a radius of 0 while the card is visibly round, so
+/// it is drawn by a private path and cannot be squared for a row in flight.
+/// That is the whole reason this exists: a row carrying the section's rounded
+/// top corners into the middle of the list looks like it does not belong there.
+private struct HomeCard: ViewModifier {
+    let slot: CardSlot
+    /// True while this row is off the ground. A lifted row is square whatever
+    /// its slot: the rounding says "edge of the section", which stops being
+    /// true the moment the row leaves its place.
+    let lifted: Bool
+    /// Whether a hairline goes under this row. Not on the last one, where it
+    /// would draw across the card's bottom edge.
+    let separator: Bool
+
+    private var radius: CGFloat { 10 }
+
+    func body(content: Content) -> some View {
+        content
+            // The rows declare `Space.gutter` insets, which is the card's own
+            // inset from the screen — so without this the text lands exactly on
+            // the card's edge. This is the gutter *inside* the card.
+            .padding(.horizontal, Space.gutter)
+            .listRowSeparator(.hidden)
+            .listRowBackground(
+                ZStack(alignment: .bottom) {
+                    RoundedCorners(
+                        radius: radius,
+                        corners: lifted ? [] : slot.corners
+                    )
+                    .fill(Color(.secondarySystemGroupedBackground))
+                    if separator && !lifted {
+                        Rectangle()
+                            .fill(Color(.separator))
+                            // A hairline, not a point: `.separator` at 1pt is a
+                            // heavier line than the list's own.
+                            .frame(height: 1 / UIScreen.main.scale)
+                            // Indented to the text, the way a grouped list's is
+                            // — the card already holds the outer gutter, so this
+                            // is the row's own inner one.
+                            .padding(.leading, Space.gutter)
+                    }
+                }
+                .animation(.easeOut(duration: 0.12), value: lifted)
+                // The card is inset from the screen; `.listRowInsets` only
+                // insets the row's content, so without this the card runs edge
+                // to edge and the grey page never shows beside it.
+                //
+                // The rows declare the same gutter, which puts their text this
+                // far in again — inside the card rather than against its edge,
+                // which is where a grouped row's text sits.
+                .padding(.horizontal, Space.gutter)
+            )
+    }
+}
+
+/// A rectangle rounded on some corners and square on the others.
+///
+/// `RoundedRectangle` rounds all four, and `.cornerRadius(_:corners:)` does not
+/// exist on a `Shape`, so the path is built by hand.
+private struct RoundedCorners: Shape {
+    let radius: CGFloat
+    let corners: UIRectCorner
+
+    func path(in rect: CGRect) -> Path {
+        Path(
+            UIBezierPath(
+                roundedRect: rect,
+                byRoundingCorners: corners,
+                cornerRadii: CGSize(width: radius, height: radius)
+            ).cgPath)
     }
 }
 
