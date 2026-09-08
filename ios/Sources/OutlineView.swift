@@ -3150,11 +3150,15 @@ private struct PinnedTaskRow: View {
                     // navigate there, and this row is the thing that means you
                     // do not have to.
                     //
+                    // `.caption` is the smallest size on this screen — 11pt in
+                    // `.secondary` was small and low-contrast at once, and hard
+                    // to read for it. Against a 17pt name the colour is already
+                    // enough to make this the lesser of the two.
+                    //
                     // `.secondary`, not `.tertiary` — tertiary is 26% opacity,
-                    // about 1.8:1 against the list. `.caption2` against `.body`
-                    // already makes it the lesser of the two.
+                    // about 1.8:1 against the list.
                     Text(projectName)
-                        .font(.caption2)
+                        .font(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
