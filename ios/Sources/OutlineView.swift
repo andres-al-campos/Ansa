@@ -2415,10 +2415,10 @@ enum Space {
     /// it from touching the card before it.
     static let sectionBreak: CGFloat = 6
 
-    /// The whole span a section header puts between two cards — its own row plus
-    /// the space either side of it. What a headerless section leaves blank so
-    /// its break reads like the others.
-    static let headerBreak: CGFloat = 56
+    /// Above a headerless section's card. Half a row: the full span a header
+    /// makes is too much when nothing is written in it — an empty gap reads
+    /// larger than the same gap with a header sitting in it.
+    static let headerBreak: CGFloat = tap / 2
 
     /// The shortest a row on the home screen is allowed to be.
     ///
@@ -3139,11 +3139,10 @@ private struct ProjectGrid: View {
                     .modifier(
                         HomeCard(
                             slot: .only, lifted: false, separator: false,
-                            // The break a section header makes, drawn empty.
-                            // This row has no header, and matching only the
-                            // header's *inset* left it far tighter than every
-                            // other break on the screen — the header's own row
-                            // is most of the span.
+                            // This row has no header. Matching the header's
+                            // *inset* alone left it far tighter than every other
+                            // break on the screen; matching the header's whole
+                            // span was too much, empty.
                             gapAbove: Space.headerBreak))
                 }
             }
