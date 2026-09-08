@@ -3078,6 +3078,9 @@ private struct ProjectGrid: View {
                 }
             }
             .listStyle(.sidebar)
+            // Both lists reorder, and both sit in this one `List`, so a single
+            // recognizer on its scroll view covers the shelf and the projects.
+            .background(ListLiftFeedback().frame(width: 0, height: 0))
         }
     }
 
