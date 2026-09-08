@@ -3135,8 +3135,12 @@ private struct PinnedTaskRow: View {
         Button(action: onOpen) {
             HStack(spacing: 6) {
                 VStack(alignment: .leading, spacing: 1) {
+                    // `.body`, the same as a project name: a pinned row and a
+                    // project row sit in the same list, and a smaller name read
+                    // as a lesser row rather than a different kind of one. The
+                    // trail underneath is what says which is which.
                     Text(node.text.isEmpty ? "Untitled" : node.text)
-                        .font(.subheadline.weight(.medium))
+                        .font(.body.weight(.medium))
                         .foregroundStyle(.primary)
                         .lineLimit(1)
 
@@ -3147,8 +3151,8 @@ private struct PinnedTaskRow: View {
                     // do not have to.
                     //
                     // `.secondary`, not `.tertiary` — tertiary is 26% opacity,
-                    // about 1.8:1 against the list. `.caption2` against
-                    // `.subheadline` already makes it the lesser of the two.
+                    // about 1.8:1 against the list. `.caption2` against `.body`
+                    // already makes it the lesser of the two.
                     Text(projectName)
                         .font(.caption2)
                         .foregroundStyle(.secondary)
