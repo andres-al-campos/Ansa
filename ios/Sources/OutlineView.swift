@@ -3075,12 +3075,15 @@ private struct ProjectGrid: View {
                         EdgeInsets(
                             top: Space.inner, leading: Space.gutter,
                             bottom: Space.inner, trailing: Space.gutter))
+                    // On a row, not on the `List`: the recognizer has to reach
+                    // the collection view, and a `.background` on the list is
+                    // hosted outside it — the walk up finds no scroll view and
+                    // silently attaches nothing. This row is always here and
+                    // there is only ever one of it.
+                    .background(ListLiftFeedback().frame(width: 0, height: 0))
                 }
             }
             .listStyle(.sidebar)
-            // Both lists reorder, and both sit in this one `List`, so a single
-            // recognizer on its scroll view covers the shelf and the projects.
-            .background(ListLiftFeedback().frame(width: 0, height: 0))
         }
     }
 
