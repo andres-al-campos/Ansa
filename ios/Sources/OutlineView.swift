@@ -3125,7 +3125,10 @@ private struct ProjectGrid: View {
                     .background(
                         ListLiftFeedback(onDragChanged: { lifted = $0 })
                             .frame(width: 0, height: 0))
-                    .modifier(HomeCard(slot: .only, lifted: false, separator: false))
+                    .modifier(
+                        HomeCard(
+                            slot: .only, lifted: false, separator: false,
+                            gapAbove: Space.block))
                 }
             }
             .listStyle(.plain)
@@ -3248,11 +3251,15 @@ private struct HomeCard: ViewModifier {
     /// Whether a hairline goes under this row. Not on the last one, where it
     /// would draw across the card's bottom edge.
     let separator: Bool
+    /// Blank space above the card, for a section that has no header to carry it.
+    /// `.plain` puts nothing between sections of its own.
+    var gapAbove: CGFloat = 0
 
     private var radius: CGFloat { 10 }
 
     func body(content: Content) -> some View {
         content
+            .padding(.top, gapAbove)
             // The rows declare `Space.gutter` insets, which is the card's own
             // inset from the screen — so without this the text lands exactly on
             // the card's edge. This is the gutter *inside* the card.
@@ -3265,6 +3272,9 @@ private struct HomeCard: ViewModifier {
                         corners: lifted ? [] : slot.corners
                     )
                     .fill(Color(.secondarySystemGroupedBackground))
+                    // The gap is above the card, not inside it: the row is
+                    // taller by `gapAbove`, and this keeps the fill off it.
+                    .padding(.top, gapAbove)
                     if separator && !lifted {
                         Rectangle()
                             .fill(Color(.separator))
