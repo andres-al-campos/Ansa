@@ -2932,9 +2932,18 @@ private struct ProjectGrid: View {
     /// about how you like the screen.
     @State private var showAllPins = false
 
-    /// True while a row is off the ground, from `ListLiftFeedback`. A lifted
-    /// row's card is square — see `HomeCard`.
-    @State private var lifted = false
+    /// The row that is off the ground, from `ListLiftFeedback`, in the
+    /// collection view's own terms. Only that row's card goes square — see
+    /// `HomeCard`. A single flag squared every row at once, which reads as the
+    /// corners simply never being rounded.
+    @State private var lifted: IndexPath?
+
+    /// Whether the lifted row is this one. The pinned section is 0 and projects
+    /// is 1, matching the order they are declared in; the item index is the
+    /// `ForEach` index, since a header is not an item.
+    private func isLifted(section: Int, row: Int) -> Bool {
+        lifted == IndexPath(item: row, section: section)
+    }
 
     /// How many pins the shelf shows before it stops. A shelf is only a shelf
     /// while you can take it in at a glance — past that it is a second list,
@@ -3008,7 +3017,7 @@ private struct ProjectGrid: View {
                                 .modifier(
                                     HomeCard(
                                         slot: CardSlot.at(i, of: pinRowCount),
-                                        lifted: lifted,
+                                        lifted: isLifted(section: 0, row: i),
                                         separator: i < pinRowCount - 1))
                             }
                             // Only while the whole shelf is showing. A drag inside
@@ -3060,7 +3069,7 @@ private struct ProjectGrid: View {
                                 .modifier(
                                     HomeCard(
                                         slot: CardSlot.at(i, of: projects.count),
-                                        lifted: lifted,
+                                        lifted: isLifted(section: 1, row: i),
                                         separator: i < projects.count - 1))
                         }
                         .onMove(perform: onMoveProject)

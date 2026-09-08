@@ -17,7 +17,8 @@ import UIKit
 /// lands exactly when `List` arms its drag, with no duration to guess at.
 ///
 /// The same hook also reports whether a row is off the ground, via
-/// `onDragChanged`, which is what squares the lifted row's corners. There is no
+/// `onDragChanged`, which is what squares the lifted row's corners — that row
+/// only, so it reports *which* row rather than just that one is up. There is no
 /// one signal for that: `.onMove` fires once, on the drop, and the lift
 /// recognizer *ends* the moment the drag session takes over — measured, 763ms
 /// into a drag still under the finger. So the carry is two halves. The lift
@@ -28,9 +29,9 @@ import UIKit
 /// KVO-compliant — verified, an observer on it never fires. The poll runs on a
 /// display link and only between the lift and the drop.
 struct ListLiftFeedback: UIViewRepresentable {
-    /// True while a row is off the ground: from the press that arms the lift
-    /// until the drop.
-    var onDragChanged: (Bool) -> Void = { _ in }
+    /// The row that is off the ground, from the press that arms the lift until
+    /// the drop, and nil the rest of the time.
+    var onDragChanged: (IndexPath?) -> Void = { _ in }
 
     /// Marks the collection view we have already hooked, so a redraw does not
     /// add a second target and buzz twice.
@@ -43,7 +44,7 @@ struct ListLiftFeedback: UIViewRepresentable {
         private let haptic = UIImpactFeedbackGenerator(style: .heavy)
         /// Reassigned on every redraw, so the callback always reaches the
         /// current view's state rather than the one that built this coordinator.
-        var onDragChanged: (Bool) -> Void
+        var onDragChanged: (IndexPath?) -> Void
         /// Watches `hasActiveDrag` for the length of one carry. Nil when no row
         /// is off the ground.
         private var poll: CADisplayLink?
@@ -51,7 +52,7 @@ struct ListLiftFeedback: UIViewRepresentable {
         /// What we last told the view, so a poll tick only reports changes.
         private var carrying = false
 
-        init(_ onDragChanged: @escaping (Bool) -> Void) {
+        init(_ onDragChanged: @escaping (IndexPath?) -> Void) {
             self.onDragChanged = onDragChanged
         }
 
@@ -61,17 +62,20 @@ struct ListLiftFeedback: UIViewRepresentable {
             // Warmed for the next one: the first impact on a cold generator is
             // the one that arrives late.
             haptic.prepare()
-            beginCarry(g.view as? UICollectionView)
+            let collection = g.view as? UICollectionView
+            beginCarry(collection, at: collection.flatMap {
+                $0.indexPathForItem(at: g.location(in: $0))
+            })
         }
 
         /// The press has armed: the row is up. Start watching for the drop.
-        private func beginCarry(_ collection: UICollectionView?) {
-            guard let collection else { return }
+        private func beginCarry(_ collection: UICollectionView?, at row: IndexPath?) {
+            guard let collection, let row else { return }
             self.collection = collection
             carrying = true
             seen = false
             started = CACurrentMediaTime()
-            onDragChanged(true)
+            onDragChanged(row)
             poll?.invalidate()
             let link = CADisplayLink(target: self, selector: #selector(tick))
             link.add(to: .main, forMode: .common)
@@ -102,7 +106,7 @@ struct ListLiftFeedback: UIViewRepresentable {
             collection = nil
             guard carrying else { return }
             carrying = false
-            onDragChanged(false)
+            onDragChanged(nil)
         }
 
         /// Whether this carry has been an active drag at any point yet.
