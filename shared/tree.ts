@@ -484,32 +484,6 @@ export function projectSections(tree: Tree): { pinned: Node[]; unpinned: Node[] 
   return { pinned, unpinned }
 }
 
-/**
- * Pinned tasks — the pinned nodes that are not projects, each with its trail.
- *
- * Separate from `projectSections` rather than folded into it because the two
- * answer different questions. A pinned project is a place you go; a pinned task
- * is a specific thing partway down a tree, and it is only legible with the path
- * that leads to it — "Fix the sink" means nothing without "House › Kitchen".
- *
- * `pinned` was never root-only in the model: `setPinned` has always set the flag
- * on any node, and the root-only behaviour lived entirely in `projectSections`
- * filtering `roots`. So this needs no new field, and a pin survives a move for
- * free — the flag is on the node, and the trail is recomputed here on every
- * read rather than stored.
- *
- * Ordered by depth then manual order, so shallower pins — the ones nearer a
- * project, and so more likely to be a checkpoint — come first.
- *
- * Tasks only. The shelf itself is `pinnedItems`, which includes pinned roots;
- * this stays for callers that want the tasks apart from the projects.
- */
-export function pinnedTasks(tree: Tree): { node: Node; trail: Node[] }[] {
-  return tree
-    .filter((n) => n.pinned && n.parentId !== null)
-    .map((node) => ({ node, trail: lineageOf(tree, node.id).slice(0, -1) }))
-    .sort((a, b) => a.trail.length - b.trail.length || a.node.order - b.node.order)
-}
 
 /**
  * The Pinned shelf: every pinned node, projects and tasks in one order.

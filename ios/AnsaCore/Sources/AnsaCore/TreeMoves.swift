@@ -80,35 +80,6 @@ extension TreeOps {
         return (rs.filter { $0.pinned == true }, rs.filter { $0.pinned != true })
     }
 
-    /// Pinned tasks — the pinned nodes that are not projects, each with its trail.
-    ///
-    /// Separate from `projectSections` rather than folded into it because the two
-    /// answer different questions. A pinned project is a place you go; a pinned
-    /// task is a specific thing partway down a tree, and it is only legible with
-    /// the path that leads to it — "Fix the sink" means nothing without
-    /// "House › Kitchen".
-    ///
-    /// `pinned` was never root-only in the model: `setPinned` sets the flag on any
-    /// node, and the root-only behaviour lives entirely in `projectSections`
-    /// filtering `roots`. So a pin survives a move for free — the flag is on the
-    /// node, and the trail is recomputed on every read rather than stored.
-    ///
-    /// Ordered by depth then manual order, so shallower pins — the ones nearer a
-    /// project, and so more likely to be a checkpoint — come first.
-    ///
-    /// Tasks only. The shelf itself is `pinnedItems`, which includes pinned
-    /// roots; this stays for callers that want the tasks apart from the projects.
-    public static func pinnedTasks(_ tree: Tree) -> [(node: Node, trail: [Node])] {
-        tree
-            .filter { $0.pinned == true && $0.parentId != nil }
-            .map { (node: $0, trail: Array(lineageOf(tree, $0.id).dropLast())) }
-            .sorted {
-                $0.trail.count != $1.trail.count
-                    ? $0.trail.count < $1.trail.count
-                    : $0.node.order < $1.node.order
-            }
-    }
-
     /// The Pinned shelf: every pinned node, projects and tasks in one order.
     ///
     /// One list because the shelf is arranged by hand — a grouping the machine

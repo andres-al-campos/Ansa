@@ -16,7 +16,7 @@ import { useRipple } from './useRipple'
 import TrashPanel from './TrashPanel'
 import WhoAmIPanel from './WhoAmI'
 import SyncToast from './SyncToast'
-import type { Op } from '@shared/ops'
+import { applyOp, reorderPinsOps, type Op } from '@shared/ops'
 import {
   addChild,
   byId,
@@ -31,7 +31,7 @@ import {
   progressOf,
   projectList,
   projectSections,
-  pinnedTasks,
+  pinnedItems,
   removeNode,
   resumeScope,
   roots,
@@ -942,11 +942,84 @@ export default function Outliner({ initial }: { initial: Tree }) {
   // Sidebar projects, split into Pinned and Recent (most-recently-opened first).
   const sections = projectSections(tree)
 
-  // Pinned tasks — the pinned nodes that aren't projects. Its own section
-  // because the two answer different questions: a pinned project is a place you
-  // go, a pinned task is a specific thing partway down a tree, and it only
-  // reads with the trail that leads to it.
-  const checkpoints = pinnedTasks(tree)
+  // The shelf: pinned projects and pinned tasks in one hand-set order. A
+  // project is the entry with an empty trail; a task carries the trail that
+  // leads to it, which is what makes it legible.
+  const pins = pinnedItems(tree)
+
+  // Land a dragged pin before or after the row it was dropped on. Both indices
+  // are into the shelf as drawn, and `reorderPinsOps` renumbers the whole list,
+  // so a pinned project and a pinned task reorder against each other freely.
+  function dropPin(overId: NodeId, after: boolean) {
+    const dragging = sideDragRef.current
+    sideDragRef.current = null
+    setSideDrag(null)
+    setSideOver(null)
+    if (!dragging || dragging === overId) return
+    const items = pinnedItems(tree).map((i) => i.node)
+    const from = items.findIndex((n) => n.id === dragging)
+    const over = items.findIndex((n) => n.id === overId)
+    if (from < 0 || over < 0) return
+    // The index `reorderPinsOps` wants is into the list *without* the dragged
+    // row, so a drop below its old place shifts back by one.
+    const to = (after ? over + 1 : over) - (from < over ? 1 : 0)
+    const ops = reorderPinsOps(tree, from, to)
+    if (ops.length === 0) return
+    setTree(ops.reduce((t, op) => applyOp(t, op).tree, tree), ...ops)
+  }
+
+  // One shelf row. A pinned project has no trail; a pinned task shows the one
+  // that leads to it. Both drag, in one list.
+  const pinRow = ({ node, trail }: (typeof pins)[number]) => {
+    const over = sideOver?.id === node.id ? (sideOver.after ? ' drop-after' : ' drop-before') : ''
+    const lifting = sideDrag === node.id ? ' lifting' : ''
+    return (
+      <li
+        key={node.id}
+        className={(scope === node.id ? 'here' : '') + over + lifting}
+        draggable
+        onDragStart={(e) => {
+          e.dataTransfer.effectAllowed = 'move'
+          e.dataTransfer.setData('text/plain', node.id)
+          sideDragRef.current = node.id
+          setSideDrag(node.id)
+        }}
+        onDragOver={(e) => {
+          const dragging = sideDragRef.current
+          if (!dragging || dragging === node.id) return
+          e.preventDefault()
+          const r = e.currentTarget.getBoundingClientRect()
+          setSideOver({ id: node.id, after: e.clientY > r.top + r.height / 2 })
+        }}
+        onDrop={(e) => {
+          e.preventDefault()
+          const r = e.currentTarget.getBoundingClientRect()
+          dropPin(node.id, e.clientY > r.top + r.height / 2)
+        }}
+        onDragEnd={() => {
+          sideDragRef.current = null
+          setSideDrag(null)
+          setSideOver(null)
+        }}
+      >
+        <button className="pin" onClick={() => openProject(node.id)}>
+          <span className="pin-text">{node.text || 'Untitled'}</span>
+          {/* "Total the invoices" means nothing without "Taxes › Page 2". */}
+          {trail.length > 0 && (
+            <span className="pin-trail">{trail.map((t) => t.text || 'Untitled').join(' › ')}</span>
+          )}
+        </button>
+        <button
+          className="row-more"
+          onClick={() => togglePin(node.id)}
+          aria-label={`Unpin ${node.text || 'Untitled'}`}
+          title="Unpin"
+        >
+          ✕
+        </button>
+      </li>
+    )
+  }
 
   // One sidebar project row: the name plus a ⋯ menu holding pin and delete.
   // Shared by both the Pinned and Recent lists.
@@ -1062,38 +1135,10 @@ export default function Outliner({ initial }: { initial: Tree }) {
         </button>
         <p className="tagline">One thing at a time</p>
 
-        {sections.pinned.length > 0 && (
+        {pins.length > 0 && (
           <>
             <p className="sect">Pinned</p>
-            <ol className="rail projects">{sections.pinned.map(projectRow)}</ol>
-          </>
-        )}
-
-        {checkpoints.length > 0 && (
-          <>
-            <p className="sect">Pinned tasks</p>
-            <ol className="rail pins">
-              {checkpoints.map(({ node, trail }) => (
-                <li key={node.id} className={scope === node.id ? 'here' : ''}>
-                  <button className="pin" onClick={() => openProject(node.id)}>
-                    <span className="pin-text">{node.text || 'Untitled'}</span>
-                    {/* The trail is what makes a pinned task legible: "Total the
-                        invoices" means nothing without "Taxes › Page 2". */}
-                    <span className="pin-trail">
-                      {trail.map((t) => t.text || 'Untitled').join(' › ')}
-                    </span>
-                  </button>
-                  <button
-                    className="row-more"
-                    onClick={() => togglePin(node.id)}
-                    aria-label="Unpin this task"
-                    title="Unpin"
-                  >
-                    ✕
-                  </button>
-                </li>
-              ))}
-            </ol>
+            <ol className="rail pins">{pins.map(pinRow)}</ol>
           </>
         )}
 

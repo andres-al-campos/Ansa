@@ -225,11 +225,16 @@ button { font: inherit; color: inherit; }
    dragging rather than opening. Same scheme as the outline bullets — everything
    draggable says so once you take hold of it.
    The dragged row dims; a brass line marks where it will land. */
-.rail.projects .proj:active { cursor: grabbing; }
-.rail.projects li.lifting { opacity: 0.4; }
-.rail.projects li.lifting .proj { cursor: grabbing; }
+.rail.projects .proj:active,
+.rail.pins .pin:active { cursor: grabbing; }
+.rail.projects li.lifting,
+.rail.pins li.lifting { opacity: 0.4; }
+.rail.projects li.lifting .proj,
+.rail.pins li.lifting .pin { cursor: grabbing; }
 .rail.projects li.drop-before::before,
-.rail.projects li.drop-after::after {
+.rail.projects li.drop-after::after,
+.rail.pins li.drop-before::before,
+.rail.pins li.drop-after::after {
   content: '';
   position: absolute;
   left: 4px;
@@ -238,8 +243,10 @@ button { font: inherit; color: inherit; }
   border-radius: 1px;
   background: var(--brass);
 }
-.rail.projects li.drop-before::before { top: -1px; }
-.rail.projects li.drop-after::after { bottom: -1px; }
+.rail.projects li.drop-before::before,
+.rail.pins li.drop-before::before { top: -1px; }
+.rail.projects li.drop-after::after,
+.rail.pins li.drop-after::after { bottom: -1px; }
 
 /* The ⋯ trigger: quiet, revealed on hover or held open while its menu is up. */
 .rail.projects .row-more {
@@ -362,12 +369,12 @@ button { font: inherit; color: inherit; }
 .undo-actions button:hover:not(:disabled) { border-color: var(--brass); color: var(--ink); }
 .undo-actions button:disabled { opacity: 0.4; cursor: default; }
 
-/* Pinned tasks — the sidebar's checkpoints.
+/* The Pinned shelf — projects and tasks in one hand-set order.
  *
- * Two lines rather than one: the task's own text, and the trail that leads to
- * it. The trail is what makes the row legible — "Total the invoices" means
- * nothing without "Taxes › Page 2" under it — so it is small and quiet but
- * always present, not a tooltip. */
+ * A task gets two lines: its own text, and the trail that leads to it. The
+ * trail is what makes the row legible — "Total the invoices" means nothing
+ * without "Taxes › Page 2" under it — so it is small and quiet but always
+ * present, not a tooltip. A pinned project has no trail and so is one line. */
 .rail.pins li {
   position: relative;
   display: flex;

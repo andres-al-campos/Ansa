@@ -536,40 +536,6 @@ struct ProjectTests {
         #expect(TreeOps.projectList(fixture()).map(\.id) == ["taxes", "flat"])
     }
 
-    @Test("pinned tasks come back with the trail that makes them legible")
-    func pinnedTaskTrail() {
-        // "p2b1" on its own says nothing; the path to it is what a checkpoint is.
-        let hits = TreeOps.pinnedTasks(pinning(["p2b1"]))
-        #expect(hits.map(\.node.id) == ["p2b1"])
-        #expect(hits[0].trail.map(\.id) == ["taxes", "forms", "p2", "p2b"])
-    }
-
-    @Test("a pinned project is not a pinned task")
-    func projectsExcluded() {
-        // The two answer different questions, so a root pin stays out of this list.
-        #expect(TreeOps.pinnedTasks(pinning(["taxes"])).isEmpty)
-        #expect(TreeOps.pinnedTasks(pinning(["taxes", "gather"])).map(\.node.id) == ["gather"])
-    }
-
-    @Test("shallower pins come first")
-    func depthOrder() {
-        #expect(
-            TreeOps.pinnedTasks(pinning(["p2b1", "gather"])).map(\.node.id)
-                == ["gather", "p2b1"])
-    }
-
-    @Test("a pin follows the node when it moves")
-    func followsMove() {
-        // The trail is recomputed on read, not stored, so a move needs no fixup.
-        let moved = TreeOps.moveNode(pinning(["p2b1"]), "p2b1", "flat", 0)
-        #expect(TreeOps.pinnedTasks(moved)[0].trail.map(\.id) == ["flat"])
-    }
-
-    @Test("nothing pinned, nothing to show")
-    func noPins() {
-        #expect(TreeOps.pinnedTasks(fixture()).isEmpty)
-    }
-
     /// Pin these ids and arrange them densely, in the order given.
     func shelf(_ ids: [NodeId]) -> Tree {
         pinning(ids).map { node in
