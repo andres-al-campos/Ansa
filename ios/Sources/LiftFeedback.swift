@@ -71,6 +71,19 @@ struct ListLiftFeedback: UIViewRepresentable {
         /// The press has armed: the row is up. Start watching for the drop.
         private func beginCarry(_ collection: UICollectionView?, at row: IndexPath?) {
             guard let collection, let row else { return }
+            // The cell UIKit is about to snapshot for the drag preview. It is
+            // full width; the card drawn in it is inset by a gutter either side,
+            // so an opaque cell rides along as a band of page colour down both
+            // edges of the row in flight. Invisible on the light page, plainly
+            // darker than the card in dark mode.
+            //
+            // Cleared here rather than in SwiftUI: `.listRowBackground` sets the
+            // card, and a second one would just replace it.
+            if let cell = collection.cellForItem(at: row) {
+                cell.backgroundView = UIView()
+                cell.backgroundColor = .clear
+                cell.contentView.backgroundColor = .clear
+            }
             self.collection = collection
             carrying = true
             seen = false
