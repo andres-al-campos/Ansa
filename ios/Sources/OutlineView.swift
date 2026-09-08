@@ -3104,15 +3104,19 @@ private struct ProjectGrid: View {
                         EdgeInsets(
                             top: Space.inner, leading: Space.gutter,
                             bottom: Space.inner, trailing: Space.gutter))
-                    .modifier(HomeCard(slot: .only, lifted: false, separator: false))
                     // On a row, not on the `List`: the recognizer has to reach
                     // the collection view, and a `.background` on the list is
                     // hosted outside it — the walk up finds no scroll view and
                     // silently attaches nothing. This row is always here and
                     // there is only ever one of it.
+                    //
+                    // Before `HomeCard`, not after: the card sets a row
+                    // background, and a `.background` applied after that is
+                    // hosted outside the cell again.
                     .background(
                         ListLiftFeedback(onDragChanged: { lifted = $0 })
                             .frame(width: 0, height: 0))
+                    .modifier(HomeCard(slot: .only, lifted: false, separator: false))
                 }
             }
             .listStyle(.plain)
