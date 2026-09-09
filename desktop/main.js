@@ -137,6 +137,15 @@ function buildMenu() {
 }
 
 app.whenReady().then(async () => {
+  // In a packaged app the .icns in the bundle is the dock icon already. Under
+  // `npm start` (the build.sh desktop path) Electron shows its own default
+  // icon, so point the dock at the same artwork. A PNG, not the .icns:
+  // dock.setIcon wants a raster image and fails to load an icon set.
+  if (!app.isPackaged) {
+    const icon = path.join(__dirname, 'icon', 'dock.png')
+    if (fs.existsSync(icon)) app.dock?.setIcon(icon)
+  }
+
   buildMenu()
   const url = await serve()
   createWindow(url)

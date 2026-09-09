@@ -17,6 +17,10 @@
     "productName": "Ansa",
     "directories": { "output": "dist" },
     "files": ["main.js", "preload.js", "web/**"],
-    "mac": { "category": "public.app-category.productivity", "target": "dir" }
+    "mac": {
+      "category": "public.app-category.productivity",
+      "target": "dir",
+      "icon": "icon/Ansa.icns"
+    }
   }
 }

@@ -49,3 +49,8 @@ designs/
 # Desktop (Electron) build output and the web bundle build.sh copies in
 desktop/dist/
 desktop/web/
+
+# Icon build intermediates (regenerable from the iOS source PNG); the committed
+# outputs are desktop/icon/Ansa.icns and desktop/icon/dock.png
+desktop/icon/master-1024.png
+desktop/icon/Ansa.iconset/
