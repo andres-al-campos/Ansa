@@ -1563,12 +1563,11 @@ struct OutlineView: View {
     ) -> some View {
         if let i = rows.firstIndex(where: { $0.node.id == id }) {
             let all = TreeOps.guides(rows.map { .init(id: $0.node.id, depth: $0.depth) })
-            // A parent normally draws no segment of its own guide — the run
-            // starts at its first child. While lit it draws the bottom half of
-            // one, so the line leaves the highlighted row instead of starting a
-            // row below it with a gap in between.
+            // A parent draws no segment of its own guide — the run starts at
+            // its first child. The lit run down to the drop point and
+            // `parentHighlight` on the parent row already say where the drop
+            // lands; a half-line on the parent's own row only restated that.
             let here = TreeOps.guidesThrough(all, at: i)
-            let stub = all.first { $0.parent == litGuideParent && $0.first == i + 1 }
             // A segment fills its row's full height, top edge to bottom edge.
             // The row carries its own spacing and `List` adds none, so
             // consecutive rows touch and the segments abut into one unbroken
@@ -1587,21 +1586,16 @@ struct OutlineView: View {
                 ForEach(here, id: \.parent) { guide in
                     let lit = guide.parent == litGuideParent && i < litUntilRow
                     Rectangle()
+                        // Full `nest`, matching the parent outline's stroke —
+                        // the lit run and the outline are one cue and read as
+                        // one weight. Dimmer, the line looked unlit beside it.
                         .fill(lit
-                            ? DropPalette.nest.opacity(0.45)
-                            : Color.primary.opacity(0.12))
-                        .frame(width: lit ? 2.5 : 1.5, height: h)
+                            ? AnyShapeStyle(DropPalette.nest)
+                            : AnyShapeStyle(Color.primary.opacity(0.12)))
+                        .frame(width: lit ? 2 : 1.5, height: h)
                         .offset(x: OutlineRow.guideX0
                             + CGFloat(guide.depth) * OutlineRow.indent - 0.75)
                         .animation(.easeOut(duration: 0.12), value: lit)
-                }
-                if let stub, i < litUntilRow {
-                    Rectangle()
-                        .fill(DropPalette.nest.opacity(0.45))
-                        .frame(width: 2.5, height: h / 2)
-                        .offset(x: OutlineRow.guideX0
-                            + CGFloat(stub.depth) * OutlineRow.indent - 1.25,
-                            y: h / 2)
                 }
             }
             .frame(height: h, alignment: .topLeading)
