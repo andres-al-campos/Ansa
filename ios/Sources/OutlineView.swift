@@ -128,9 +128,28 @@ struct OutlineView: View {
     /// keyboard down for exactly that moment. Keeping a row one step ahead
     /// means the handover is a focus move between two live fields.
     ///
-    /// Nil outside a run, and cleared by `dropSpare` on every exit, because an
-    /// empty row that outlives the run is a blank task.
-    @State private var spareRow: NodeId?
+    /// The rows a run keeps mounted that are *not* in the tree: the one being
+    /// typed into and the one waiting below it for Return to land on. Both are
+    /// local to this view — no `addChild` is applied until a row is committed
+    /// with text, so a blank never enters the synced tree and never shows on
+    /// another device. `rows(of:)` splices these in; everything that maps a row
+    /// id back to a tree node skips an id that `byId` cannot find.
+    ///
+    /// Ordered current-first, waiting-second. Empty outside a run.
+    @State private var sentinels: [Node] = []
+
+    /// Where each sentinel sits in the flattened list: the row id it follows and
+    /// the depth to draw it at. The predecessor is a real tree row or the other
+    /// sentinel, so the pair renders as two consecutive rows below the anchor.
+    @State private var sentinelPlace: [NodeId: (after: NodeId?, depth: Int)] = [:]
+
+    /// The sentinel the cursor is in — the first one, or nil outside a run.
+    private var activeSentinel: NodeId? { sentinels.first?.id }
+
+    /// Whether `id` is a mounted sentinel rather than a real tree node.
+    private func isSentinel(_ id: NodeId) -> Bool {
+        sentinels.contains { $0.id == id }
+    }
     @Environment(\.scenePhase) private var scenePhase
 
     /// Prepared once rather than per tick: a generator built at the moment of
@@ -199,9 +218,10 @@ struct OutlineView: View {
                 switch phase {
                 case .active: store.resume()
                 case .background:
-                    // The waiting row is a real empty node. Suspending with one
-                    // staged would sync it as a blank task and show it on the
-                    // web, so the run ends when the app leaves the foreground.
+                    // End any open add run before suspending. The waiting rows
+                    // are local sentinels that never touch the tree, so nothing
+                    // blank would sync — but a typed row mid-run should commit
+                    // rather than be lost when the app leaves the foreground.
                     if edit.adding { stopAdding() }
                     store.suspend()
                 default: break
@@ -505,7 +525,7 @@ struct OutlineView: View {
                     // Under the bar, above the list: the figure the title used
                     // to carry as a caption. Only here — the grid and the trash
                     // have no scope to be a fraction of.
-                    ScopeProgress(progress: adjusted(TreeOps.scopeProgress(tree, scope)))
+                    ScopeProgress(progress: TreeOps.scopeProgress(tree, scope))
                     outline(for: scope, interactive: interactive,
                             restoring: restoring)
                 }
@@ -594,20 +614,6 @@ struct OutlineView: View {
                     guides: AnyView(
                         guideSegments(for: row.node.id, in: rows(of: scope))),
                     screenWidth: slabWidth)
-                    // The waiting row stays in the hierarchy but takes up no
-                    // space and draws nothing. It has to stay built: it exists
-                    // so Return has a live field to move focus onto, and
-                    // filtering it out of `rows(of:)` would destroy that field
-                    // and reopen the gap that drops the keyboard. But it is an
-                    // empty row, so drawing it puts a blank line under the
-                    // cursor for the whole run — the implementation detail
-                    // showing through as what looks like a stray empty task.
-                    //
-                    // `frame(height: 0)` over `hidden()` alone because hidden
-                    // still reserves the row's height.
-                    .opacity(row.node.id == spareRow ? 0 : 1)
-                    .frame(height: row.node.id == spareRow ? 0 : nil)
-                    .allowsHitTesting(row.node.id != spareRow)
                     // The row owns its vertical spacing, and `List`'s own
                     // row insets are zeroed below, so the row frame *is* the
                     // cell. That is what lets each row's guide segment simply
@@ -842,27 +848,10 @@ struct OutlineView: View {
     /// the trash sits one step above it however deep the scope underneath was.
     private var canGoBack: Bool { inTrash || scope != nil }
 
-    /// Take the waiting row back out of the count.
-    ///
-    /// It is a real leaf in the tree, so `scopeProgress` counts it, and a run
-    /// would read "0 of 4" with three tasks on screen. Corrected here rather
-    /// than in `TreeOps` because the spare is a detail of how this view keeps
-    /// the keyboard up — the model has no reason to know about it.
-    ///
-    /// Returning nil when the spare was the only leaf is fine: `ScopeTitle`
-    /// draws nil as 0%, so the header keeps its height either way.
-    private func adjusted(_ progress: TreeOps.Progress?) -> TreeOps.Progress? {
-        guard let progress, spareRow != nil else { return progress }
-        let total = progress.total - 1
-        guard total > 0 else { return nil }
-        let pct = Int((Double(progress.done) / Double(total) * 100).rounded())
-        return TreeOps.Progress(done: progress.done, total: total, pct: pct)
-    }
-
     /// The rows the outline draws, flattened depth-first with a folded subtree
     /// counting as the single line it shows.
     private func rows(of scope: NodeId?) -> [(node: Node, depth: Int)] {
-        var out: [(Node, Int)] = []
+        var out: [(node: Node, depth: Int)] = []
         func walk(_ parentId: NodeId?, _ depth: Int) {
             for child in TreeOps.childrenOf(tree, parentId) {
                 out.append((child, depth))
@@ -870,6 +859,26 @@ struct OutlineView: View {
             }
         }
         walk(scope, 0)
+        return spliced(sentinels, into: out)
+    }
+
+    /// Insert the mounted sentinels into the flattened list at the slot each
+    /// records. In order, so the second can follow the first once it is in.
+    /// A sentinel whose predecessor is not on screen (a fold closed over it, an
+    /// anchor since deleted) goes at the end rather than vanishing — it still
+    /// has to be built for focus to have a target.
+    private func spliced(
+        _ sentinels: [Node], into rows: [(node: Node, depth: Int)]
+    ) -> [(node: Node, depth: Int)] {
+        guard !sentinels.isEmpty else { return rows }
+        var out = rows
+        for node in sentinels {
+            let place = sentinelPlace[node.id]
+            let depth = place?.depth ?? 0
+            let after = place?.after
+            let i = after.flatMap { a in out.firstIndex { $0.node.id == a } }
+            out.insert((node, depth), at: i.map { $0 + 1 } ?? out.count)
+        }
         return out
     }
 
@@ -1060,7 +1069,6 @@ struct OutlineView: View {
         }
         edit.adding = true
         addRow()
-        stageSpare()
     }
 
     /// Make a project and open its name for typing, on the grid.
@@ -1104,29 +1112,67 @@ struct OutlineView: View {
         // why this comes second.
         edit.adding = true
         addRow()
-        stageSpare()
     }
 
-    /// Put the waiting row below whatever `addRow` just opened.
-    ///
-    /// Separate from `addRow` because not every caller wants one: a plain
-    /// rename opens a field with no run behind it, and a spare there would be
-    /// an empty row nobody asked for.
-    private func stageSpare() {
-        guard let open = edit.editing else { return }
-        addSpare(below: open)
-    }
-
-    /// Leave the run. The open row commits if it has text and is deleted if it
-    /// does not — both by the ordinary rename commit, which already draws that
-    /// line the same way the web does.
+    /// Leave the run. The open row is a sentinel: if it has text it becomes a
+    /// real task here, and if it is empty it just goes away with the rest of the
+    /// sentinels. Nothing to clean up in the tree, because nothing blank was
+    /// ever put there.
     private func stopAdding() {
-        // Before the commit, so the row being typed in is still the one
-        // `commitEdit` sees. Dropping the spare is not optional: it is an empty
-        // node in the tree, and leaving it is the blank task the rule forbids.
-        dropSpare()
+        endRun(releasingFocus: true)
+    }
+
+    /// Finish a run: commit the active sentinel (a real task if it had text,
+    /// nothing if empty), then clear the mounted sentinels and leave adding
+    /// mode. Shared by the checkmark and by every navigation that leaves a run
+    /// — going back, opening the trash, zooming home — so all of them end a run
+    /// the same way.
+    ///
+    /// `releasingFocus` false when focus is about to move elsewhere by itself
+    /// (a rename taking over), true when the run simply ends and the keyboard
+    /// should come down.
+    private func endRun(releasingFocus: Bool) {
+        if sentinels.isEmpty {
+            // Not in a run — a plain rename in progress. Commit it the ordinary
+            // way; there is no sentinel to turn into a task.
+            commitEdit(releasingFocus: releasingFocus)
+        } else {
+            commitSentinel()
+            edit.endEdit(rememberAnchor: nil)
+            if releasingFocus { focusedRow = nil }
+            clearSentinels()
+        }
         edit.stopAdding()
-        commitEdit()
+    }
+
+    /// Turn the active sentinel into a real task when it has text. The `addChild`
+    /// here is the first and only tree write for this row — before it, the row
+    /// lived only in `sentinels`. Returns the new node's id, or nil when the row
+    /// was left empty (nothing is created, matching the no-blank-tasks rule).
+    @discardableResult
+    private func commitSentinel() -> NodeId? {
+        guard let id = activeSentinel,
+              let node = sentinels.first(where: { $0.id == id }) else { return nil }
+        let text = edit.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return nil }
+        let anchor = edit.captureParent.flatMap { TreeOps.byId(tree, $0) }
+        let place = slot(below: anchor)
+        // Reuse the sentinel's own id, so focus and the field that already hold
+        // it keep pointing at the same row as it becomes real.
+        apply(.addChild(
+            id: node.id, parentId: place?.parent ?? scope, text: text,
+            at: Date().timeIntervalSince1970 * 1000))
+        if let place {
+            apply(.moveNode(id: node.id, parentId: place.parent, index: place.index))
+        }
+        return node.id
+    }
+
+    /// Drop every mounted sentinel. Nothing to un-apply — they were never in the
+    /// tree — so this is just clearing local state.
+    private func clearSentinels() {
+        sentinels.removeAll()
+        sentinelPlace.removeAll()
     }
 
     /// Create the empty row the user types into, below the anchor.
@@ -1134,45 +1180,50 @@ struct OutlineView: View {
     /// Placement follows `slot(below:)`: inside the anchor when it is a parent,
     /// beside it when it is a leaf, or the bottom of the project when no row has
     /// been touched.
+    /// Open the first row of a run: a sentinel where the anchor says, and the
+    /// waiting sentinel below it, then focus the first. No tree op — the row is
+    /// a local view row until it is committed with text.
     private func addRow() {
-        // The id and the timestamp are minted here and carried by the op, so the
-        // server applies it to exactly the node this device created.
-        let id = TreeOps.newId()
         let anchor = edit.captureParent.flatMap { TreeOps.byId(tree, $0) }
-        // Focus moves to the new id *before* the ops, and that ordering is the
-        // whole fix. `apply` publishes, and there are two of them, so the list
-        // rebuilds twice between the old field and the new one. Claiming focus
-        // afterwards leaves a window where the outgoing field is gone and the
-        // incoming one is not focused yet — iOS takes the keyboard down the
-        // instant nothing holds it, then puts it straight back up, which is the
-        // slide-down-slide-up. The simulator hid this by coalescing the
-        // publishes into one pass; a phone is slow enough not to.
-        //
-        // Focusing an id whose row does not exist yet is safe: `focusedRow` is
-        // a plain value, and the field binds to it via `.focused(equals:)` when
-        // it is built a moment later.
-        edit.begin(id: id, text: "")
-        focusedRow = id
-        let place = slot(below: anchor)
-        apply(.addChild(
-            id: id, parentId: place?.parent ?? scope, text: "",
-            at: Date().timeIntervalSince1970 * 1000))
-        // `addChild` appends, so the row lands at the end of its parent's
-        // children and then moves up into the slot the rule picked. Two ops
-        // rather than one because there is no op that inserts a *new* node at a
-        // position — `insertAtDepth` moves a node that already exists.
-        if let place {
-            apply(.moveNode(id: id, parentId: place.parent, index: place.index))
+        // The visual predecessor the first sentinel follows, and the depth to
+        // draw it at. A parent takes its new row as a first child one level in;
+        // a leaf takes a sibling at its own depth. Mirrors `slot(below:)`, which
+        // is what the eventual `addChild` will use.
+        let (after, depth) = sentinelSlot(below: anchor)
+        let first = mintSentinel(after: after, depth: depth)
+        // The waiting row sits directly below the first, at the same depth, so
+        // Return has a built field to move onto without a list rebuild in the
+        // gap — the property the old spare provided.
+        _ = mintSentinel(after: first.id, depth: depth)
+        // Focus before anything else. Focusing an id whose row is built in the
+        // same render is safe: `focusedRow` is a plain value the field binds to
+        // via `.focused(equals:)`, and `rows(of:)` already emits the sentinel.
+        edit.begin(id: first.id, text: "")
+        focusedRow = first.id
+        scrollInto(first.id)
+    }
+
+    /// The row a new sentinel follows and the depth to draw it at — the visual
+    /// half of `slot(below:)`. Expands a collapsed parent for the same reason:
+    /// the row being typed into must be on screen.
+    private func sentinelSlot(below anchor: Node?) -> (after: NodeId?, depth: Int) {
+        guard let anchor else { return (rows.last?.node.id, 0) }
+        let anchorDepth = rows.first { $0.node.id == anchor.id }?.depth ?? 0
+        if !TreeOps.childrenOf(tree, anchor.id).isEmpty {
+            if anchor.collapsed { apply(.toggleCollapsed(id: anchor.id)) }
+            // First child: directly below the parent, one level in.
+            return (anchor.id, anchorDepth + 1)
         }
-        // Not routed through `beginEdit` any more. That path defers focus to
-        // the next runloop turn for a row that already exists; here the field
-        // is opened up front, deliberately, and re-running it would hand focus
-        // over a second time through exactly the gap this avoids.
-        // And into view, because the row is inside the scrolling list and the
-        // keyboard covers the bottom of it. The old capture bar never needed
-        // this: a bar pinned to the bottom edge sits above the keyboard by
-        // construction, while a row does not.
-        scrollInto(id)
+        return (anchor.id, anchorDepth)
+    }
+
+    /// Add a sentinel row to the mounted set and record where it draws.
+    @discardableResult
+    private func mintSentinel(after: NodeId?, depth: Int) -> Node {
+        let node = Node(id: TreeOps.newId(), text: "", order: 0)
+        sentinels.append(node)
+        sentinelPlace[node.id] = (after, depth)
+        return node
     }
 
     /// Where a new row goes relative to the row last touched.
@@ -1223,78 +1274,46 @@ struct OutlineView: View {
     /// there is no next task to ask for and pressing Return twice at the end of
     /// a run is how people stop typing.
     ///
-    /// The empty case does not need to delete anything: `commitEdit` removes a
-    /// row committed empty, which is what `stopAdding` runs into.
+    /// The empty case creates nothing, so there is no blank to clean up.
     private func submitAdding() {
         guard !edit.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             stopAdding()
             return
         }
-        // Focus moves to a field that is already on screen, and that is the
-        // whole point. Creating the next row here and focusing it meant the
-        // outgoing field was destroyed before the incoming one had been built,
-        // and iOS drops the keyboard the moment no field holds it — the slide
-        // down and back up. Nothing about the axis, the List, the two ops or
-        // the deferred focus changed that; a harness on a real phone showed
-        // all four combinations sliding. The gap itself was the bug, so the
-        // fix is to not have one.
-        //
-        // The spare is a real row in the tree, kept one ahead of the cursor.
-        guard let spare = spareRow else {
-            // No spare means the run was not started through `startAdding` —
-            // fall back to the old path rather than dropping the Return.
+        // The active sentinel becomes a real task, keeping its id. The waiting
+        // sentinel — already mounted, already on screen — becomes the one the
+        // cursor moves to, so focus hops to a field that already exists and the
+        // keyboard never crosses a frame where nothing is focused. That was the
+        // whole reason for a row kept one ahead of the cursor; it is just no
+        // longer a real tree node.
+        guard let created = commitSentinel(), sentinels.count > 1 else {
+            // No waiting sentinel (the run was not opened through `startAdding`).
+            // Fall back to committing and opening a fresh row.
             commitEdit(releasingFocus: false)
+            clearSentinels()
             addRow()
             return
         }
-        commitEdit(releasingFocus: false)
-        spareRow = nil
-        // Hand over first, then build the next spare behind it. Reversing these
-        // puts a list rebuild between the commit and the focus move, which is
-        // the gap again.
-        edit.begin(id: spare, text: "")
-        focusedRow = spare
-        scrollInto(spare)
-        addSpare(below: spare)
-    }
-
-    /// The empty row waiting below the one being typed in.
-    ///
-    /// It exists so Return has somewhere to land that is already built. Held as
-    /// an id rather than a flag because it has to be findable again: it is a
-    /// real node, and a run that ends leaves it behind to be removed.
-    private func addSpare(below anchorId: NodeId) {
-        // Whatever was staged before goes first. Overwriting `spareRow` with a
-        // new id orphans the old node: nothing else knows it exists, so no exit
-        // can clean it up and it syncs to the web as a blank task. Cheap to be
-        // certain here rather than to trust every caller to have cleared it.
-        dropSpare()
-        let id = TreeOps.newId()
-        guard let anchor = TreeOps.byId(tree, anchorId),
-              let place = slot(below: anchor) else { return }
-        apply(.addChild(
-            id: id, parentId: place.parent, text: "",
-            at: Date().timeIntervalSince1970 * 1000))
-        apply(.moveNode(id: id, parentId: place.parent, index: place.index))
-        spareRow = id
-    }
-
-    /// Take the waiting row away. Always paired with leaving the run: an empty
-    /// row left in the tree is exactly what the no-blank-tasks rule forbids,
-    /// and it would sync to the web as one.
-    private func dropSpare() {
-        if let id = spareRow, TreeOps.byId(tree, id) != nil {
-            apply(.removeNode(id: id))
-        }
-        spareRow = nil
+        // The committed row is now the anchor, so the next task slots below it.
+        edit.captureParent = created
+        sentinels.removeFirst()
+        let next = sentinels[0]
+        // Re-place the waiting sentinel below the row just created, and mint the
+        // new waiting one below that, both at the created row's depth.
+        let depth = rows.first { $0.node.id == created }?.depth ?? 0
+        sentinelPlace[next.id] = (created, depth)
+        mintSentinel(after: next.id, depth: depth)
+        edit.begin(id: next.id, text: "")
+        focusedRow = next.id
+        scrollInto(next.id)
     }
 
     /// A deliberate delete, so the subtree is kept and can be restored.
     ///
     /// `trash: true` here and on the project delete, and nowhere else. The other
-    /// `removeNode`s are editing mechanics — `dropSpare` taking back a row the
-    /// user never typed into, `commitEdit` dropping one left blank — and a trash
-    /// full of empty strings is no use for the deletes that matter.
+    /// `removeNode` is an editing mechanic — `commitEdit` dropping a row left
+    /// blank — and a trash full of empty strings is no use for the deletes that
+    /// matter.
     /// Delete one row. The swipe knows the node; `delete(at:)` is the same thing
     /// reached through `List`'s index-based path.
     private func delete(_ id: NodeId) {
@@ -1318,15 +1337,11 @@ struct OutlineView: View {
         // the home button, which calls this directly, showing a checkmark on
         // the grid with no run to end.
         if id != scope {
-            // Before the commit, for the same reason as `stopAdding`: the
-            // waiting row is a real empty node, and navigating away from it
-            // would leave a blank task behind in the project being left.
-            dropSpare()
-            // Committed, not abandoned. `commitEdit` deletes a row left empty
-            // and keeps one with text, which is the same line Return draws — so
-            // navigating out of a run can never leave a blank task behind.
-            commitEdit()
-            edit.stopAdding()
+            // A run and its anchor belong to the scope being left. `endRun`
+            // commits the row being typed — a real task if it has text, nothing
+            // if empty — and drops the mounted sentinels, so navigating out can
+            // never leave a blank behind.
+            endRun(releasingFocus: true)
             edit.captureParent = nil
         }
         autoScope = false
@@ -1354,9 +1369,7 @@ struct OutlineView: View {
     /// task. `scope` is untouched — the trash draws over it, and back restores
     /// the grid it was opened from.
     private func openTrash() {
-        dropSpare()
-        commitEdit()
-        edit.stopAdding()
+        endRun(releasingFocus: true)
         inTrash = true
     }
 
@@ -1396,6 +1409,9 @@ struct OutlineView: View {
     private var rowsLeft: CGFloat { drag.rowsLeft }
 
     private func beginDrag(_ id: NodeId) {
+        // A sentinel is a waiting row, not a tree node — dragging one would let
+        // `endDrag` emit a move op against an id the tree does not have.
+        guard !isSentinel(id) else { return }
         drag.begin(id)
         liftHaptic.impactOccurred()
         // Warmed for the ticks that follow. The first `impactOccurred` on a
@@ -1784,6 +1800,15 @@ struct OutlineView: View {
     ///   two rows.
     private func commitEdit(from: NodeId? = nil, releasingFocus: Bool = true) {
         guard edit.shouldCommit(from: from), let id = edit.editing else { return }
+        // A sentinel is not in the tree, so `TreeOps.commitEdit` can only ever
+        // no-op on it — it knows `setText`/`removeNode`, not the `addChild` a
+        // sentinel needs to become a real node. Tapping away from a sentinel
+        // row (blur, not Return) lands here; route it through the run's own
+        // commit so the typed text is not silently dropped.
+        if isSentinel(id) {
+            endRun(releasingFocus: releasingFocus)
+            return
+        }
         let op = TreeOps.commitEdit(tree, id, edit.text)
         if let op { apply(op) }
 
@@ -2008,9 +2033,7 @@ struct OutlineView: View {
         // `setScope`, because this deliberately does not call it: `setScope`
         // would push the step being undone and leave back bouncing between two
         // scopes.
-        dropSpare()
-        commitEdit()
-        edit.stopAdding()
+        endRun(releasingFocus: true)
         edit.captureParent = nil
         autoScope = false
         let step = popBack()
