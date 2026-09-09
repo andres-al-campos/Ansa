@@ -135,6 +135,15 @@ struct RowSwipeView<Content: View>: View {
                 let d = g.translation.width
                 direction = abs(d) < 20 ? nil : (d < 0 ? .left : .right)
                 if let direction { settling = direction }
+                // Stamp the deafness clock here, not only at release. The
+                // Button's tap is a sibling gesture and can be delivered in the
+                // same resolution pass as this drag's end, before `body`
+                // re-evaluates with a release-time `endedAt` — so the Button
+                // reads a stale `justSwiped` and opens the editor on a swipe
+                // that was only cancelled. Refreshing it on every move that has
+                // a direction means the flag is already set, from a value the
+                // content closure has seen, by the time any tap arrives.
+                if direction != nil { endedAt = Date() }
                 onSwipingChanged(direction != nil)
                 if direction != nil { armHaptic.prepare() }
                 guard action != nil else { return }
