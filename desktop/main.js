@@ -78,8 +78,10 @@ function createWindow(url) {
     minWidth: 480,
     minHeight: 400,
     // The traffic lights sit inside the content, which reads as a modern Mac
-    // app rather than a web page in a chrome box. The app draws its own top
-    // padding, so nothing lands under them.
+    // app rather than a web page in a chrome box. The web bundle is shared with
+    // the browser and knows nothing about them, so the desktop shell adds the
+    // clearance below (see insertCSS in createWindow) rather than baking desktop
+    // padding into the web app.
     titleBarStyle: 'hiddenInset',
     webPreferences: {
       // Nothing here needs Node in the page, so keep the renderer sandboxed.
@@ -91,6 +93,14 @@ function createWindow(url) {
   })
 
   win.loadURL(url)
+
+  // Push the sidebar's top padding down so the "Ansa" wordmark clears the
+  // traffic lights, which hiddenInset overlays on the content at the top-left.
+  // Desktop-only: the browser app has no window controls, so this lives here
+  // and not in the shared web CSS. Applied on every load so a reload keeps it.
+  win.webContents.on('did-finish-load', () => {
+    void win.webContents.insertCSS('.side { padding-top: 52px; }')
+  })
 
   // A link to anywhere but the app's own origin opens in the real browser, not
   // in a second app window with no way back. Clerk's in-page navigation is hash
