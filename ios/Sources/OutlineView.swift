@@ -2226,10 +2226,10 @@ private struct ScopeProgress: View {
                             .frame(width: geo.size.width * fraction)
                     }
             }
-            .frame(height: 4)
+            .frame(height: 6)
 
             Text(label)
-                .font(.caption)
+                .font(.subheadline)
                 // `.secondary`, not `.tertiary`. Tertiary is 26% opacity —
                 // about 1.8:1 in light mode and 2.2:1 in dark, against the
                 // 4.5:1 text this size needs. It is Apple's tint for
@@ -2240,7 +2240,11 @@ private struct ScopeProgress: View {
                 .contentTransition(.numericText())
         }
         .padding(.horizontal, Space.gutter)
-        .padding(.vertical, Space.inner)
+        .padding(.vertical, Space.row)
+        // The same material the header carries, continued down so the bar
+        // reads as the foot of the header band rather than a strip floating on
+        // its own. The two abut with no gap, so one `.bar` runs unbroken.
+        .background(.bar)
         // The fill and the figure move together when a tick changes the count.
         .animation(.easeOut(duration: 0.35), value: progress?.pct)
     }
