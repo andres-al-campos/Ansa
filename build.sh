@@ -1,11 +1,14 @@
 #!/usr/bin/env bash
 #
-# Start the whole Ansa stack: an API and the Vite app together.
-# No arguments — this is the everyday "run the thing I'm working on" path.
-# Both run with hot reload; Ctrl-C stops both.
+# Build and install the Ansa desktop app — the everyday "run the thing I'm
+# working on" path. No arguments packages a real .app (with the macOS 26 Liquid
+# Glass icon), installs it to /Applications/_vibe_coded replacing the last one,
+# and launches it. The other modes are behind explicit arguments:
 #
-#   ./build.sh              run locally against the Worker, the default
-#   ./build.sh fastify      run against the old Fastify + ansa.db server
+#   ./build.sh              package the desktop .app and install it, the default
+#   ./build.sh desktop      dev run of the desktop app (hot-reload window)
+#   ./build.sh web          run the local web stack: API + Vite app together
+#   ./build.sh web fastify  the web stack against the old Fastify + ansa.db server
 #   ./build.sh deploy       test, then publish the API and the app
 #   ./build.sh deploy api   the Worker only
 #   ./build.sh deploy app   the Pages bundle only
@@ -13,14 +16,16 @@
 # Deploy lives here rather than in its own script so there is one entry point
 # and no question about which file is current.
 #
-# The default runs `wrangler dev`, which is the *same code that is deployed* —
-# the Worker, with real Durable Objects, against local throwaway storage. The
-# Fastify server is a second implementation of the same API and is on its way
-# out; until it goes, the default is the real one so the vestigial path isn't
-# the one getting exercised daily.
+# The packaged default is the only build that shows the real Liquid Glass icon:
+# it renders only in a packaged app, not under the dev run's `npm start`. `dist`
+# ad-hoc signs for local use; a Developer ID signed/notarised build is separate.
 #
-# It is also the only local path where live sync works. The client speaks
-# WebSocket; Fastify still serves SSE, so under `./build.sh fastify` edits save
+# The web stack runs `wrangler dev`, the *same code that is deployed* — the
+# Worker, with real Durable Objects, against local throwaway storage. The
+# Fastify server is a second implementation of the same API on its way out; the
+# Worker is the default backend so the vestigial path isn't exercised daily. The
+# Worker path is also the only local one where live sync works: the client
+# speaks WebSocket, Fastify still serves SSE, so under `web fastify` edits save
 # but a second tab won't see them until reload.
 #
 set -euo pipefail
@@ -87,14 +92,12 @@ check_port_free() {
 # The API port isn't known yet — it depends on which backend was asked for — so
 # that check happens once the argument has been parsed.
 #
-# Deploying binds nothing: it builds a bundle and uploads it. Checking the dev
-# server's port here refused a perfectly good deploy because something
-# unrelated happened to hold 5173, so the guard is for the run paths only.
-# `$1` rather than a parsed variable because parsing happens further down.
+# Only `web` binds the app port. Deploying builds and uploads a bundle; the
+# desktop paths run Electron or package a .app — none hold 5173. Guarding them
+# refused perfectly good runs because something unrelated happened to hold the
+# port. `$1` rather than a parsed variable because parsing happens further down.
 case "${1:-}" in
-  deploy) ;;
-  desktop) ;;
-  *) check_port_free "$APP_PORT" "app" ;;
+  web) check_port_free "$APP_PORT" "app" ;;
 esac
 
 # Track child PIDs so Ctrl-C (or any exit) takes both processes down with us,
@@ -158,16 +161,19 @@ export ANSA_DEV_AUTH=${ANSA_DEV_AUTH:-1}
 # rather than in .env because .env is gitignored and a fresh clone has to work.
 CLERK_PUBLISHABLE_DEFAULT=pk_test_cmFwaWQtYmVlLTIwLmNsZXJrLmFjY291bnRzLmRldiQ
 
-# Local and deploy want opposite defaults here, which is why this isn't one line.
+# The local `web` stack and everything else want opposite defaults here, which
+# is why this isn't one line.
 #
-# Locally the key is set only alongside a Keychain secret: the client gates on
-# sign-in when it sees a key, so setting it unconditionally would take away the
-# no-login local mode that a fresh clone with no Keychain entry depends on.
+# The `web` run sets the key only alongside a Keychain secret: the client gates
+# on sign-in when it sees a key, so setting it unconditionally would take away
+# the no-login local mode that a fresh clone with no Keychain entry depends on.
 #
-# A deploy has no such mode. Production is always signed-in, so the key is
-# always needed, and tying it to whether *this laptop* has a secret in its
-# Keychain would make the deploy depend on unrelated local state.
-if [ "${1:-}" = "deploy" ] || [ "${1:-}" = "desktop" ] || [ -n "${CLERK_SECRET_KEY:-}" ]; then
+# Deploy and the desktop app (the bare default and the dev run) have no such
+# mode. Production and the shipped app are always signed-in, so the key is always
+# needed, and tying it to whether *this laptop* has a secret in its Keychain
+# would make them depend on unrelated local state. The bare default is the
+# packaged desktop build, so an empty `$1` counts here too.
+if [ "${1:-}" != "web" ] || [ -n "${CLERK_SECRET_KEY:-}" ]; then
   export VITE_CLERK_PUBLISHABLE_KEY=${VITE_CLERK_PUBLISHABLE_KEY:-$(keychain_secret ansa-clerk-publishable)}
   export VITE_CLERK_PUBLISHABLE_KEY=${VITE_CLERK_PUBLISHABLE_KEY:-$CLERK_PUBLISHABLE_DEFAULT}
 fi
@@ -349,14 +355,20 @@ deploy() {
 # Desktop. An Electron window around the same web build the browser app ships.
 # The React app talks to the live Worker, so this is a wrapper and nothing more:
 # build the bundle with the live API URL and Clerk key inlined — the exact
-# recipe deploy_app uses — copy it into desktop/web, and launch Electron at it.
+# recipe deploy_app uses — copy it into desktop/web, and hand it to Electron.
 #
-# No signing here. This runs and installs the app for local use; a distributable
-# signed/notarised build is separate work (electron-builder is wired up in
-# desktop/package.json for when it's wanted).
-desktop() {
-  trap - INT TERM EXIT
+#   ./build.sh desktop        dev run: hot-reload window via `npm start`
+#   ./build.sh desktop dist   package a real .app and install it to
+#                             /Applications/_vibe_coded, replacing the last one
+#
+# The dev run shows the hand-painted dock.png, because the macOS 26 Liquid Glass
+# icon only renders in a *packaged* build — so `dist` is the path that shows the
+# real glass on the dock. Neither is a distributable build: `dist` ad-hoc signs
+# for local use only. A Developer ID signed/notarised build is separate work.
 
+# Build the web bundle for the live Worker and stage it under desktop/web. The
+# shared front half of both desktop paths — same recipe deploy_app uses.
+build_desktop_bundle() {
   if [ -z "${VITE_CLERK_PUBLISHABLE_KEY:-}" ]; then
     echo "No Clerk publishable key, so the desktop app would have no way to sign in." >&2
     echo "It normally comes from the Keychain (service ansa-clerk-publishable). Set it" >&2
@@ -390,19 +402,88 @@ desktop() {
     echo "Installing Electron (first run) …"
     (cd desktop && npm install)
   fi
+}
 
+# Dev run: build the bundle, then launch the hot-reload window.
+desktop() {
+  trap - INT TERM EXIT
+  build_desktop_bundle
   echo "Launching Ansa …"
   (cd desktop && npm start)
 }
 
+# Packaged run: build the bundle, package a real .app via electron-builder
+# (which compiles the Liquid Glass Ansa.icon through actool), ad-hoc sign it,
+# and replace the installed copy in /Applications/_vibe_coded so a rebuild is
+# the copy that opens — not last build's.
+desktop_dist() {
+  trap - INT TERM EXIT
+  build_desktop_bundle
+
+  echo "Packaging Ansa.app (electron-builder → actool) …"
+  # No Developer ID here, so keep electron-builder from hunting for one; the
+  # ad-hoc sign below is what lets the local copy launch.
+  (cd desktop && CSC_IDENTITY_AUTO_DISCOVERY=false npm run dist)
+
+  local built="desktop/dist/mac-arm64/Ansa.app"
+  if [ ! -d "$built" ]; then
+    echo "electron-builder finished but ${built} isn't there." >&2
+    echo "Check the packaging output above; the mac target is 'dir' in desktop/package.json." >&2
+    exit 1
+  fi
+
+  # Confirm actool compiled the Liquid Glass layers in. Without Assets.car the
+  # bundle silently falls back to the flat .icns, which is the whole thing this
+  # path exists to avoid — so it's a failure, not a warning.
+  if [ ! -f "$built/Contents/Resources/Assets.car" ]; then
+    echo "The packaged app has no Assets.car, so the Liquid Glass icon didn't compile." >&2
+    echo "actool needs Xcode 26+ (Icon Composer). Check: xcodebuild -version." >&2
+    exit 1
+  fi
+
+  local dest="/Applications/_vibe_coded"
+  mkdir -p "$dest"
+  echo "Installing to ${dest}/Ansa.app …"
+  rm -rf "${dest}/Ansa.app"
+  cp -R "$built" "${dest}/Ansa.app"
+
+  # Ad-hoc sign so Gatekeeper lets an unsigned local build launch, and drop the
+  # quarantine flag the copy may inherit. Local use only — this is not a
+  # distributable signature.
+  codesign --force --deep --sign - "${dest}/Ansa.app" >/dev/null 2>&1
+  xattr -dr com.apple.quarantine "${dest}/Ansa.app" 2>/dev/null || true
+
+  echo "Launching Ansa (watch the dock for the glass icon) …"
+  open "${dest}/Ansa.app"
+}
+
+# The bare default packages and installs the desktop app; everything else is an
+# explicit argument. `web` is the only one that falls through to the run-stack
+# code below — the rest handle themselves and exit here.
 case "${1:-}" in
+  '') desktop_dist; exit 0 ;;
+  desktop)
+    if [ -n "${2:-}" ]; then
+      echo "'desktop' is the dev run and takes no target." >&2
+      echo "For the packaged, installed build, run ./build.sh with no arguments." >&2
+      exit 1
+    fi
+    desktop; exit 0 ;;
   deploy) deploy "${2:-both}"; exit 0 ;;
-  desktop) desktop; exit 0 ;;
-  fastify) BACKEND=fastify ;;
-  '') BACKEND=worker ;;
+  web)
+    case "${2:-}" in
+      '') BACKEND=worker ;;
+      fastify) BACKEND=fastify ;;
+      *)
+        echo "Unknown web backend: $2" >&2
+        echo "Usage: ./build.sh web [fastify]" >&2
+        exit 1
+        ;;
+    esac
+    ;;
   *)
     echo "Unknown argument: $1" >&2
-    echo "Usage: ./build.sh [fastify | deploy [app|api] | desktop]" >&2
+    echo "Usage: ./build.sh [desktop | web [fastify] | deploy [app|api]]" >&2
     exit 1
     ;;
 esac
