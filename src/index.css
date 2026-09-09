@@ -635,6 +635,38 @@ button { font: inherit; color: inherit; }
   scrollbar-gutter: stable;
 }
 
+/* A slim floating scrollbar in place of the OS default, which on the desktop
+ * app is a heavy full-width bar pinned to the very edge. The thumb is a rounded
+ * pill inset from the edge — a transparent border with background-clip:
+ * padding-box leaves a gap the track shows through, so the pill floats rather
+ * than filling the gutter. Track stays transparent; the thumb darkens on hover.
+ * Chromium (the Electron engine, and every browser we ship to) honours these. */
+.side,
+.main {
+  scrollbar-width: thin; /* Firefox */
+  scrollbar-color: var(--ink-ghost) transparent;
+}
+.side::-webkit-scrollbar,
+.main::-webkit-scrollbar {
+  width: 14px;
+}
+.side::-webkit-scrollbar-track,
+.main::-webkit-scrollbar-track {
+  background: transparent;
+}
+.side::-webkit-scrollbar-thumb,
+.main::-webkit-scrollbar-thumb {
+  background: var(--ink-ghost);
+  background-clip: padding-box;
+  border: 4px solid transparent;
+  border-radius: 8px;
+}
+.side::-webkit-scrollbar-thumb:hover,
+.main::-webkit-scrollbar-thumb:hover {
+  background: var(--ink-faint);
+  background-clip: padding-box;
+}
+
 /* One centred column: crumbs, heading, progress and rows share a width and
  * sit in the middle of the pane rather than hugging the left edge. width:100%
  * (capped by max-width) makes each block the *same* box, so margin auto centres
