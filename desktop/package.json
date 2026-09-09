@@ -1,0 +1,22 @@
+{
+  "name": "ansa-desktop",
+  "private": true,
+  "version": "0.1.0",
+  "description": "The macOS desktop shell for Ansa: an Electron window around the same web build.",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --mac"
+  },
+  "devDependencies": {
+    "electron": "^44.3.0",
+    "electron-builder": "^26.0.12"
+  },
+  "build": {
+    "appId": "dev.id3arium.ansa",
+    "productName": "Ansa",
+    "directories": { "output": "dist" },
+    "files": ["main.js", "preload.js", "web/**"],
+    "mac": { "category": "public.app-category.productivity", "target": "dir" }
+  }
+}

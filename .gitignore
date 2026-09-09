@@ -45,3 +45,7 @@ ios/build/
 # — this only keeps new ones out of git. The handful committed before this rule
 # are left alone rather than rewriting history for them.
 designs/
+
+# Desktop (Electron) build output and the web bundle build.sh copies in
+desktop/dist/
+desktop/web/

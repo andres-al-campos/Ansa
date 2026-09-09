@@ -93,6 +93,7 @@ check_port_free() {
 # `$1` rather than a parsed variable because parsing happens further down.
 case "${1:-}" in
   deploy) ;;
+  desktop) ;;
   *) check_port_free "$APP_PORT" "app" ;;
 esac
 
@@ -166,7 +167,7 @@ CLERK_PUBLISHABLE_DEFAULT=pk_test_cmFwaWQtYmVlLTIwLmNsZXJrLmFjY291bnRzLmRldiQ
 # A deploy has no such mode. Production is always signed-in, so the key is
 # always needed, and tying it to whether *this laptop* has a secret in its
 # Keychain would make the deploy depend on unrelated local state.
-if [ "${1:-}" = "deploy" ] || [ -n "${CLERK_SECRET_KEY:-}" ]; then
+if [ "${1:-}" = "deploy" ] || [ "${1:-}" = "desktop" ] || [ -n "${CLERK_SECRET_KEY:-}" ]; then
   export VITE_CLERK_PUBLISHABLE_KEY=${VITE_CLERK_PUBLISHABLE_KEY:-$(keychain_secret ansa-clerk-publishable)}
   export VITE_CLERK_PUBLISHABLE_KEY=${VITE_CLERK_PUBLISHABLE_KEY:-$CLERK_PUBLISHABLE_DEFAULT}
 fi
@@ -344,13 +345,64 @@ deploy() {
   fi
 }
 
+# ---------------------------------------------------------------------------
+# Desktop. An Electron window around the same web build the browser app ships.
+# The React app talks to the live Worker, so this is a wrapper and nothing more:
+# build the bundle with the live API URL and Clerk key inlined — the exact
+# recipe deploy_app uses — copy it into desktop/web, and launch Electron at it.
+#
+# No signing here. This runs and installs the app for local use; a distributable
+# signed/notarised build is separate work (electron-builder is wired up in
+# desktop/package.json for when it's wanted).
+desktop() {
+  trap - INT TERM EXIT
+
+  if [ -z "${VITE_CLERK_PUBLISHABLE_KEY:-}" ]; then
+    echo "No Clerk publishable key, so the desktop app would have no way to sign in." >&2
+    echo "It normally comes from the Keychain (service ansa-clerk-publishable). Set it" >&2
+    echo "explicitly and re-run:  VITE_CLERK_PUBLISHABLE_KEY=pk_test_… ./build.sh desktop" >&2
+    exit 1
+  fi
+
+  echo "Building the web app for ${WORKER_API} …"
+  VITE_ANSA_API="$WORKER_API" npm run build
+
+  # Same artifact check as the deploy: prove Vite inlined the values rather than
+  # trusting that this shell had them set. A desktop bundle missing its API URL
+  # fails exactly as silently as a deployed one.
+  local js
+  js=$(find dist/assets -name '*.js' -print -quit)
+  for needle in "$WORKER_API" "$VITE_CLERK_PUBLISHABLE_KEY"; do
+    if ! grep -qF "$needle" "$js"; then
+      echo "The built bundle is missing a value it needs, so it was not wrapped." >&2
+      echo "Expected to find '${needle:0:24}…' in ${js}." >&2
+      exit 1
+    fi
+  done
+  echo "Bundle checks out: API URL and Clerk key are both inlined."
+
+  # Hand the built bundle to the shell. A fresh copy each time so a stale web/
+  # can't outlive the dist/ it came from.
+  rm -rf desktop/web
+  cp -R dist desktop/web
+
+  if [ ! -d desktop/node_modules ]; then
+    echo "Installing Electron (first run) …"
+    (cd desktop && npm install)
+  fi
+
+  echo "Launching Ansa …"
+  (cd desktop && npm start)
+}
+
 case "${1:-}" in
   deploy) deploy "${2:-both}"; exit 0 ;;
+  desktop) desktop; exit 0 ;;
   fastify) BACKEND=fastify ;;
   '') BACKEND=worker ;;
   *)
     echo "Unknown argument: $1" >&2
-    echo "Usage: ./build.sh [fastify | deploy [app|api]]" >&2
+    echo "Usage: ./build.sh [fastify | deploy [app|api] | desktop]" >&2
     exit 1
     ;;
 esac
