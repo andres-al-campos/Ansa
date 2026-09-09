@@ -756,9 +756,13 @@ struct OutlineView: View {
     /// underneath must not act on a screen that is sliding away.
     @ViewBuilder private func captureButton(interactive: Bool) -> some View {
         let adding = edit.adding
-        Button {
-            if adding { stopAdding() } else { startAdding() }
-        } label: {
+        // Not a `Button`. A Button installs its own tap recogniser, and the
+        // zoom-out back swipe — a `minimumDistance: 0` drag on the whole
+        // navigation stack — is recognised simultaneously with it and could win
+        // the tap, so the press did nothing. Device-only: the simulator's
+        // synthesised touches never make the two recognisers contend. A plain
+        // label with a high-priority tap claims the touch ahead of that drag.
+        Group {
             // A tick is safe here only because Return is an arrow. When
             // both showed a tick they meant opposite things a thumb's width
             // apart, which is how a run ends by accident; with "next" drawn
@@ -789,8 +793,8 @@ struct OutlineView: View {
                 // and inserts the other, which is a second way to get two
                 // buttons on screen at once.
         }
-        .buttonStyle(.plain)
-        .disabled(!interactive)
+        .contentShape(Circle())
+        .highPriorityGesture(TapGesture().onEnded { capture() }, including: interactive ? .all : .none)
         // 36 from both edges, stated once. This rides a `safeAreaInset`, so
         // the bottom padding stacks on whatever the system reserves for the
         // home indicator: the same number on both sides sat it ~50 from the
@@ -806,6 +810,12 @@ struct OutlineView: View {
         .accessibilityLabel(adding ? "Done adding" : "Add a task")
     }
 
+
+    /// Plus at rest, checkmark while adding. Shared by the Button and the
+    /// high-priority tap that guards it.
+    private func capture() {
+        if edit.adding { stopAdding() } else { startAdding() }
+    }
 
     /// The strip the system reserves at the bottom for the home indicator, or 0
     /// on a phone with a physical button. What the capture button's trailing
