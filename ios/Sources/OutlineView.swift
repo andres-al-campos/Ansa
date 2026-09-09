@@ -150,6 +150,14 @@ struct OutlineView: View {
     private func isSentinel(_ id: NodeId) -> Bool {
         sentinels.contains { $0.id == id }
     }
+
+    /// A sentinel that is not the one being typed into: the waiting row kept a
+    /// step ahead of the cursor. It has to be in the list so Return can hand
+    /// focus to a built field, but it must show nothing — so the row is
+    /// collapsed to zero height and made deaf. See `addRow`.
+    private func isWaitingSentinel(_ id: NodeId) -> Bool {
+        isSentinel(id) && id != activeSentinel
+    }
     @Environment(\.scenePhase) private var scenePhase
 
     /// Prepared once rather than per tick: a generator built at the moment of
@@ -624,8 +632,19 @@ struct OutlineView: View {
                     // approach and was wrong: it needed the inset height as a
                     // measured constant, right only on the device it was
                     // measured on.
-                    .padding(.vertical, OutlineRow.rowPadding / 2)
+                    // Zero for the waiting sentinel: the padding is the cell's
+                    // own height, so leaving it in keeps a gap where the hidden
+                    // row sits even with its content zeroed.
+                    .padding(.vertical, isWaitingSentinel(row.node.id) ? 0 : OutlineRow.rowPadding / 2)
                     .listRowInsets(EdgeInsets())
+                    // The waiting sentinel is present only so Return has a built
+                    // field to land on. It shows nothing and takes no space: the
+                    // field still exists and can hold focus, but the row is
+                    // collapsed to nothing and deaf to touches.
+                    .frame(height: isWaitingSentinel(row.node.id) ? 0 : nil)
+                    .opacity(isWaitingSentinel(row.node.id) ? 0 : 1)
+                    .allowsHitTesting(!isWaitingSentinel(row.node.id))
+                    .clipped()
                     // Measured *after* the padding, so the frame is the whole
                     // cell rather than just its content. Measuring before it
                     // was the gap: every consumer here — the guide segments,
@@ -1183,6 +1202,14 @@ struct OutlineView: View {
     /// Open the first row of a run: a sentinel where the anchor says, and the
     /// waiting sentinel below it, then focus the first. No tree op — the row is
     /// a local view row until it is committed with text.
+    ///
+    /// Two rows, not one. The waiting sentinel is what Return hands focus to,
+    /// and it has to be *already in the list* for the handover: iOS drops the
+    /// keyboard the instant no field holds it, so if the next row is built in
+    /// the same step that focus moves, the keyboard slides down and back up.
+    /// Focusing a cell that already exists moves the field without that gap.
+    /// The waiting row is hidden — see the `isWaitingSentinel` modifiers on the
+    /// row — so only the one being typed into shows.
     private func addRow() {
         let anchor = edit.captureParent.flatMap { TreeOps.byId(tree, $0) }
         // The visual predecessor the first sentinel follows, and the depth to
@@ -1191,9 +1218,7 @@ struct OutlineView: View {
         // is what the eventual `addChild` will use.
         let (after, depth) = sentinelSlot(below: anchor)
         let first = mintSentinel(after: after, depth: depth)
-        // The waiting row sits directly below the first, at the same depth, so
-        // Return has a built field to move onto without a list rebuild in the
-        // gap — the property the old spare provided.
+        // The waiting row, directly below the first at the same depth, hidden.
         _ = mintSentinel(after: first.id, depth: depth)
         // Focus before anything else. Focusing an id whose row is built in the
         // same render is safe: `focusedRow` is a plain value the field binds to
@@ -1281,11 +1306,11 @@ struct OutlineView: View {
             return
         }
         // The active sentinel becomes a real task, keeping its id. The waiting
-        // sentinel — already mounted, already on screen — becomes the one the
-        // cursor moves to, so focus hops to a field that already exists and the
-        // keyboard never crosses a frame where nothing is focused. That was the
-        // whole reason for a row kept one ahead of the cursor; it is just no
-        // longer a real tree node.
+        // sentinel — already mounted, already on screen (though hidden) —
+        // becomes the one the cursor moves to, so focus hops to a field that
+        // already exists and the keyboard never crosses a frame where nothing
+        // is focused. That is the whole reason a row is kept one ahead of the
+        // cursor; it is just no longer a real tree node.
         guard let created = commitSentinel(), sentinels.count > 1 else {
             // No waiting sentinel (the run was not opened through `startAdding`).
             // Fall back to committing and opening a fresh row.
@@ -1296,16 +1321,19 @@ struct OutlineView: View {
         }
         // The committed row is now the anchor, so the next task slots below it.
         edit.captureParent = created
+        // Drop the just-committed sentinel; the waiting one is now first.
         sentinels.removeFirst()
         let next = sentinels[0]
-        // Re-place the waiting sentinel below the row just created, and mint the
-        // new waiting one below that, both at the created row's depth.
+        // Re-place the (previously hidden) waiting row below the committed row,
+        // hand focus to it, then mint the new waiting row below that. Focus
+        // first, mint second: reversing them puts a list rebuild between the
+        // commit and the focus move, which is the keyboard gap again.
         let depth = rows.first { $0.node.id == created }?.depth ?? 0
         sentinelPlace[next.id] = (created, depth)
-        mintSentinel(after: next.id, depth: depth)
         edit.begin(id: next.id, text: "")
         focusedRow = next.id
         scrollInto(next.id)
+        mintSentinel(after: next.id, depth: depth)
     }
 
     /// A deliberate delete, so the subtree is kept and can be restored.
