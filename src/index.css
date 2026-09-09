@@ -1087,7 +1087,7 @@ button { font: inherit; color: inherit; }
  *
  * The `:is(…, .bullet)` repeat is a specificity weight, not a wider match: it
  * matches exactly what `.bullet` alone would, but :is() takes its heaviest
- * argument's specificity, so this outranks the `.bullet:active` grabbing rule
+ * argument's specificity, so this outranks the `body.dragging` grabbing rule
  * further down without depending on which rule comes last. */
 body:has(.row.gap-slot),
 body:has(.row.gap-slot) .bullet:is(:active, :hover, .bullet),
@@ -1176,16 +1176,18 @@ body:has(.row.gap-slot) .proj:is(:active, :hover, .proj) { cursor: default; }
  * a click on it does. */
 .bullet:not(.folds) { cursor: grab; }
 
-/* Every bullet is a drag handle, so every bullet says so on the way down. A
- * parent's resting cursor is the pointer, because a click folds it and that is
- * the commoner intent; the grab appears once the press starts, which is the
- * moment the gesture is actually about dragging. A leaf has no fold, so it
- * rests on grab already (the rule above) and only needs the grabbing state.
+/* Every bullet is a drag handle, so every bullet says so — but grabbing means a
+ * drag is actually happening, not merely that a bullet is pressed. A press on a
+ * parent is usually a fold, and :active would flash grabbing the instant that
+ * click begins. So the grabbing cursor rides `body.dragging`, which the outliner
+ * sets only while a row is lifted (see the drag effect in Outliner.tsx): once a
+ * real drag arms, the whole surface shows grabbing until release. A leaf rests
+ * on grab already (the rule above); a parent rests on pointer, since its click
+ * folds.
  *
- * This reverses the sheet's earlier "no grab cursor advertises hold-to-drag at
- * rest" call, at Alejandro's request: everything draggable should look
- * draggable. */
-.bullet:active { cursor: grabbing; }
+ * Everything draggable still looks draggable at rest — this only stops the
+ * grabbing cursor from promising a drag that a fold-click isn't. */
+body.dragging, body.dragging .bullet { cursor: grabbing; }
 
 
 .check {

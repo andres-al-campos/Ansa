@@ -524,6 +524,11 @@ export default function Outliner({ initial }: { initial: Tree }) {
   // While a drag is live, track the pointer globally and end on release.
   useEffect(() => {
     if (!dragId) return
+    // The grabbing cursor belongs to an actual drag, not to any press: a click
+    // on a parent bullet folds it, and the pointer shouldn't flash grabbing for
+    // that. So the state rides this class, which exists only while a row is
+    // lifted, rather than :active, which fires the instant any bullet is pressed.
+    document.body.classList.add('dragging')
     const onMove = (e: PointerEvent) => {
       e.preventDefault()
       setDrop(hitTest(e.clientX, e.clientY))
@@ -540,6 +545,7 @@ export default function Outliner({ initial }: { initial: Tree }) {
     window.addEventListener('pointerup', onUp)
     window.addEventListener('pointercancel', onCancel)
     return () => {
+      document.body.classList.remove('dragging')
       window.removeEventListener('pointermove', onMove)
       window.removeEventListener('pointerup', onUp)
       window.removeEventListener('pointercancel', onCancel)
