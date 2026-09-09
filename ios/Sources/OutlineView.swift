@@ -143,6 +143,14 @@ struct OutlineView: View {
     /// sentinel, so the pair renders as two consecutive rows below the anchor.
     @State private var sentinelPlace: [NodeId: (after: NodeId?, depth: Int)] = [:]
 
+    /// The real tree row each sentinel files under when it is committed, kept
+    /// separately from the visual `after`. It has to be recorded at mint time:
+    /// focusing the sentinel sets `edit.captureParent` to the sentinel's own id,
+    /// which is not in the tree, so `commitSentinel` cannot recover the anchor
+    /// from `captureParent` — `slot(below:)` on a nil lookup would file the row
+    /// at the project root. nil means "no anchor, append to the project".
+    @State private var sentinelAnchor: [NodeId: NodeId?] = [:]
+
     /// The sentinel the cursor is in — the first one, or nil outside a run.
     private var activeSentinel: NodeId? { sentinels.first?.id }
 
@@ -1174,7 +1182,9 @@ struct OutlineView: View {
               let node = sentinels.first(where: { $0.id == id }) else { return nil }
         let text = edit.text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return nil }
-        let anchor = edit.captureParent.flatMap { TreeOps.byId(tree, $0) }
+        // The anchor recorded at mint time, not `edit.captureParent`: focusing
+        // the sentinel overwrote that with the sentinel's own id.
+        let anchor = sentinelAnchor[id].flatMap { $0 }.flatMap { TreeOps.byId(tree, $0) }
         let place = slot(below: anchor)
         // Reuse the sentinel's own id, so focus and the field that already hold
         // it keep pointing at the same row as it becomes real.
@@ -1192,6 +1202,7 @@ struct OutlineView: View {
     private func clearSentinels() {
         sentinels.removeAll()
         sentinelPlace.removeAll()
+        sentinelAnchor.removeAll()
     }
 
     /// Create the empty row the user types into, below the anchor.
@@ -1217,9 +1228,11 @@ struct OutlineView: View {
         // a leaf takes a sibling at its own depth. Mirrors `slot(below:)`, which
         // is what the eventual `addChild` will use.
         let (after, depth) = sentinelSlot(below: anchor)
-        let first = mintSentinel(after: after, depth: depth)
+        // Both sentinels file under the tapped row; `slot(below:)` turns that
+        // into a first-child or sibling placement when the text is committed.
+        let first = mintSentinel(after: after, depth: depth, anchor: anchor?.id)
         // The waiting row, directly below the first at the same depth, hidden.
-        _ = mintSentinel(after: first.id, depth: depth)
+        _ = mintSentinel(after: first.id, depth: depth, anchor: anchor?.id)
         // Focus before anything else. Focusing an id whose row is built in the
         // same render is safe: `focusedRow` is a plain value the field binds to
         // via `.focused(equals:)`, and `rows(of:)` already emits the sentinel.
@@ -1242,12 +1255,15 @@ struct OutlineView: View {
         return (anchor.id, anchorDepth)
     }
 
-    /// Add a sentinel row to the mounted set and record where it draws.
+    /// Add a sentinel row to the mounted set and record where it draws (`after`,
+    /// `depth`) and where it files (`anchor` — the real tree row it goes below
+    /// when committed, or nil to append to the project).
     @discardableResult
-    private func mintSentinel(after: NodeId?, depth: Int) -> Node {
+    private func mintSentinel(after: NodeId?, depth: Int, anchor: NodeId?) -> Node {
         let node = Node(id: TreeOps.newId(), text: "", order: 0)
         sentinels.append(node)
         sentinelPlace[node.id] = (after, depth)
+        sentinelAnchor[node.id] = anchor
         return node
     }
 
@@ -1329,11 +1345,14 @@ struct OutlineView: View {
         // first, mint second: reversing them puts a list rebuild between the
         // commit and the focus move, which is the keyboard gap again.
         let depth = rows.first { $0.node.id == created }?.depth ?? 0
+        // The next task is a sibling of the row just committed, so both the
+        // promoted waiting row and the new one behind it file under `created`.
         sentinelPlace[next.id] = (created, depth)
+        sentinelAnchor[next.id] = .some(created)
         edit.begin(id: next.id, text: "")
         focusedRow = next.id
         scrollInto(next.id)
-        mintSentinel(after: next.id, depth: depth)
+        mintSentinel(after: next.id, depth: depth, anchor: created)
     }
 
     /// A deliberate delete, so the subtree is kept and can be restored.
