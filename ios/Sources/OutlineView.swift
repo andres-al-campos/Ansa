@@ -796,16 +796,17 @@ struct OutlineView: View {
         // synthesised touches never make the two recognisers contend. A plain
         // label with a high-priority tap claims the touch ahead of that drag.
         Group {
-            // A tick is safe here only because Return is an arrow. When
-            // both showed a tick they meant opposite things a thumb's width
-            // apart, which is how a run ends by accident; with "next" drawn
-            // as an arrow the tick is unambiguously "no more rows".
+            // Finish-adding is a keyboard-down glyph, not a tick: the device
+            // draws the rename Return key as a checkmark too, and two ticks a
+            // thumb's width apart meaning opposite things is how a run ends by
+            // accident. "Put the keyboard away" is exactly what the button does
+            // and reads as neither the tick nor a delete.
             //
             // Quiet in both states, matching the back and home buttons. Neither
             // glyph is doing repeated work — Return is, while adding — and a
             // filled accent circle on a corner control that gets pressed twice
             // per run was the loudest thing on a screen that is mostly text.
-            Image(systemName: adding ? "checkmark" : "plus")
+            Image(systemName: adding ? "keyboard.chevron.compact.down" : "plus")
                 .font(.system(size: 20, weight: .semibold))
                 .foregroundStyle(Color.primary)
                 // Flattened before the material, not after. `drawingGroup`
