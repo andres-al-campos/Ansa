@@ -782,8 +782,9 @@ struct OutlineView: View {
         }
     }
 
-    /// The one control: plus at rest, checkmark while adding. The same button
-    /// is also the way out, and the symbol swap is what says the mode is on.
+    /// The one control: plus at rest, a keyboard-down glyph while adding. The
+    /// same button is also the way out, and the symbol swap is what says the
+    /// mode is on.
     ///
     /// Inert behind a swipe for the same reason as a row's field — the copy
     /// underneath must not act on a screen that is sliding away.
@@ -845,8 +846,8 @@ struct OutlineView: View {
     }
 
 
-    /// Plus at rest, checkmark while adding. Shared by the Button and the
-    /// high-priority tap that guards it.
+    /// Plus at rest, a keyboard-down glyph while adding. Shared by the Button
+    /// and the high-priority tap that guards it.
     private func capture() {
         if edit.adding { stopAdding() } else { startAdding() }
     }
