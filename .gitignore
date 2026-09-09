@@ -51,6 +51,13 @@ desktop/dist/
 desktop/web/
 
 # Icon build intermediates (regenerable from the iOS source PNG); the committed
-# outputs are desktop/icon/Ansa.icns and desktop/icon/dock.png
+# outputs are desktop/icon/Ansa.icns and desktop/icon/dock.png (hand-painted set)
+# and desktop/icon/Ansa.icon (the Liquid Glass bundle). The loose layer-*.png are
+# build-layers.sh's output that build-glass-icon.sh copies into the bundle, and
+# the preview is a throwaway render.
 desktop/icon/master-1024.png
 desktop/icon/Ansa.iconset/
+desktop/icon/layer-tile.png
+desktop/icon/layer-ring.png
+desktop/icon/layer-dot.png
+desktop/icon/Ansa-glass-preview.png
