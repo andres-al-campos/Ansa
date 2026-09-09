@@ -1686,9 +1686,16 @@ struct OutlineView: View {
     /// lighting the rest says the row might land anywhere in there. Cutting it
     /// at the drop point makes the lit length itself the answer.
     ///
-    /// `.into` is not cut: nesting lights the row rather than a guide, and
-    /// `parentHighlight` carries that case.
+    /// `.into` cuts at the parent's own row, so nothing down the guide lights:
+    /// when the parent already has children, the run of their guide restated the
+    /// nest that the children themselves already show, and `parentHighlight`
+    /// carries the cue on its own. (A childless parent has no guide to light
+    /// either way.)
     private var litUntilRow: Int {
+        if let target = drag.target, target.mode == .into,
+           let i = rows.firstIndex(where: { $0.node.id == target.id }) {
+            return i
+        }
         guard let target = drag.target,
               target.mode == .before || target.mode == .after,
               let i = rows.firstIndex(where: { $0.node.id == target.id })
