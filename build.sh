@@ -404,10 +404,37 @@ build_desktop_bundle() {
   fi
 }
 
+# The desktop app binds a fixed loopback port (desktop/main.js PORT), so a copy
+# left running from a previous build holds it and the new one dies with
+# EADDRINUSE. Rather than refuse to launch, take the old one down first — a
+# rebuild is meant to replace the running copy, not stand beside it. Whoever
+# holds the port *is* the instance to replace, so target it by port; that
+# catches both the dev-run Electron and the packaged .app without matching by
+# name. Give it a moment to release the socket before we bind it again.
+DESKTOP_PORT=41407
+kill_running_ansa() {
+  local pids
+  pids=$(lsof -tiTCP:"$DESKTOP_PORT" -sTCP:LISTEN 2>/dev/null) || true
+  [ -z "$pids" ] && return
+  echo "Replacing the Ansa already running on ${DESKTOP_PORT} (pid ${pids//$'\n'/, }) …"
+  # shellcheck disable=SC2086
+  kill $pids 2>/dev/null || true
+  for _ in 1 2 3 4 5 6 7 8 9 10; do
+    lsof -tiTCP:"$DESKTOP_PORT" -sTCP:LISTEN >/dev/null 2>&1 || return
+    sleep 0.2
+  done
+  # Still holding it after two seconds — a hung process. SIGKILL, then move on;
+  # if the port is genuinely stuck the launch below will say so plainly.
+  # shellcheck disable=SC2086
+  kill -9 $pids 2>/dev/null || true
+  sleep 0.2
+}
+
 # Dev run: build the bundle, then launch the hot-reload window.
 desktop() {
   trap - INT TERM EXIT
   build_desktop_bundle
+  kill_running_ansa
   echo "Launching Ansa …"
   (cd desktop && npm start)
 }
@@ -453,6 +480,7 @@ desktop_dist() {
   codesign --force --deep --sign - "${dest}/Ansa.app" >/dev/null 2>&1
   xattr -dr com.apple.quarantine "${dest}/Ansa.app" 2>/dev/null || true
 
+  kill_running_ansa
   echo "Launching Ansa (watch the dock for the glass icon) …"
   open "${dest}/Ansa.app"
 }
