@@ -12,6 +12,7 @@ const { app, BrowserWindow, Menu, shell, dialog } = require('electron')
 const path = require('node:path')
 const http = require('node:http')
 const fs = require('node:fs')
+const { execFileSync } = require('node:child_process')
 
 // The built web app, copied in by build.sh.
 const WEB = path.join(__dirname, 'web')
@@ -90,6 +91,47 @@ function serve() {
       resolve0(`http://127.0.0.1:${PORT}`)
     })
   })
+}
+
+// Drop cookie rows left behind by an earlier port, before Chromium opens the
+// store.
+//
+// Clerk keeps the session in cookies on the app's origin. The cookie store's
+// unique key includes the source port, but Chromium's duplicate check keys only
+// on (host, path) — so a cookie written under the old random-port origin and
+// the same cookie under the fixed port 41407 look like duplicates to it, and it
+// logs a `Found N duplicate cookies` error for each at startup. Only the 41407
+// rows are reachable now; the old-port rows are dead weight that will never be
+// rewritten, so nothing but this ever clears them.
+//
+// The cookie API can't see the port, so this goes at the SQLite layer through
+// the system `sqlite3`. Writing the store while Chromium has it open would
+// corrupt it, so this runs before the window (and any request that opens the
+// store) and refuses if any process already holds the file — a launch that
+// races it simply keeps the stale rows for one more run rather than risking the
+// database. macOS ships sqlite3; if it's missing, skip quietly.
+function purgeStaleCookies() {
+  const store = path.join(app.getPath('userData'), 'Cookies')
+  if (!fs.existsSync(store)) return
+  try {
+    const holders = execFileSync('lsof', ['-t', store], { stdio: ['ignore', 'pipe', 'ignore'] })
+      .toString()
+      .trim()
+    // Any holder at all — another copy, or Chromium in this very process having
+    // already opened the store — means writing it now could corrupt it. Skip;
+    // the stale rows survive one more launch, which is only log noise.
+    if (holders) return
+  } catch {
+    // lsof exits non-zero when nothing holds the file; that's the clear-to-write
+    // case, so fall through.
+  }
+  try {
+    execFileSync('sqlite3', [store, `DELETE FROM cookies WHERE source_port <> ${PORT};`], {
+      stdio: 'ignore',
+    })
+  } catch (err) {
+    console.warn('Could not purge stale cookies:', err?.message ?? err)
+  }
 }
 
 function createWindow(url) {
@@ -179,6 +221,9 @@ app.whenReady().then(async () => {
   }
 
   buildMenu()
+  // Before anything opens the cookie store: clear rows from an earlier port so
+  // Chromium doesn't log them as duplicates. Guarded against a store in use.
+  purgeStaleCookies()
   let url
   try {
     url = await serve()

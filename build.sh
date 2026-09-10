@@ -430,11 +430,31 @@ kill_running_ansa() {
   sleep 0.2
 }
 
+# Clear cookie rows left behind by an earlier loopback port.
+#
+# Clerk's session cookies are keyed in the store partly by source port, but
+# Chromium's duplicate check ignores the port — so a cookie under the old
+# random-port origin and the same one under 41407 read as duplicates and it logs
+# a `Found N duplicate cookies` error per name at every launch. The old-port
+# rows are dead (nothing serves those ports now) and only ever get cleared here.
+#
+# Must run with the app down — kill_running_ansa above guarantees that, so the
+# SQLite store isn't open and this write is safe. macOS ships sqlite3; skip if
+# it or the store is missing. The app also does this at startup, but only when
+# it wins the race to the store, so doing it here makes the fix reliable.
+purge_stale_cookies() {
+  local store="$HOME/Library/Application Support/ansa-desktop/Cookies"
+  [ -f "$store" ] || return
+  command -v sqlite3 >/dev/null 2>&1 || return
+  sqlite3 "$store" "DELETE FROM cookies WHERE source_port <> ${DESKTOP_PORT};" 2>/dev/null || true
+}
+
 # Dev run: build the bundle, then launch the hot-reload window.
 desktop() {
   trap - INT TERM EXIT
   build_desktop_bundle
   kill_running_ansa
+  purge_stale_cookies
   echo "Launching Ansa …"
   (cd desktop && npm start)
 }
@@ -481,6 +501,7 @@ desktop_dist() {
   xattr -dr com.apple.quarantine "${dest}/Ansa.app" 2>/dev/null || true
 
   kill_running_ansa
+  purge_stale_cookies
   echo "Launching Ansa (watch the dock for the glass icon) …"
   open "${dest}/Ansa.app"
 }
