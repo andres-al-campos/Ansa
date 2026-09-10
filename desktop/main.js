@@ -78,11 +78,16 @@ function createWindow(url) {
     minWidth: 480,
     minHeight: 400,
     // The traffic lights sit inside the content, which reads as a modern Mac
-    // app rather than a web page in a chrome box. The web bundle is shared with
-    // the browser and knows nothing about them, so the desktop shell adds the
-    // clearance below (see insertCSS in createWindow) rather than baking desktop
-    // padding into the web app.
+    // app rather than a web page in a chrome box. The web app draws its own
+    // toolbar in that band (the `.app.desktop` styles, switched on by the
+    // preload flag) — a drag region with the sidebar toggle and back/forward.
     titleBarStyle: 'hiddenInset',
+    // Inset the lights from the window's top-left corner. hiddenInset already
+    // nudges them in, but the default sits tight against the edge; a little more
+    // room gives the toolbar's sidebar run breathing space around them. The
+    // toolbar CSS reserves the horizontal clearance (padding-left on the side
+    // run); this only sets where macOS draws the lights.
+    trafficLightPosition: { x: 19, y: 18 },
     webPreferences: {
       // Nothing here needs Node in the page, so keep the renderer sandboxed.
       // The bundle is ordinary web code that only talks to the Worker.
@@ -94,13 +99,9 @@ function createWindow(url) {
 
   win.loadURL(url)
 
-  // Push the sidebar's top padding down so the "Ansa" wordmark clears the
-  // traffic lights, which hiddenInset overlays on the content at the top-left.
-  // Desktop-only: the browser app has no window controls, so this lives here
-  // and not in the shared web CSS. Applied on every load so a reload keeps it.
-  win.webContents.on('did-finish-load', () => {
-    void win.webContents.insertCSS('.side { padding-top: 52px; }')
-  })
+  // The desktop toolbar, window drag region, and traffic-light clearance all
+  // live in the shared web CSS now, switched on by the `.app.desktop` class the
+  // renderer sets from the preload's `ansaDesktop` flag. Nothing to inject here.
 
   // A link to anywhere but the app's own origin opens in the real browser, not
   // in a second app window with no way back. Clerk's in-page navigation is hash

@@ -68,6 +68,13 @@ const GUIDE_X0 = ROW_PAD + BULLET / 2
 /** The same numbers, exported so a test can check them against index.css. */
 export const GEOMETRY = { ROW_PAD, INDENT, ROW_GAP, BULLET, GUIDE_W, GUIDE_X0 }
 
+// Running inside the Electron shell rather than a browser tab. The preload sets
+// this; a plain web page has no `ansaDesktop`, so it reads false. The desktop
+// build draws a native-style top toolbar (window drag region, sidebar toggle,
+// back/forward) that the browser build has no window chrome to justify.
+const IS_DESKTOP =
+  typeof window !== 'undefined' && (window as { ansaDesktop?: boolean }).ansaDesktop === true
+
 // Telling a click on a bullet apart from a drag of it. DRAG_SLOP is how far the
 // pointer may wander and still count as a click; past it, a mouse is dragging.
 // DRAG_HOLD is the fallback for pressing without moving, and has to sit clear of
@@ -290,11 +297,65 @@ export default function Outliner({ initial }: { initial: Tree }) {
   // somewhere else at once.
   const [inTrash, setInTrash] = useState(false)
 
-  const setScope = useCallback((id: NodeId | null) => {
+  // Back/forward history for the desktop toolbar. A location is where-you-are:
+  // the scope, plus whether the trash screen is showing. `nav.stack[nav.i]` is
+  // the current one. Navigating truncates any forward entries and pushes; the
+  // arrows move `i` without pushing. Web builds never read this — the toolbar is
+  // desktop-only — but the bookkeeping is cheap and keeping it unconditional
+  // means the two builds share one navigation path.
+  type NavLoc = { scope: NodeId | null; trash: boolean }
+  const [nav, setNav] = useState<{ stack: NavLoc[]; i: number }>(() => ({
+    stack: [{ scope: resumeScope(initial), trash: false }],
+    i: 0,
+  }))
+
+  // Apply a location to the actual scope/trash state. Shared by every navigation
+  // path so back/forward land exactly where a fresh navigation would.
+  const applyLoc = useCallback((loc: NavLoc) => {
     autoScope.current = false
-    setInTrash(false)
-    setScopeRaw(id)
+    setInTrash(loc.trash)
+    setScopeRaw(loc.scope)
   }, [])
+
+  // Go somewhere new: apply it and record it, dropping any forward history.
+  // A no-op when you're already there, so re-clicking the current project or
+  // Trash doesn't stack duplicate entries the back button would trudge through.
+  const navigate = useCallback(
+    (loc: NavLoc) => {
+      applyLoc(loc)
+      setNav((n) => {
+        const cur = n.stack[n.i]
+        if (cur && cur.scope === loc.scope && cur.trash === loc.trash) return n
+        const stack = n.stack.slice(0, n.i + 1)
+        stack.push(loc)
+        return { stack, i: stack.length - 1 }
+      })
+    },
+    [applyLoc],
+  )
+
+  const goBack = useCallback(() => {
+    setNav((n) => {
+      if (n.i === 0) return n
+      const i = n.i - 1
+      applyLoc(n.stack[i])
+      return { ...n, i }
+    })
+  }, [applyLoc])
+
+  const goForward = useCallback(() => {
+    setNav((n) => {
+      if (n.i >= n.stack.length - 1) return n
+      const i = n.i + 1
+      applyLoc(n.stack[i])
+      return { ...n, i }
+    })
+  }, [applyLoc])
+
+  const setScope = useCallback(
+    (id: NodeId | null) => navigate({ scope: id, trash: false }),
+    [navigate],
+  )
 
   const [leafOnly, setLeafOnly] = useState(false)
 
@@ -310,6 +371,27 @@ export default function Outliner({ initial }: { initial: Tree }) {
     setPresent(markOpened(tree, root, at), { op: 'markOpened', id: root, at })
   }
   const [hideDone, setHideDone] = useState(false)
+  // Sidebar shown or collapsed, toggled from the desktop toolbar. Persisted so
+  // the choice survives a reload; desktop-only, so a plain web tab never reads
+  // or writes it. Wrapped because storage can throw (private mode, blocked).
+  const [sidebarHidden, setSidebarHidden] = useState(() => {
+    try {
+      return localStorage.getItem('ansa.sidebarHidden') === '1'
+    } catch {
+      return false
+    }
+  })
+  const toggleSidebar = useCallback(() => {
+    setSidebarHidden((h) => {
+      const next = !h
+      try {
+        localStorage.setItem('ansa.sidebarHidden', next ? '1' : '0')
+      } catch {
+        /* storage unavailable; the toggle still works for this session */
+      }
+      return next
+    })
+  }, [])
   const [editing, setEditing] = useState<NodeId | null>(null)
   // The landing card whose delete is armed: its trash can has flipped to a
   // confirm ✓ with a cancel ✕ beside it. Only one card can be armed at a time.
@@ -1132,8 +1214,62 @@ export default function Outliner({ initial }: { initial: Tree }) {
   // shown collapsed — never its children, even when dragging a parent.
   const dragNode = dragId ? byId(tree, dragId) : undefined
 
+  const canGoBack = nav.i > 0
+  const canGoForward = nav.i < nav.stack.length - 1
+
   return (
-    <div className="app">
+    <div className={'app' + (IS_DESKTOP ? ' desktop' : '') + (sidebarHidden ? ' side-hidden' : '')}>
+      {/* The desktop toolbar. hiddenInset hides the native title bar, so this
+          band replaces it: a full-width drag region (set in CSS) split into two
+          runs. The sidebar run holds the toggle for the panel it sits over; the
+          main run holds back/forward. The split falls on the sidebar's right
+          edge, matching where Finder/Notes put the same controls. Desktop-only:
+          the browser build has no window chrome to justify it. */}
+      {IS_DESKTOP && (
+        <div className="titlebar">
+          {/* Over the sidebar. The toggle sits at the far end, against the
+              divider, so it reads as belonging to the panel — as in Finder. */}
+          <div className="tb-side">
+            <button
+              className="tb-btn"
+              onClick={toggleSidebar}
+              title={sidebarHidden ? 'Show sidebar' : 'Hide sidebar'}
+              aria-label={sidebarHidden ? 'Show sidebar' : 'Hide sidebar'}
+            >
+              <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden>
+                <rect x="2.5" y="3" width="13" height="12" rx="2.5" stroke="currentColor" strokeWidth="1.4" />
+                <line x1="7" y1="3.5" x2="7" y2="14.5" stroke="currentColor" strokeWidth="1.4" />
+              </svg>
+            </button>
+          </div>
+          {/* Over the main column. Navigation, at the left where the content it
+              acts on begins. */}
+          <div className="tb-main">
+            <button
+              className="tb-btn"
+              onClick={goBack}
+              disabled={!canGoBack}
+              title="Back"
+              aria-label="Back"
+            >
+              <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden>
+                <path d="M11 4l-5 5 5 5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </button>
+            <button
+              className="tb-btn"
+              onClick={goForward}
+              disabled={!canGoForward}
+              title="Forward"
+              aria-label="Forward"
+            >
+              <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden>
+                <path d="M7 4l5 5-5 5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </button>
+          </div>
+        </div>
+      )}
       <SyncToast live={sync.live} rejected={sync.rejected} onDismissRejected={sync.clearRejected} />
       <aside className="side">
         <button className="brand" onClick={() => setScope(null)} title="Home — all projects">
@@ -1163,10 +1299,7 @@ export default function Outliner({ initial }: { initial: Tree }) {
         <ol className="rail trash-rail">
           <li className={inTrash ? 'here' : ''}>
             <button
-              onClick={() => {
-                setScopeRaw(null)
-                setInTrash(true)
-              }}
+              onClick={() => navigate({ scope: null, trash: true })}
             >
               <span>Trash</span>
               {/* At the right rather than leading the label. It is the only row

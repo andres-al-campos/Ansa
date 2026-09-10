@@ -129,8 +129,140 @@ button { font: inherit; color: inherit; }
 
 .app {
   display: grid;
-  grid-template-columns: var(--side-w) 1fr;
+  /* First track is `auto`, sized by the sidebar's margin-box. The sidebar is a
+   * fixed --side-w wide and collapses by animating a negative margin-left to
+   * -1 * --side-w: its margin-box narrows to zero, so the auto track shrinks and
+   * the main pane slides over, while the sidebar itself slides off-frame at a
+   * fixed width — its text never reflows mid-animation. See .side below. */
+  grid-template-columns: auto 1fr;
   height: 100%;
+  /* Clip the sidebar once it slides past the left edge. */
+  overflow-x: hidden;
+}
+
+/* --------------------------------------------------- desktop toolbar
+ *
+ * Only the Electron build carries `.desktop` (set from the preload flag), so all
+ * of this is dormant in the browser. hiddenInset hides the native title bar; the
+ * toolbar takes its place as a 52px band across the top — a Finder/Mail-style
+ * strip that is also the window's drag region. The two columns start below it.
+ *
+ * 52px is Apple's standard sidebar-toolbar height (Notes, Mail, Finder). The
+ * left run of the bar sits over the sidebar and clears the traffic lights; the
+ * controls sit just past the sidebar edge, over the main column, where those
+ * apps put them. */
+.app.desktop {
+  --toolbar-h: 52px;
+}
+.app.desktop .side,
+.app.desktop .main {
+  /* Clear the fixed bar. Replaces the old 52px sidebar padding that the shell
+   * used to inject; now both columns start below the toolbar. */
+  padding-top: 16px;
+  margin-top: var(--toolbar-h);
+  height: calc(100% - var(--toolbar-h));
+}
+.titlebar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: var(--toolbar-h);
+  z-index: 100;
+  display: flex;
+  /* The whole bar drags the window; the buttons opt back out below. The traffic
+   * lights are native chrome and float above this, so they stay clickable. */
+  -webkit-app-region: drag;
+}
+/* The sidebar run: exactly the sidebar's width, so the divider between the two
+ * runs falls on the sidebar's right edge. The traffic lights sit at its left;
+ * the toggle sits at its right, against the divider, the way Finder/Notes place
+ * the same control. A right border draws the seam. */
+.tb-side {
+  /* Matches the sidebar's width so the divider and the toggle sit at the sidebar's
+   * right edge. When the sidebar collapses this run narrows to a floor (the
+   * collapsed rule below), transitioned in step with the grid track so the toggle
+   * slides toward the lights rather than teleporting. */
+  width: var(--side-w);
+  flex: none;
+  display: flex;
+  /* Align the control to the traffic-light row. The lights are now inset to
+   * ~y=18 (trafficLightPosition in main.js), so their centres sit near y=25;
+   * a 28px button pinned to the top with an 11px offset centres at the same
+   * line. Pin to the top rather than centre in the 52px band. */
+  align-items: flex-start;
+  padding-top: 11px;
+  justify-content: flex-end;
+  padding-right: 10px;
+  background: var(--sunk);
+  /* The divider between the runs. It draws the sidebar's right edge, so it sits
+   * at --side-w when the sidebar is open and slides to the left edge when it's
+   * closed (the collapsed rule below shrinks this run to fit). */
+  border-right: 1px solid var(--edge);
+  border-bottom: 1px solid var(--edge-soft);
+}
+/* The main run fills the rest; navigation sits at its left, where the content
+ * it acts on begins. Same top alignment as the sidebar run. */
+.tb-main {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: flex-start;
+  padding-top: 11px;
+  gap: 2px;
+  padding-left: 12px;
+  background: var(--ground);
+  border-bottom: 1px solid var(--edge-soft);
+}
+/* Collapsed: no sidebar means no divider between the runs — the border fades and
+ * the sidebar run takes the main run's ground, so the two read as one continuous
+ * bar over the full-width content: traffic lights, toggle, then back/forward. The
+ * run narrows to a floor that still clears the lights (118px), parking the toggle
+ * just past them; padding-right trims so it sits snug before back/forward. */
+.app.desktop.side-hidden .tb-side {
+  width: 118px;
+  padding-right: 2px;
+  background: var(--ground);
+  border-right-color: transparent;
+}
+.app.desktop.side-hidden .tb-main {
+  padding-left: 0;
+}
+/* Animate the run's width, ground, and divider together so the whole thing —
+ * toggle sliding left, seam dissolving — moves as one gesture with the grid. */
+.app.desktop .tb-side {
+  transition: width 0.24s ease, background 0.24s ease, border-right-color 0.24s ease;
+}
+.tb-btn {
+  -webkit-app-region: no-drag; /* a control, not a drag surface */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: 7px;
+  background: none;
+  color: var(--ink-mid);
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.tb-btn:hover {
+  background: var(--row-hover);
+  color: var(--ink);
+}
+.tb-btn:disabled {
+  color: var(--ink-ghost);
+  cursor: default;
+  background: none;
+}
+
+/* Collapsing the sidebar: the aside's width goes to 0 (rule on .side below). The
+ * auto first track follows it shut and the main pane reflows in step. The aside
+ * stays in flow so it can animate, clipping its content (min-width:0 /
+ * overflow-x:hidden) as it narrows. */
+.app.side-hidden > .main {
+  grid-column: 2;
 }
 
 .side {
@@ -140,6 +272,25 @@ button { font: inherit; color: inherit; }
   overflow-y: auto;
   /* Same reason as .main: a long project list shouldn't reflow the short one. */
   scrollbar-gutter: stable;
+  /* Fixed width so the content never reflows — collapse slides it off-frame via
+   * margin, it doesn't shrink. box-sizing keeps the padding inside the 250px. */
+  width: var(--side-w);
+  flex: none;
+  box-sizing: border-box;
+}
+/* Desktop only: animate the slide. Transitioning margin is reliable (unlike a
+ * grid-track or width transition here); the browser build never sets side-hidden,
+ * so its sidebar is a static 250px with no transition cost. */
+.app.desktop > .side {
+  transition: margin-left 0.24s ease, border-right-color 0.24s ease;
+}
+/* Collapsed: pull the sidebar a full width to the left. Its margin-box collapses
+ * to zero so the auto track closes and the main pane takes the space; the aside
+ * slides off-frame (clipped by .app's overflow) at its fixed width, rigid. The
+ * divider fades as it goes. */
+.app.side-hidden > .side {
+  margin-left: calc(-1 * var(--side-w));
+  border-right-color: transparent;
 }
 
 /* The wordmark doubles as the home link back to the Projects landing. All
@@ -1567,13 +1718,19 @@ body.dragging, body.dragging .bullet { cursor: grabbing; }
 .add:hover { color: var(--brass-ink); background: var(--sunk); }
 
 @media (max-width: 820px) {
-  .app { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
-  .side { border-right: none; border-bottom: 1px solid var(--edge-soft); padding: 18px; }
+  /* The narrow-window layout stacks the sidebar on top of the main pane. It's a
+   * browser convenience — a phone-width tab. The desktop app is excluded: it
+   * always carries the top toolbar, which is built for the two-column layout and
+   * collides with the stacked one, and a Mac window that's merely narrow still
+   * wants its sidebar beside the content (collapse it with the toolbar toggle for
+   * room, don't reflow it above). */
+  .app:not(.desktop) { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
+  .app:not(.desktop) .side { border-right: none; border-bottom: 1px solid var(--edge-soft); padding: 18px; }
   /* Also resets the centring offset above: with the sidebar stacked on top
    * rather than beside, .main already spans the window and there is nothing to
    * correct for. The clamp would be holding it at 0 here anyway — this is the
    * shorthand saying so, not a second rule. */
-  .main { padding: 20px 18px 40px; }
+  .app:not(.desktop) .main { padding: 20px 18px 40px; }
 }
 
 /* Sync warning. Fixed rather than absolute so it stays put while the outliner
