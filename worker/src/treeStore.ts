@@ -172,6 +172,19 @@ export class TreeStore {
     // on the column both order by serves each from either end.
     this.sql.exec(
       'CREATE INDEX IF NOT EXISTS idx_trash_deleted ON trash_entries(deletedAt);')
+
+    // Same migration as nodes above, for the same reason: pinOrder was added to
+    // the CREATE after this table already existed in deployed stores, so those
+    // stores never got the column and every insert into trash_nodes (which any
+    // delete performs) fails with "no column named pinOrder". The ALTER catches
+    // them up; on a store created since, it throws duplicate-column, the success
+    // case. This one was missed when nodes got its ALTER — a delete is rarer than
+    // an edit, so the gap stayed quiet until a cross-client write hit it.
+    try {
+      this.sql.exec('ALTER TABLE trash_nodes ADD COLUMN pinOrder INTEGER;')
+    } catch {
+      // already migrated
+    }
   }
 
   /** This owner's whole tree, as the flat Node array shared/ expects. */

@@ -301,6 +301,39 @@ describe('single-field ops write one row', () => {
     one.close()
   })
 
+  it('migrates trash_nodes when it predates pinOrder, so a delete still writes', () => {
+    // The parallel of the nodes migration above, and the case that actually
+    // broke: a store whose trash_nodes was created before pinOrder joined the
+    // column list. CREATE TABLE IF NOT EXISTS skips the existing table, so
+    // without the ALTER the first delete throws "no column named pinOrder".
+    // Building the old trash_nodes by hand is the only way to exercise that
+    // path; a fresh store gets the column from the CREATE and never sees it.
+    const path = join(dir, 'old-trash.db')
+    const old = sqlAdapter(path)
+    old.exec(`
+      CREATE TABLE trash_nodes (
+        entryId   TEXT NOT NULL,
+        id        TEXT NOT NULL,
+        parentId  TEXT,
+        text      TEXT NOT NULL,
+        done      INTEGER NOT NULL DEFAULT 0,
+        "order"   INTEGER NOT NULL DEFAULT 0,
+        collapsed INTEGER NOT NULL DEFAULT 0,
+        pinned    INTEGER NOT NULL DEFAULT 0,
+        lastOpenedAt INTEGER,
+        createdAt INTEGER NOT NULL,
+        PRIMARY KEY (entryId, id)
+      );
+    `)
+
+    const store = new TreeStore(old)
+    const { id } = store.addChild(null, 'to delete')
+    // The delete-to-trash inserts into trash_nodes; before the ALTER this threw.
+    expect(() => store.remove(id, true)).not.toThrow()
+    expect(store.load()).toEqual([])
+    old.close()
+  })
+
   it('markOpened persists the stamp', () => {
     const { id } = storeA.addChild(null, 'project')
     const tree = storeA.markOpened(id)
