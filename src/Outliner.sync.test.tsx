@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
-import { act, cleanup, render } from '@testing-library/react'
+import { act, cleanup, fireEvent, render } from '@testing-library/react'
 import { seedTree } from '@shared/seed'
 import type { Op } from '@shared/ops'
 import type { Tree } from '@shared/tree'
@@ -88,6 +88,18 @@ function scopeIntoProject(container: HTMLElement) {
 function toggleFirstTask(container: HTMLElement) {
   const box = container.querySelector('[role="checkbox"]') as HTMLElement
   act(() => box.click())
+}
+
+// Click a row's label to edit it, returning its input.
+function editRow(container: HTMLElement, text: RegExp): HTMLInputElement {
+  const row = [...container.querySelectorAll('.row')].find((r) => text.test(r.textContent ?? ''))!
+  act(() => (row.querySelector('.label') as HTMLElement).click())
+  return container.querySelector('input.label-input') as HTMLInputElement
+}
+
+// The input of whichever row is currently being edited (the fresh one after Enter).
+function editing(container: HTMLElement) {
+  return container.querySelector('input.label-input') as HTMLInputElement
 }
 
 test('an edit before the first sync is held, then sent once the server tree lands', async () => {
@@ -424,6 +436,77 @@ test('the whole tree is never pushed for an ordinary edit', async () => {
   // once clobber each other. Edits must travel as ops.
   expect(putTree).not.toHaveBeenCalled()
   expect(sendOp).toHaveBeenCalled()
+})
+
+test('a row opened and abandoned empty never reaches the server', async () => {
+  // The empty-placeholder bug: the web app used to broadcast a blank addChild the
+  // instant a row was born, so a peer mid-edit (iOS stashes incoming trees while
+  // busy) would adopt the empty row and it lingered. A row you open and never
+  // type into is not a task — its create is withheld until it has real text, so
+  // an abandoned one leaves no trace on the wire.
+  const { default: Outliner } = await import('./Outliner')
+  const seed = seedTree()
+  const { container } = render(<Outliner initial={seed} />)
+  const stream = await streamOpen()
+  scopeIntoProject(container)
+  await act(async () => {
+    stream.emit(seed)
+  })
+  const before = sendOp.mock.calls.length
+
+  // Enter to spawn a fresh empty row, then Enter again on it without typing —
+  // the outliner's "abandon an empty row" gesture.
+  const input = editRow(container, /Email the landlord/)
+  act(() => {
+    fireEvent.change(input, { target: { value: 'Email the landlord about the boiler' } })
+    fireEvent.keyDown(input, { key: 'Enter' })
+  })
+  await act(async () => fireEvent.keyDown(editing(container), { key: 'Enter' }))
+
+  // The committing setText for the row that was already there may go out; what
+  // must not is any addChild — the abandoned row was never real.
+  const added = sendOp.mock.calls.slice(before).filter(([op]) => op.op === 'addChild')
+  expect(added).toEqual([])
+})
+
+test('a new row typed into is created once, already carrying its text', async () => {
+  // The other half of the fix: withholding the empty create must not turn one
+  // addChild into an empty addChild plus a later setText. The row's first real
+  // text becomes the create, so it lands as a single named addChild — not a
+  // blank node the server then has to rename.
+  const { default: Outliner } = await import('./Outliner')
+  const seed = seedTree()
+  const { container } = render(<Outliner initial={seed} />)
+  const stream = await streamOpen()
+  scopeIntoProject(container)
+  await act(async () => {
+    stream.emit(seed)
+  })
+  const before = sendOp.mock.calls.length
+
+  // Enter to spawn the row, type into it, then Enter to commit and move on.
+  const input = editRow(container, /Email the landlord/)
+  act(() => {
+    fireEvent.change(input, { target: { value: 'Email the landlord about the boiler' } })
+    fireEvent.keyDown(input, { key: 'Enter' })
+  })
+  const fresh = editing(container)
+  await act(async () => {
+    fireEvent.change(fresh, { target: { value: 'Ring the plumber' } })
+    fireEvent.keyDown(fresh, { key: 'Enter' })
+  })
+
+  const added = sendOp.mock.calls
+    .slice(before)
+    .map(([op]) => op)
+    .filter((op) => op.op === 'addChild')
+    .map((op) => ({ op: op.op, text: 'text' in op ? op.text : undefined }))
+  expect(added).toEqual([{ op: 'addChild', text: 'Ring the plumber' }])
+  // And no stray setText for that same row — the text rode in on the create.
+  const setTexts = sendOp.mock.calls
+    .slice(before)
+    .filter(([op]) => op.op === 'setText' && op.text === 'Ring the plumber')
+  expect(setTexts).toEqual([])
 })
 
 test('a refused edit is shown to the user, and can be dismissed', async () => {

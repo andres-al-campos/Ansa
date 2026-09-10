@@ -232,6 +232,63 @@ export default function Outliner({ initial }: { initial: Tree }) {
   })
   const tree = history.present
 
+  // New rows are born empty and named a moment later. A row you open and never
+  // type into is not a task — it is a caret waiting for one — so its addChild is
+  // held here rather than broadcast, keyed by node id, until the row first gets
+  // real text. Then it goes out carrying that text, as one create; abandoned
+  // empty, it is dropped and nothing was ever sent. This keeps a blank
+  // placeholder off the wire, which matters most when a peer is mid-edit and so
+  // stashing incoming trees (the iOS busy gate): without it, that peer adopts
+  // the empty row and it lingers. The iOS client already withholds the same way
+  // (its "sentinels"); this makes the web build agree.
+  // Each entry is a new row not yet on the wire: the addChild that would create
+  // it, plus any structural ops (a moveNode to slot it under the caret) minted
+  // in the same breath, before the row had text. They ride together and go out
+  // as one bundle the instant the row first gets real text.
+  const pendingCreate = useRef(new Map<NodeId, Op[]>())
+
+  // The send boundary. Every op the app produces passes through here on its way
+  // to the queue, so the held-create rule lives in one place rather than at each
+  // call site. It rewrites the stream:
+  //  - a fresh empty addChild is withheld, not sent;
+  //  - a structural op (moveNode) naming a still-held id joins that id's bundle,
+  //    so the row's create and its placement stay together and still-empty;
+  //  - the first real text for a held id flushes the bundle — the addChild now
+  //    carrying the text, then the structural ops, then this setText — so the
+  //    server hears the create before anything that references it;
+  //  - a held id that is removed (or emptied) is simply forgotten: no create, no
+  //    removeNode, because the server never heard of it.
+  function sendOps(...ops: Op[]) {
+    const held = pendingCreate.current
+    const out: Op[] = []
+    for (const op of ops) {
+      if (op.op === 'addChild' && op.text.trim() === '') {
+        held.set(op.id, [op])
+        continue
+      }
+      const bundle = 'id' in op ? held.get(op.id as NodeId) : undefined
+      if (!bundle) {
+        out.push(op)
+        continue
+      }
+      // This op names a node whose create is still held.
+      if (op.op === 'setText' && op.text.trim() !== '') {
+        const [create, ...structural] = bundle
+        out.push({ ...(create as Extract<Op, { op: 'addChild' }>), text: op.text.trim() })
+        out.push(...structural)
+        held.delete(op.id)
+      } else if (op.op === 'removeNode' || (op.op === 'setText' && op.text.trim() === '')) {
+        held.delete(op.id) // abandoned before it was ever real; send nothing
+      } else {
+        // A structural op (moveNode, toggleCollapsed) minted alongside the still-
+        // empty create. Hold it too — it rides out with the bundle once the row
+        // gets text, so the server never hears of a move before the create.
+        bundle.push(op)
+      }
+    }
+    if (out.length) syncRef.current?.send(...out)
+  }
+
   /** Record a new tree as an undoable checkpoint. Accepts either the next tree
    *  or an updater that derives it from the current tree, so two edits fired in
    *  the same handler (rename, then add a sibling) compose off the latest state
@@ -241,20 +298,21 @@ export default function Outliner({ initial }: { initial: Tree }) {
    *  applied locally so the UI never waits, and the ops are replayed server-side
    *  against whatever the shared tree is by then — that pairing is what lets
    *  this tab and a Claude on the MCP edit at once without overwriting each
-   *  other. Pass them in the order they should land. */
+   *  other. Pass them in the order they should land. Ops go through sendOps,
+   *  which holds an empty new row off the wire until it is named. */
   function commit(next: Tree | ((prev: Tree) => Tree), ...ops: Op[]) {
     setHistory((h) => {
       const value = typeof next === 'function' ? (next as (prev: Tree) => Tree)(h.present) : next
       return value === h.present ? h : { past: [...h.past, h.present], present: value, future: [] }
     })
-    syncRef.current?.send(...ops)
+    sendOps(...ops)
   }
   /** Replace the tree *without* a checkpoint — for undo/redo themselves, and
    *  for changes that persist but aren't edits you'd want to undo (folding a
    *  row, stamping a project as opened). Those still send their op. */
   function setPresent(next: Tree, ...ops: Op[]) {
     setHistory((h) => ({ ...h, present: next }))
-    syncRef.current?.send(...ops)
+    sendOps(...ops)
   }
   // Everything that used to call setTree still checkpoints, unchanged.
   const setTree = commit
