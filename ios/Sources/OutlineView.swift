@@ -8,6 +8,14 @@ import SwiftUI
 /// same pure op the server will run and queues it for sending. Nothing in this
 /// file touches the network or mutates the tree.
 struct OutlineView: View {
+    /// Whether there is a signed-in Clerk user behind this screen — true on the
+    /// normal path, false on the `--no-auth` build, which runs with no Clerk in
+    /// the environment at all. The home screen's account button reads
+    /// `@Environment(Clerk.self)`, and reading a Clerk that was never put in the
+    /// environment is a crash, not a nil — so the button only exists when this
+    /// is true. Defaults to false so the keyless `OutlineView()` needs no change.
+    var signedIn = false
+
     @State private var store = OutlineStore()
     @State private var scope: NodeId?
     /// Where the back gesture came from, most recent last.
@@ -430,14 +438,33 @@ struct OutlineView: View {
     @ViewBuilder private func header(for scope: NodeId?, interactive: Bool, trash: Bool)
         -> some View
     {
-        if trash || scope != nil {
+        // The home screen (no scope, not the trash) gets a band too, but only
+        // to carry the account button — there is no Back and no scope menu
+        // there. It appears only on the signed-in path, since the account
+        // button is what the band is for; the keyless build keeps the old
+        // headerless home. The deeper and trash screens keep the Back/title/menu
+        // band exactly as before.
+        let isHome = !trash && scope == nil
+        if trash || scope != nil || (isHome && signedIn) {
             HStack(spacing: Space.row) {
-                // Inert on the copy behind the swipe, like everything else
-                // there — it is a screen you may still slide away from.
-                Button("Back", systemImage: "chevron.left") {
-                    if interactive { zoomOut() }
+                if isHome {
+                    // The account avatar sits where Back sits one screen in —
+                    // the conventional top-left account spot. Inert on the copy
+                    // behind a swipe, like every other control in this band.
+                    if interactive {
+                        AccountButton()
+                    } else {
+                        // Reserve the slot so the revealed copy doesn't reflow.
+                        Color.clear.frame(width: 36, height: 36)
+                    }
+                } else {
+                    // Inert on the copy behind the swipe, like everything else
+                    // there — it is a screen you may still slide away from.
+                    Button("Back", systemImage: "chevron.left") {
+                        if interactive { zoomOut() }
+                    }
+                    .labelStyle(.iconOnly)
                 }
-                .labelStyle(.iconOnly)
 
                 Spacer(minLength: 0)
 
@@ -454,6 +481,14 @@ struct OutlineView: View {
                     // A plain name. `ScopeTitle` carries a progress ring and
                     // opens the lineage as a menu, and the trash has neither.
                     Text("Trash").font(.headline)
+                } else if isHome {
+                    // A plain label, not a `ScopeTitle`: the home screen is the
+                    // top of the path, so there is no lineage menu to open and
+                    // it is never a drop target. Same face as the scope title
+                    // so the two bands read as one thing.
+                    Text(title(of: nil))
+                        .font(.subheadline.weight(.semibold))
+                        .lineLimit(1)
                 } else {
                     ScopeTitle(
                         title: title(of: scope),
@@ -470,10 +505,13 @@ struct OutlineView: View {
 
                 Spacer(minLength: 0)
 
-                // Balances the chevron opposite whether or not there is a menu
-                // to show, so the title stays centred on the trash screen too.
+                // Balances the leading control opposite so the title stays
+                // centred: the scope menu deeper in, and an empty avatar-sized
+                // box on the home screen and the trash.
                 if trash {
                     Image(systemName: "ellipsis").opacity(0)
+                } else if isHome {
+                    Color.clear.frame(width: 36, height: 36)
                 } else {
                     scopeMenu.disabled(!interactive)
                 }

@@ -54,7 +54,7 @@ private struct RootView: View {
         if !clerk.isLoaded {
             ProgressView()
         } else if clerk.isAuthFlowComplete {
-            OutlineView()
+            OutlineView(signedIn: true)
         } else {
             // Non-dismissible: there is no signed-out mode to fall back to, so
             // a dismissable sheet would just leave an empty screen behind it.
