@@ -8,7 +8,7 @@
 // Clerk key inlined, so this process needs no configuration of its own — the
 // values are already baked into the JS it loads.
 
-const { app, BrowserWindow, Menu, shell, dialog, session } = require('electron')
+const { app, BrowserWindow, Menu, shell, dialog } = require('electron')
 const path = require('node:path')
 const http = require('node:http')
 const fs = require('node:fs')
@@ -90,56 +90,6 @@ function serve() {
       resolve0(`http://127.0.0.1:${PORT}`)
     })
   })
-}
-
-// Collapse duplicate cookies in the persistent store down to one each.
-//
-// Clerk keeps the session in cookies on the app's origin (__session,
-// __client_uat, __clerk_db_jwt and their instance-suffixed twins). Since the
-// loopback origin went fixed, those cookies survive across launches on one
-// origin instead of a fresh random one each time, and the store can end up with
-// two rows for the same name — Chromium logs a `Found N duplicate cookies`
-// error per name at startup and reconciles them itself. The reconciliation is
-// harmless but the log is noise, and a stale row winning it could sign you out.
-//
-// Electron's cookies.remove(url, name) deletes *every* row for that name, so we
-// can't drop just the extra. Instead: for any name that appears more than once,
-// remove the name entirely, then write one row back from what we read. Clerk
-// refreshes these on the next page load regardless, so a lone surviving row is
-// never worse than what the browser would have kept. Best-effort — a failure
-// here must not stop the window from opening, so it only ever warns.
-async function dedupeCookies(ses, url) {
-  try {
-    const all = await ses.cookies.get({})
-    const byKey = new Map()
-    for (const c of all) {
-      const key = `${c.name}\n${c.domain}\n${c.path}`
-      const group = byKey.get(key)
-      if (group) group.push(c)
-      else byKey.set(key, [c])
-    }
-    for (const group of byKey.values()) {
-      if (group.length < 2) continue
-      const c = group[0]
-      await ses.cookies.remove(url, c.name)
-      // Re-set a single canonical copy. cookies.set wants a url, not a domain,
-      // so rebuild one from the cookie: a leading-dot domain is host-only here
-      // (loopback), so strip it and use the path we recorded.
-      const host = c.domain.replace(/^\./, '')
-      await ses.cookies.set({
-        url: `http://${host}${c.path}`,
-        name: c.name,
-        value: c.value,
-        path: c.path,
-        secure: c.secure,
-        httpOnly: c.httpOnly,
-        expirationDate: c.expirationDate,
-        sameSite: c.sameSite,
-      })
-    }
-  } catch (err) {
-    console.warn('Could not dedupe cookies:', err?.message ?? err)
-  }
 }
 
 function createWindow(url) {
@@ -239,10 +189,6 @@ app.whenReady().then(async () => {
     app.quit()
     return
   }
-  // Collapse any duplicate session cookies left over from earlier launches
-  // before the page loads, so Clerk reads a clean store and Chromium logs no
-  // duplicate-cookie errors. Best-effort inside; awaited so it runs first.
-  await dedupeCookies(session.defaultSession, url)
   createWindow(url)
 
   // The Mac convention: clicking the dock icon with no windows open makes one.
