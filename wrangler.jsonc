@@ -24,16 +24,21 @@
   ],
 
   "vars": {
-    // The Pages origins the app is served from, comma-separated. Anything not
-    // listed gets no CORS headers — see cors.ts for why this doesn't default
-    // open.
+    // The origins the app is served from, comma-separated. Anything not listed
+    // gets no CORS headers — see cors.ts for why this doesn't default open.
     //
-    // Only the production origin is listed. Every Pages deployment also gets a
+    // First is the production Pages origin. Every Pages deployment also gets a
     // per-deployment preview URL (579b9074.ansaflow.pages.dev), and those are
     // deliberately absent: the hash changes on every deploy, so keeping them
     // working would mean allowing *.pages.dev — which is every Pages site on
     // Cloudflare, not just this one. Test against the production URL.
-    "ANSA_ALLOWED_ORIGIN": "https://ansaflow.pages.dev",
+    //
+    // Second is the desktop app. It serves the same bundle from a loopback
+    // server on a fixed port (see desktop/main.js PORT), so its origin is stable
+    // and can be named here; without it the renderer's fetches to this API are
+    // CORS-blocked. Loopback means the browser it runs in is Electron's own, on
+    // the user's machine — not a page that a stranger's site could open.
+    "ANSA_ALLOWED_ORIGIN": "https://ansaflow.pages.dev,http://127.0.0.1:41407",
 
     // The Clerk user id the MCP server's token acts as — see "Giving it access
     // to your real tree" in the README.

@@ -8,13 +8,22 @@
 // Clerk key inlined, so this process needs no configuration of its own — the
 // values are already baked into the JS it loads.
 
-const { app, BrowserWindow, Menu, shell } = require('electron')
+const { app, BrowserWindow, Menu, shell, dialog } = require('electron')
 const path = require('node:path')
 const http = require('node:http')
 const fs = require('node:fs')
 
 // The built web app, copied in by build.sh.
 const WEB = path.join(__dirname, 'web')
+
+// The loopback server binds this fixed port rather than an OS-assigned one, so
+// the app's origin is stable across launches: http://127.0.0.1:41407. The
+// Worker's CORS allowlist (ANSA_ALLOWED_ORIGIN) reflects an origin only if it's
+// configured, and it can't allow a port that changes every start — so the
+// renderer's fetches to the API would be blocked. A fixed port gives the Worker
+// one known origin to trust. Chosen from the IANA ephemeral range and otherwise
+// arbitrary; it just has to match the allowlisted origin on the Worker.
+const PORT = 41407
 
 // Served over a localhost HTTP server rather than loaded from `file://`. Vite
 // builds the bundle with absolute asset paths (`/assets/…`) because the web app
@@ -47,9 +56,9 @@ function resolve(urlPath) {
   return full
 }
 
-// Start the static server on an OS-assigned free port. Resolves with the URL.
+// Start the static server on the fixed loopback port. Resolves with the URL.
 function serve() {
-  return new Promise((resolve0) => {
+  return new Promise((resolve0, reject) => {
     const server = http.createServer((req, res) => {
       const file = resolve(req.url || '/')
       fs.readFile(file, (err, buf) => {
@@ -62,11 +71,23 @@ function serve() {
         res.end(buf)
       })
     })
+    // If the port is taken it's almost always a second copy of this app already
+    // running; a different port would defeat the fixed-origin point (the Worker
+    // allowlist names this exact one), so fail loudly rather than fall back.
+    server.on('error', (err) => {
+      reject(
+        err.code === 'EADDRINUSE'
+          ? new Error(
+              `Port ${PORT} is already in use — is Ansa already running?\n` +
+                `Quit the other copy (or whatever holds 127.0.0.1:${PORT}) and relaunch.`,
+            )
+          : err,
+      )
+    })
     // 127.0.0.1 only — the server exists for this app's own window, and binding
     // loopback keeps it off the network entirely.
-    server.listen(0, '127.0.0.1', () => {
-      const { port } = server.address()
-      resolve0(`http://127.0.0.1:${port}`)
+    server.listen(PORT, '127.0.0.1', () => {
+      resolve0(`http://127.0.0.1:${PORT}`)
     })
   })
 }
@@ -158,7 +179,16 @@ app.whenReady().then(async () => {
   }
 
   buildMenu()
-  const url = await serve()
+  let url
+  try {
+    url = await serve()
+  } catch (err) {
+    // The fixed port was taken (see serve). Show why and quit — a blank window
+    // with no explanation is worse than a dialog that names the cause.
+    dialog.showErrorBox('Ansa could not start', err.message)
+    app.quit()
+    return
+  }
   createWindow(url)
 
   // The Mac convention: clicking the dock icon with no windows open makes one.
