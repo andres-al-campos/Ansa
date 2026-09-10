@@ -183,13 +183,28 @@ test('the hovered row has its own background token, not the shared --sunk', () =
  * Everything draggable says so once you take hold of it. The sheet used to
  * argue the opposite — hold-to-drag was treated as a power-user gesture nothing
  * advertised — so this test exists to stop that decision drifting back in.
+ *
+ * The bullet gets there without `:active`, though, and the difference matters.
+ * A press on a parent bullet is usually a fold, and `.bullet:active` would flash
+ * grabbing the instant that click began — promising a drag the click won't
+ * perform. So the bullet's grabbing cursor rides `body.dragging`, which the
+ * outliner sets only once a row is actually lifted; a leaf rests on grab, a
+ * parent on pointer. The rail rows have no fold-click to collide with, so they
+ * keep the plain `:active` scheme. If the bullet's grabbing cursor drifts back
+ * onto `:active`, the fold-click flash comes back with it.
  */
 test('the drag handles show a grab cursor', () => {
-  // A leaf has no fold, so its resting cursor is the grab. A parent rests on
-  // the pointer because a click folds it; both go to grabbing on the press.
+  // A leaf has no fold, so its resting cursor is the grab.
   expect(declarations('.bullet:not(.folds)', 'cursor')).toEqual(['grab'])
-  expect(declarations('.bullet:active', 'cursor')).toEqual(['grabbing'])
-  expect(declarations('.rail.projects .proj:active', 'cursor')).toEqual(['grabbing'])
+  // The bullet's grabbing cursor is armed by a live drag, not by a press — so it
+  // sits on body.dragging, never on .bullet:active (which would fire on a fold).
+  expect(declarations('body.dragging, body.dragging .bullet', 'cursor')).toEqual(['grabbing'])
+  expect(css).not.toMatch(/\.bullet:active/)
+  // The rail's draggable rows have no fold-click, so grabbing on the press is
+  // safe there and still the scheme. Matched against the text rather than
+  // through `body()` because this rule shares its block with `.rail.pins .pin`,
+  // and that helper only reads a rule whose named selector runs straight to `{`.
+  expect(css).toMatch(/\.rail\.projects \.proj:active[^{]*\{\s*cursor:\s*grabbing/)
 })
 
 /**

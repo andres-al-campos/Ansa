@@ -180,8 +180,24 @@ test('a depth-0 guide lands on the centre of a depth-0 bullet', () => {
  * These check the derivation is still a derivation.
  */
 
-test('the grid track is the sidebar variable, not a repeated number', () => {
-  expect(declaration('.app', 'grid-template-columns')).toBe('var(--side-w) 1fr')
+test('the sidebar track is auto, sized by the sidebar rather than a repeated width', () => {
+  // The sidebar no longer sets the grid track directly. The first track is
+  // `auto`, sized by the sidebar's margin-box, and the sidebar collapses by
+  // animating its own margin — so the track has to stay `auto` for that
+  // margin-box to size it. A literal `var(--side-w)` track here would pin the
+  // column open and the collapse would slide the sidebar out from under a gap
+  // that never closes.
+  expect(declaration('.app', 'grid-template-columns')).toBe('auto 1fr')
+})
+
+test('the sidebar collapses by exactly its own width, so the track closes to zero', () => {
+  // The collapse pulls the sidebar left by one full width; its margin-box then
+  // measures zero and the auto track closes. Both terms have to be the same
+  // --side-w: a literal, or a different variable, and the sidebar would leave a
+  // sliver of open track or overshoot it.
+  expect(declaration('.side', 'width')).toBe('var(--side-w)')
+  const collapsed = declaration('.app.side-hidden > .side', 'margin-left').replace(/\s+/g, '')
+  expect(collapsed).toBe('calc(-1*var(--side-w))')
 })
 
 test('the centred column is capped by the same variable the offset subtracts', () => {
