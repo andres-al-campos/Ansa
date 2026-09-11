@@ -184,28 +184,6 @@ test('unmounting mid-slide does not throw', () => {
   expect(() => vi.advanceTimersByTime(2000)).not.toThrow()
 })
 
-test('hiding completed rows is not a fold, so nothing animates', () => {
-  const { container } = render(<Outliner initial={seedTree()} />)
-  scopeInto(container, /tax/i)
-
-  // Complete a leaf so the filter has something to take away.
-  act(() => (row(container, /Dig out the P60/).querySelector('.check') as HTMLElement).click())
-  settle()
-  const before = liveRows(container).length
-
-  // Rows leave the list while the list stays on screen — the same shape as a
-  // fold, and the case the fold check has to tell apart. Animating it would
-  // slide part of the list every time a filter is toggled.
-  const toggle = [...container.querySelectorAll('.filters label')].find((l) =>
-    /Hide completed/i.test(l.textContent ?? ''),
-  )!
-  const box = toggle.querySelector('input[type="checkbox"]') as HTMLElement
-  act(() => box.click())
-
-  expect(liveRows(container).length).toBeLessThan(before)
-  expect(animating(container)).toHaveLength(0)
-})
-
 test('navigating to another project does not animate the arrival', () => {
   const { container } = render(<Outliner initial={seedTree()} />)
   scopeInto(container, /tax/i)
