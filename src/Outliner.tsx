@@ -899,6 +899,19 @@ export default function Outliner({ initial }: { initial: Tree }) {
     setEditing(null)
   }
 
+  // Ctrl/Cmd+Backspace while editing: delete the task (and its subtree) to
+  // Trash, then stay in keyboard mode by landing on the row above — the next one
+  // down if this was the first, so there's always somewhere to go unless the
+  // list is now empty. Removing a whole subtree of unnamed drafts isn't worth
+  // trashing, but a deliberate delete-this-task always is, so `trash: true`.
+  function deleteAndStepUp(id: NodeId) {
+    const i = rows.findIndex((r) => r.id === id)
+    const next = rows[i - 1] ?? rows[i + 1] ?? null
+    setTree(removeNode(tree, id), { op: 'removeNode', id, trash: true })
+    if (next) setEditing(next.id)
+    else setEditing(null)
+  }
+
   // Up/Down while editing: hop edit focus to the previous/next row in the
   // visible, flattened order — the same list that's on screen, so it steps past
   // collapsed subtrees and skips hidden rows. Commit the current text first
@@ -1809,6 +1822,16 @@ export default function Outliner({ initial }: { initial: Tree }) {
                           // mode, rather than spawning yet another empty sibling.
                           if (empty) deleteRow(id)
                           else commitAndAddSibling(id, e.currentTarget.value)
+                        } else if ((e.metaKey || e.ctrlKey) && e.key === 'Backspace') {
+                          // Ctrl/Cmd+Backspace deletes the whole task and its
+                          // subtree, no matter its text, and keeps you in
+                          // keyboard mode on the row above. This is the fast
+                          // delete for churning through a decomposition — the
+                          // counterpart to the mobile swipe. It overrides the
+                          // field's own word-delete, which a one-line task label
+                          // barely needs.
+                          e.preventDefault()
+                          deleteAndStepUp(id)
                         } else if (e.key === 'Backspace' && empty) {
                           // Backspace on an empty row removes it but drops out of
                           // edit mode rather than stepping into the previous row,
