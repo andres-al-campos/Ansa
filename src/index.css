@@ -268,7 +268,9 @@ button { font: inherit; color: inherit; }
 .side {
   background: var(--sunk);
   border-right: 1px solid var(--edge-soft);
-  padding: 24px 18px;
+  /* Less top padding than the sides: the wordmark was sitting too low. This
+   * lifts the whole column (logo and rails together) toward the top. */
+  padding: 14px 18px 24px;
   overflow-y: auto;
   /* Same reason as .main: a long project list shouldn't reflow the short one. */
   scrollbar-gutter: stable;
@@ -311,7 +313,12 @@ button { font: inherit; color: inherit; }
  * brass — the black-on-gold reads as "this work matters", and one solid colour
  * beats the old half-and-half split. */
 .brand {
-  display: inline-block;
+  /* block + self-start so the wordmark sits flush at the left of the content
+   * column, aligned with the section labels and rows below it. inline-block
+   * left it centering against the flex column's cross axis. */
+  display: block;
+  align-self: flex-start;
+  text-align: left;
   font-family: Georgia, 'Iowan Old Style', serif;
   font-size: 30px;
   letter-spacing: 0.01em;
