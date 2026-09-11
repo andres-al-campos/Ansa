@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
+import { clerkMock } from './testClerk'
 import { act, cleanup, fireEvent, render } from '@testing-library/react'
 import { seedTree } from '@shared/seed'
 import type { Op } from '@shared/ops'
@@ -12,6 +13,7 @@ const putTree = vi.fn(async (_tree: Tree) => true)
 
 /** The op names sent so far, in order. */
 const sentOps = () => sendOp.mock.calls.map(([op]) => op.op)
+vi.mock('@clerk/clerk-react', () => clerkMock())
 vi.mock('./api', async () => {
   const actual = await vi.importActual<typeof import('./api')>('./api')
   return { ...actual, sendOp, putTree }

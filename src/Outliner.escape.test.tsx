@@ -1,10 +1,12 @@
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
+import { clerkMock } from './testClerk'
 import { silenceSocket } from './testSocket'
 import { act, cleanup, fireEvent, render } from '@testing-library/react'
 import { seedTree } from '@shared/seed'
 import Outliner from './Outliner'
 
 // Editing is local-first, so none of this needs the server.
+vi.mock('@clerk/clerk-react', () => clerkMock())
 vi.mock('./api', async () => {
   const actual = await vi.importActual<typeof import('./api')>('./api')
   return { ...actual, sendOp: vi.fn(async () => ({ status: 'ok' }) as const), putTree: vi.fn(async () => true) }
