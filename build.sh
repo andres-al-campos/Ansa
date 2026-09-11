@@ -398,6 +398,38 @@ build_desktop_bundle() {
   rm -rf desktop/web
   cp -R dist desktop/web
 
+  # The Content-Security-Policy main.js sends has to name the exact origins this
+  # bundle talks to, and those are deployment values (the Worker URL, the Clerk
+  # instance) that must not be hardcoded in the committed main.js. Write them to
+  # a generated, gitignored file next to the bundle instead — regenerated every
+  # build, so it can never describe a different bundle than the one beside it.
+  #
+  # The Clerk Frontend API host is encoded in the publishable key: the base64
+  # tail of pk_test_… / pk_live_… decodes to `<instance>.clerk.accounts.dev$`
+  # (a trailing `$` sentinel Clerk appends). The renderer's WebSocket is the
+  # Worker URL with http→ws, so ws(s) needs the same host as https.
+  #
+  # The tail is *unpadded* base64, and macOS `base64 -d` silently drops the final
+  # incomplete group — which is the `v$` of `.dev$`, so a naive decode loses the
+  # `v` and yields `.de`. Re-pad to a multiple of four first.
+  local clerk_tail clerk_pad clerk_fapi
+  clerk_tail=${VITE_CLERK_PUBLISHABLE_KEY#pk_*_}
+  clerk_pad=$(( (4 - ${#clerk_tail} % 4) % 4 ))
+  while [ "$clerk_pad" -gt 0 ]; do clerk_tail="${clerk_tail}="; clerk_pad=$((clerk_pad - 1)); done
+  clerk_fapi=$(printf '%s' "$clerk_tail" | base64 -d 2>/dev/null | sed 's/\$$//')
+  if [ -z "$clerk_fapi" ]; then
+    echo "Could not decode the Clerk Frontend API host from the publishable key." >&2
+    echo "The CSP needs it; check VITE_CLERK_PUBLISHABLE_KEY is a real pk_… key." >&2
+    exit 1
+  fi
+  cat > desktop/web/csp-origins.json <<JSON
+{
+  "api": "${WORKER_API}",
+  "clerkFapi": "https://${clerk_fapi}"
+}
+JSON
+  echo "Wrote CSP origins: api=${WORKER_API}, clerk=https://${clerk_fapi}"
+
   if [ ! -d desktop/node_modules ]; then
     echo "Installing Electron (first run) …"
     (cd desktop && npm install)
