@@ -440,26 +440,37 @@ JSON
 # left running from a previous build holds it and the new one dies with
 # EADDRINUSE. Rather than refuse to launch, take the old one down first — a
 # rebuild is meant to replace the running copy, not stand beside it. Whoever
-# holds the port *is* the instance to replace, so target it by port; that
-# catches both the dev-run Electron and the packaged .app without matching by
-# name. Give it a moment to release the socket before we bind it again.
+# holds the port is the dev-run Electron, so target that by port. The packaged
+# .app is different: it loads its bundle from the asar over Electron's own
+# scheme and never listens on this port, so lsof can't see it — an earlier
+# version killed only by port and so never replaced the installed app, leaving a
+# days-old copy running while every rebuild "succeeded". So also match the
+# installed app by its bundle path. Give each a moment to exit before we relaunch.
 DESKTOP_PORT=41407
+DESKTOP_APP="/Applications/_vibe_coded/Ansa.app"
 kill_running_ansa() {
-  local pids
+  local pids app_pids
   pids=$(lsof -tiTCP:"$DESKTOP_PORT" -sTCP:LISTEN 2>/dev/null) || true
-  [ -z "$pids" ] && return
-  echo "Replacing the Ansa already running on ${DESKTOP_PORT} (pid ${pids//$'\n'/, }) …"
+  app_pids=$(pgrep -f "$DESKTOP_APP/Contents/MacOS/" 2>/dev/null) || true
+  local all="$pids"$'\n'"$app_pids"
+  all=$(printf '%s\n' "$all" | sort -u | sed '/^$/d')
+  [ -z "$all" ] && return
+  echo "Replacing the Ansa already running (pid ${all//$'\n'/, }) …"
   # shellcheck disable=SC2086
-  kill $pids 2>/dev/null || true
+  kill $all 2>/dev/null || true
   for _ in 1 2 3 4 5 6 7 8 9 10; do
-    lsof -tiTCP:"$DESKTOP_PORT" -sTCP:LISTEN >/dev/null 2>&1 || return
+    # `|| true`: once the app is gone both probes exit nonzero, and under
+    # `set -e` a bare `still=$(…)` with a failing command substitution would
+    # abort the whole build right at the point the kill succeeded.
+    still=$(lsof -tiTCP:"$DESKTOP_PORT" -sTCP:LISTEN 2>/dev/null; pgrep -f "$DESKTOP_APP/Contents/MacOS/" 2>/dev/null) || true
+    [ -z "$still" ] && return
     sleep 0.2
   done
-  # Still holding it after two seconds — a hung process. SIGKILL, then move on;
-  # if the port is genuinely stuck the launch below will say so plainly.
+  # Still alive after two seconds — hung. SIGKILL the survivors and move on; if
+  # something is genuinely stuck the launch below will say so plainly.
   # shellcheck disable=SC2086
-  kill -9 $pids 2>/dev/null || true
-  sleep 0.2
+  kill -9 $all 2>/dev/null || true
+  sleep 0.3
 }
 
 # Clear cookie rows left behind by an earlier loopback port.
@@ -481,12 +492,30 @@ purge_stale_cookies() {
   sqlite3 "$store" "DELETE FROM cookies WHERE source_port <> ${DESKTOP_PORT};" 2>/dev/null || true
 }
 
+# Drop Chromium's render caches so a rebuild's JS is what actually loads. The
+# packaged app serves index.html and its assets through Electron, and Chromium's
+# HTTP cache (Cache) and compiled-V8 cache (Code Cache) can outlive a relaunch
+# and keep serving an old bundle — so the .app on disk is new but the window
+# shows the last build, or one from several builds ago. Deleting these forces a
+# fresh load; they're pure caches (GPU shaders, HTTP bodies, compiled JS) and
+# regenerate on next launch, so nothing of the user's is lost — the tree lives
+# in SQLite and cookies are handled above.
+#
+# Must run with the app down, which kill_running_ansa guarantees before this.
+purge_render_cache() {
+  local ud="$HOME/Library/Application Support/ansa-desktop"
+  [ -d "$ud" ] || return
+  rm -rf "$ud/Cache" "$ud/Code Cache" "$ud/GPUCache" \
+    "$ud/DawnGraphiteCache" "$ud/DawnWebGPUCache" 2>/dev/null || true
+}
+
 # Dev run: build the bundle, then launch the hot-reload window.
 desktop() {
   trap - INT TERM EXIT
   build_desktop_bundle
   kill_running_ansa
   purge_stale_cookies
+  purge_render_cache
   echo "Launching Ansa …"
   (cd desktop && npm start)
 }
@@ -520,22 +549,41 @@ desktop_dist() {
     exit 1
   fi
 
-  local dest="/Applications/_vibe_coded"
+  local dest
+  dest="$(dirname "$DESKTOP_APP")"
   mkdir -p "$dest"
-  echo "Installing to ${dest}/Ansa.app …"
-  rm -rf "${dest}/Ansa.app"
-  cp -R "$built" "${dest}/Ansa.app"
+  echo "Installing to ${DESKTOP_APP} …"
+  # Kill the running copy before overwriting it: replacing the .app bundle out
+  # from under a live process is what left the days-old app running and its
+  # cache stale. Down first, then swap, then relaunch.
+  kill_running_ansa
+  rm -rf "$DESKTOP_APP"
+  cp -R "$built" "$DESKTOP_APP"
 
   # Ad-hoc sign so Gatekeeper lets an unsigned local build launch, and drop the
   # quarantine flag the copy may inherit. Local use only — this is not a
   # distributable signature.
-  codesign --force --deep --sign - "${dest}/Ansa.app" >/dev/null 2>&1
-  xattr -dr com.apple.quarantine "${dest}/Ansa.app" 2>/dev/null || true
-
-  kill_running_ansa
+  codesign --force --deep --sign - "$DESKTOP_APP" >/dev/null 2>&1
+  xattr -dr com.apple.quarantine "$DESKTOP_APP" 2>/dev/null || true
   purge_stale_cookies
+  purge_render_cache
   echo "Launching Ansa (watch the dock for the glass icon) …"
-  open "${dest}/Ansa.app"
+  # Wait for the killed instance to fully deregister before relaunching.
+  # LaunchServices treats a bundle id that is still quitting as "open" and
+  # silently no-ops `open`, which is how a rebuild could finish with no window.
+  for _ in 1 2 3 4 5 6 7 8 9 10; do
+    pgrep -f "$DESKTOP_APP/Contents/MacOS/" >/dev/null 2>&1 || break
+    sleep 0.2
+  done
+  open -n "$DESKTOP_APP"
+  # Confirm it actually came up; a bare `open` can fail quietly.
+  for _ in 1 2 3 4 5 6 7 8 9 10; do
+    pgrep -f "$DESKTOP_APP/Contents/MacOS/" >/dev/null 2>&1 && break
+    sleep 0.3
+  done
+  if ! pgrep -f "$DESKTOP_APP/Contents/MacOS/" >/dev/null 2>&1; then
+    echo "Ansa was installed but didn't launch. Open it from ${DESKTOP_APP} or re-run ./build.sh." >&2
+  fi
 }
 
 # The bare default packages and installs the desktop app; everything else is an
