@@ -899,6 +899,19 @@ export default function Outliner({ initial }: { initial: Tree }) {
     setEditing(null)
   }
 
+  // Ctrl/Cmd+Backspace while editing: delete the task (and its subtree) to
+  // Trash, then stay in keyboard mode by landing on the row above — the next one
+  // down if this was the first, so there's always somewhere to go unless the
+  // list is now empty. Removing a whole subtree of unnamed drafts isn't worth
+  // trashing, but a deliberate delete-this-task always is, so `trash: true`.
+  function deleteAndStepUp(id: NodeId) {
+    const i = rows.findIndex((r) => r.id === id)
+    const next = rows[i - 1] ?? rows[i + 1] ?? null
+    setTree(removeNode(tree, id), { op: 'removeNode', id, trash: true })
+    if (next) setEditing(next.id)
+    else setEditing(null)
+  }
+
   // Up/Down while editing: hop edit focus to the previous/next row in the
   // visible, flattened order — the same list that's on screen, so it steps past
   // collapsed subtrees and skips hidden rows. Commit the current text first
@@ -1692,10 +1705,6 @@ export default function Outliner({ initial }: { initial: Tree }) {
                   (node.done ? ' done' : '') +
                   (node.collapsed && parent && !flat ? ' collapsed' : '') +
                   (rippleDelay !== undefined ? ' ripple' : '') +
-                  // Keep the trailing controls up while this row's ⋯ menu is open,
-                  // so moving the pointer off the row doesn't dismiss the menu
-                  // (and the in-place delete confirm) mid-action.
-                  (menuOpen === id ? ' menuing' : '') +
                   (dropHere === 'into' ? ' drop-into' : '') +
                   (dropHere === 'before' ? ' drop-before' : '') +
                   (dropHere === 'after' ? ' drop-after' : '')
@@ -1813,6 +1822,16 @@ export default function Outliner({ initial }: { initial: Tree }) {
                           // mode, rather than spawning yet another empty sibling.
                           if (empty) deleteRow(id)
                           else commitAndAddSibling(id, e.currentTarget.value)
+                        } else if ((e.metaKey || e.ctrlKey) && e.key === 'Backspace') {
+                          // Ctrl/Cmd+Backspace deletes the whole task and its
+                          // subtree, no matter its text, and keeps you in
+                          // keyboard mode on the row above. This is the fast
+                          // delete for churning through a decomposition — the
+                          // counterpart to the mobile swipe. It overrides the
+                          // field's own word-delete, which a one-line task label
+                          // barely needs.
+                          e.preventDefault()
+                          deleteAndStepUp(id)
                         } else if (e.key === 'Backspace' && empty) {
                           // Backspace on an empty row removes it but drops out of
                           // edit mode rather than stepping into the previous row,
@@ -1865,70 +1884,6 @@ export default function Outliner({ initial }: { initial: Tree }) {
                 >
                   <ZoomIcon />
                 </button>
-
-                {/* The row's ⋯ overflow menu — rename and delete. Zoom is the
-                    one-click action and stays direct; the rare, destructive one
-                    lives behind this so it's never a stray click. Reuses the
-                    same menuOpen/menuArmed/closeMenu the sidebar rows use. */}
-                <button
-                  className="row-more trailing"
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    setMenuArmed(false)
-                    setMenuOpen(menuOpen === id ? null : id)
-                  }}
-                  aria-label="Task actions"
-                  aria-haspopup="menu"
-                  aria-expanded={menuOpen === id}
-                  title="More"
-                >
-                  <MoreIcon />
-                </button>
-                {menuOpen === id && (
-                  <div className="row-menu" role="menu">
-                    <button
-                      className="row-menu-item"
-                      role="menuitem"
-                      onClick={() => {
-                        setEditing(id)
-                        closeMenu()
-                      }}
-                    >
-                      <span>Rename</span>
-                    </button>
-                    {menuArmed ? (
-                      <div className="row-menu-confirm">
-                        <span>Delete?</span>
-                        <button
-                          className="rmc-yes"
-                          role="menuitem"
-                          onClick={() => {
-                            deleteRow(id)
-                            closeMenu()
-                          }}
-                          aria-label="Confirm delete"
-                        >
-                          ✓
-                        </button>
-                        <button
-                          className="rmc-no"
-                          onClick={() => setMenuArmed(false)}
-                          aria-label="Cancel delete"
-                        >
-                          ✕
-                        </button>
-                      </div>
-                    ) : (
-                      <button
-                        className="row-menu-item danger"
-                        role="menuitem"
-                        onClick={() => setMenuArmed(true)}
-                      >
-                        <span>Delete</span>
-                      </button>
-                    )}
-                  </div>
-                )}
 
               </div>
             )
