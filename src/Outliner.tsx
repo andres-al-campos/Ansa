@@ -416,7 +416,13 @@ export default function Outliner({ initial }: { initial: Tree }) {
     [navigate],
   )
 
-  const [leafOnly, setLeafOnly] = useState(false)
+  // Dormant view filters. Their sidebar toggles were removed — zoom-to-scope,
+  // collapse, and Trash cover what they did — but the render still threads them
+  // through, so they're kept as fixed `false` (show everything). Re-add a toggle
+  // by turning either back into useState and wiring a control; the render needs
+  // no change. leafOnly = flatten to leaves only; hideDone = drop completed.
+  const leafOnly = false
+  const hideDone = false
 
   // Enter a project: scope into it and stamp it as just-opened so it rises in
   // Recents. Only roots carry the stamp, and it's written without a history
@@ -429,7 +435,6 @@ export default function Outliner({ initial }: { initial: Tree }) {
     const at = Date.now()
     setPresent(markOpened(tree, root, at), { op: 'markOpened', id: root, at })
   }
-  const [hideDone, setHideDone] = useState(false)
   // Sidebar shown or collapsed, toggled from the desktop toolbar. Persisted so
   // the choice survives a reload; desktop-only, so a plain web tab never reads
   // or writes it. Wrapped because storage can throw (private mode, blocked).
@@ -1369,39 +1374,12 @@ export default function Outliner({ initial }: { initial: Tree }) {
             </button>
           </li>
         </ol>
-        <p className="sect">View</p>
-        <div className="filters">
-          <label>
-            <input type="checkbox" checked={leafOnly} onChange={(e) => setLeafOnly(e.target.checked)} />
-            <span>
-              Hide parent tasks
-              <span className="fine">
-                Hides anything with subtasks. Applies inside{' '}
-                <span className="scopename">{scopeNode ? scopeNode.text : 'the current project'}</span>{' '}
-                only.
-              </span>
-            </span>
-          </label>
-          <label>
-            <input type="checkbox" checked={hideDone} onChange={(e) => setHideDone(e.target.checked)} />
-            <span>
-              Hide completed tasks
-              <span className="fine">Completed items drop out of the list.</span>
-            </span>
-          </label>
-        </div>
-
-        <p className="sect">History</p>
-        <div className="undo-actions">
-          <button onClick={undo} disabled={history.past.length === 0} title="Undo (⌘Z)">
-            ↶ Undo
-          </button>
-          <button onClick={redo} disabled={history.future.length === 0} title="Redo (⇧⌘Z)">
-            ↷ Redo
-          </button>
-        </div>
-
-
+        {/* No "View" filters or "History" buttons here anymore. Zoom-to-scope,
+            collapse, and Trash cover what the leaf/done filters did, and undo is
+            a keyboard action (⌘Z / Ctrl+Z, ⇧⌘Z / Ctrl+Y) — the buttons were a
+            redundant affordance. The leafOnly/hideDone state still exists at its
+            default and is wired through the render, so re-adding a toggle is a
+            markup change, not a rewire. */}
         <details className="data-fold">
           <summary>Backup &amp; transfer</summary>
           <WhoAmIPanel />

@@ -46,20 +46,6 @@ function editRow(container: HTMLElement, text: RegExp): HTMLInputElement {
   return container.querySelector('input.label-input') as HTMLInputElement
 }
 
-/** Tick a row's checkbox, marking it done. */
-function toggleDone(container: HTMLElement, text: RegExp) {
-  act(() => (row(container, text).querySelector('button.check') as HTMLElement).click())
-}
-
-/** Flip one of the view checkboxes by its visible label. */
-function setOption(container: HTMLElement, label: RegExp, on: boolean) {
-  const box = [...container.querySelectorAll('label')]
-    .find((l) => label.test(l.textContent ?? ''))!
-    .querySelector('input[type=checkbox]') as HTMLInputElement
-  act(() => fireEvent.click(box))
-  expect(box.checked).toBe(on)
-}
-
 /** Cmd+Z on the window. Only fires when focus is outside a text field. */
 function undo(container: HTMLElement) {
   act(() => fireEvent.keyDown(window, { key: 'z', metaKey: true }))
@@ -140,45 +126,6 @@ test('Alt+Down keeps unsaved text with the row it moves', () => {
   expect(rows).toContain('Chase the landlord')
   expect(rows).not.toContain('Email the landlord about the boiler')
   expect(rows.indexOf('Chase the landlord')).toBe(rows.indexOf('Book a carpet clean') + 1)
-})
-
-test('Alt+Down steps over a hidden completed row, landing past it', () => {
-  const { container } = render(<Outliner initial={seedTree()} />)
-  scopeInto(container, /flat/i)
-
-  // Complete the middle row, then hide completed. The list now draws two rows
-  // with an invisible one between them — moving down must cross that gap in a
-  // single press, since one keypress is one row *as drawn*.
-  toggleDone(container, /Book a carpet clean/)
-  setOption(container, /Hide completed tasks/, true)
-  expect(labels(container)).toEqual([
-    'Email the landlord about the boiler',
-    'Replace the hallway bulb',
-  ])
-
-  const input = editRow(container, /Email the landlord/)
-  move(input, 'ArrowDown')
-
-  expect(labels(container)).toEqual([
-    'Replace the hallway bulb',
-    'Email the landlord about the boiler',
-  ])
-})
-
-test('a hidden completed row survives a move across it', () => {
-  const { container } = render(<Outliner initial={seedTree()} />)
-  scopeInto(container, /flat/i)
-
-  toggleDone(container, /Book a carpet clean/)
-  setOption(container, /Hide completed tasks/, true)
-  const input = editRow(container, /Email the landlord/)
-  move(input, 'ArrowDown')
-
-  // Unhide: the completed row must still be there, not overwritten by whatever
-  // landed on its index.
-  setOption(container, /Hide completed tasks/, false)
-  expect(labels(container)).toContain('Book a carpet clean')
-  expect(labels(container)).toHaveLength(3)
 })
 
 test('undo rewinds a move and an indent one step at a time', () => {
