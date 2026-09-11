@@ -1692,6 +1692,10 @@ export default function Outliner({ initial }: { initial: Tree }) {
                   (node.done ? ' done' : '') +
                   (node.collapsed && parent && !flat ? ' collapsed' : '') +
                   (rippleDelay !== undefined ? ' ripple' : '') +
+                  // Keep the trailing controls up while this row's ⋯ menu is open,
+                  // so moving the pointer off the row doesn't dismiss the menu
+                  // (and the in-place delete confirm) mid-action.
+                  (menuOpen === id ? ' menuing' : '') +
                   (dropHere === 'into' ? ' drop-into' : '') +
                   (dropHere === 'before' ? ' drop-before' : '') +
                   (dropHere === 'after' ? ' drop-after' : '')
@@ -1861,6 +1865,70 @@ export default function Outliner({ initial }: { initial: Tree }) {
                 >
                   <ZoomIcon />
                 </button>
+
+                {/* The row's ⋯ overflow menu — rename and delete. Zoom is the
+                    one-click action and stays direct; the rare, destructive one
+                    lives behind this so it's never a stray click. Reuses the
+                    same menuOpen/menuArmed/closeMenu the sidebar rows use. */}
+                <button
+                  className="row-more trailing"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    setMenuArmed(false)
+                    setMenuOpen(menuOpen === id ? null : id)
+                  }}
+                  aria-label="Task actions"
+                  aria-haspopup="menu"
+                  aria-expanded={menuOpen === id}
+                  title="More"
+                >
+                  <MoreIcon />
+                </button>
+                {menuOpen === id && (
+                  <div className="row-menu" role="menu">
+                    <button
+                      className="row-menu-item"
+                      role="menuitem"
+                      onClick={() => {
+                        setEditing(id)
+                        closeMenu()
+                      }}
+                    >
+                      <span>Rename</span>
+                    </button>
+                    {menuArmed ? (
+                      <div className="row-menu-confirm">
+                        <span>Delete?</span>
+                        <button
+                          className="rmc-yes"
+                          role="menuitem"
+                          onClick={() => {
+                            deleteRow(id)
+                            closeMenu()
+                          }}
+                          aria-label="Confirm delete"
+                        >
+                          ✓
+                        </button>
+                        <button
+                          className="rmc-no"
+                          onClick={() => setMenuArmed(false)}
+                          aria-label="Cancel delete"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        className="row-menu-item danger"
+                        role="menuitem"
+                        onClick={() => setMenuArmed(true)}
+                      >
+                        <span>Delete</span>
+                      </button>
+                    )}
+                  </div>
+                )}
 
               </div>
             )

@@ -1277,6 +1277,43 @@ button { font: inherit; color: inherit; }
    would turn a pinned pin's brass grey the moment it took focus. */
 .pin-toggle:focus-visible { opacity: 1; background: var(--edge-lit); }
 
+/* The ⋯ overflow menu button, sharing the trailing column with zoom. Same box
+ * as .pin-toggle so the two read as one column, not two adjacent controls; the
+ * margin-left:auto stays on .zoom alone (first of the pair, it pushes both to
+ * the edge). Quiet until the row is hovered — zoom is still the louder of the
+ * two, since it is the one-click action and this is the rare/destructive bucket. */
+.row-more.trailing {
+  flex: none;
+  padding: 3px;
+  margin-right: -1px;
+  border-radius: 5px;
+  align-self: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--ink-ghost);
+  line-height: 1;
+  opacity: 0;
+  transition: opacity 0.12s ease, color 0.12s ease, background 0.12s ease;
+}
+/* Revealed on hover, and kept up while its own menu is open (.menuing) so
+ * moving the pointer off the row doesn't dismiss the menu mid-action. */
+.row:hover .row-more.trailing,
+.row.menuing .row-more.trailing { opacity: 1; }
+.row:hover .row-more.trailing:hover,
+.row.menuing .row-more.trailing {
+  color: var(--ink-mid);
+  background: var(--edge-lit);
+}
+.row-more.trailing:focus-visible {
+  opacity: 1;
+  color: var(--ink-mid);
+  background: var(--edge-lit);
+}
+
 /* A pinned row keeps its mark after the pointer leaves. Without this the only
  * way to tell a pinned task from an unpinned one is to go and look in the
  * sidebar, which is exactly the "where was it?" the pin exists to answer. */
