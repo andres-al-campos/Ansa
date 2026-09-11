@@ -157,8 +157,9 @@ button { font: inherit; color: inherit; }
 .app.desktop .side,
 .app.desktop .main {
   /* Clear the fixed bar. Replaces the old 52px sidebar padding that the shell
-   * used to inject; now both columns start below the toolbar. */
-  padding-top: 16px;
+   * used to inject; now both columns start below the toolbar. Small so the
+   * wordmark sits close under the toolbar rather than floating below it. */
+  padding-top: 8px;
   margin-top: var(--toolbar-h);
   height: calc(100% - var(--toolbar-h));
 }
