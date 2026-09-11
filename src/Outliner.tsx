@@ -15,6 +15,7 @@ import { useOutlinerSync } from './useOutlinerSync'
 import { useRipple } from './useRipple'
 import TrashPanel from './TrashPanel'
 import WhoAmIPanel from './WhoAmI'
+import AccountCard from './AccountCard'
 import SyncToast from './SyncToast'
 import { applyOp, reorderPinsOps, type Op } from '@shared/ops'
 import {
@@ -1424,6 +1425,11 @@ export default function Outliner({ initial }: { initial: Tree }) {
             />
           </div>
         </details>
+
+        {/* Pushes the account card to the foot of the sidebar; everything above
+            keeps its natural order. */}
+        <div className="side-spacer" />
+        <AccountCard />
       </aside>
 
       <main className="main">

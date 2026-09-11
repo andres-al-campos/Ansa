@@ -20,11 +20,34 @@
  * and fails every call is a worse thing to debug than one that says why.
  */
 
-import { useEffect, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { ClerkProvider, SignedIn, SignedOut, SignIn, useAuth } from '@clerk/clerk-react'
+import { dark } from '@clerk/themes'
 import { seedIfEmpty, setTokenSource } from './api'
 
 const KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY ?? ''
+
+/**
+ * Clerk's own modals (sign-in, Manage account) render in their own chrome, and
+ * they don't watch `prefers-color-scheme` the way the rest of the app does —
+ * `appearance` is read at mount. So track the media query ourselves and hand
+ * Clerk its `dark` baseTheme only while the system is dark; light gets Clerk's
+ * default. This keeps the account popover's "Manage account" from opening a
+ * white modal on a dark app.
+ */
+function usePrefersDark(): boolean {
+  const [prefersDark, setPrefersDark] = useState(
+    () => typeof matchMedia === 'function' && matchMedia('(prefers-color-scheme: dark)').matches,
+  )
+  useEffect(() => {
+    if (typeof matchMedia !== 'function') return
+    const mq = matchMedia('(prefers-color-scheme: dark)')
+    const onChange = () => setPrefersDark(mq.matches)
+    mq.addEventListener('change', onChange)
+    return () => mq.removeEventListener('change', onChange)
+  }, [])
+  return prefersDark
+}
 
 /**
  * Hands api.ts a getter for the current session token.
@@ -56,6 +79,9 @@ function InstallToken({ children }: { children: ReactNode }) {
 }
 
 export default function AuthGate({ children }: { children: ReactNode }) {
+  // Called before any early return so the hook count is stable across renders.
+  const prefersDark = usePrefersDark()
+
   if (!KEY) {
     if (import.meta.env.DEV) return <>{children}</>
     return (
@@ -75,7 +101,10 @@ export default function AuthGate({ children }: { children: ReactNode }) {
     )
   }
   return (
-    <ClerkProvider publishableKey={KEY}>
+    <ClerkProvider
+      publishableKey={KEY}
+      appearance={prefersDark ? { baseTheme: dark } : undefined}
+    >
       <SignedIn>
         <InstallToken>{children}</InstallToken>
       </SignedIn>

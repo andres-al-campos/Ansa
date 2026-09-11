@@ -57,8 +57,64 @@ function resolve(urlPath) {
   return full
 }
 
+// True enforces the CSP; false sends it report-only, the browser enforcing
+// nothing and instead logging a console violation for every resource the policy
+// *would* have blocked. Set it false to re-derive the policy after a dependency
+// changes what the app loads: exercise the app (sign in, sync, open Manage
+// account), read the violations, widen cspValue to cover exactly those, then set
+// it back to true. Guessing a policy and enforcing it blind silently breaks
+// whatever it forgot; report-only makes the omissions loud.
+const CSP_ENFORCE = true
+
+// The origins this bundle actually talks to, written next to it by build.sh from
+// the deployment values (the Worker URL, the Clerk instance). Not hardcoded here:
+// they are per-deployment, and a committed main.js must stay portable. Absent
+// (older bundle, or a hand-built web/) → return null and skip the CSP rather than
+// send a broken one.
+function cspOrigins() {
+  try {
+    return JSON.parse(fs.readFileSync(path.join(WEB, 'csp-origins.json'), 'utf8'))
+  } catch {
+    return null
+  }
+}
+
+// Build the Content-Security-Policy string. `self` is the loopback origin; the
+// app also reaches the Worker over HTTPS and WebSocket, and Clerk over its
+// Frontend API plus the shared Clerk/Cloudflare hosts its docs require. The
+// script-src `unsafe-inline`/`unsafe-eval` and style-src `unsafe-inline` are
+// what ClerkJS (runtime CSS-in-JS) and the bundler need; the report-only run
+// will show whether they can be tightened.
+function cspValue(origins) {
+  const wsApi = origins.api.replace(/^https/, 'wss')
+  const clerk = origins.clerkFapi
+  const cloudflare = 'https://challenges.cloudflare.com'
+  const protect = 'https://*.protect.clerk.com'
+  // ClerkJS posts usage events to its own analytics endpoint. Blocking it is
+  // harmless to the app but logs a violation on every launch, so allow the one
+  // first-party host rather than live with the noise.
+  const telemetry = 'https://clerk-telemetry.com'
+  return [
+    `default-src 'self'`,
+    `script-src 'self' 'unsafe-inline' 'unsafe-eval' ${clerk} ${cloudflare} ${protect}`,
+    `connect-src 'self' ${origins.api} ${wsApi} ${clerk} ${protect}:* ${telemetry}`,
+    `img-src 'self' data: blob: https://img.clerk.com`,
+    `style-src 'self' 'unsafe-inline'`,
+    `font-src 'self' data:`,
+    `frame-src ${cloudflare} ${protect} ${clerk}`,
+    `worker-src 'self' blob:`,
+    `base-uri 'self'`,
+    `form-action 'self'`,
+  ].join('; ')
+}
+
 // Start the static server on the fixed loopback port. Resolves with the URL.
 function serve() {
+  const origins = cspOrigins()
+  const csp = origins ? cspValue(origins) : null
+  const cspHeader = CSP_ENFORCE
+    ? 'Content-Security-Policy'
+    : 'Content-Security-Policy-Report-Only'
   return new Promise((resolve0, reject) => {
     const server = http.createServer((req, res) => {
       const file = resolve(req.url || '/')
@@ -68,7 +124,11 @@ function serve() {
           res.end('Not found')
           return
         }
-        res.writeHead(200, { 'Content-Type': MIME[path.extname(file)] || 'application/octet-stream' })
+        const headers = { 'Content-Type': MIME[path.extname(file)] || 'application/octet-stream' }
+        // Only the HTML document carries the CSP; it governs everything the page
+        // then loads, so tagging every asset response would be redundant.
+        if (csp && path.extname(file) === '.html') headers[cspHeader] = csp
+        res.writeHead(200, headers)
         res.end(buf)
       })
     })
