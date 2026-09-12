@@ -7,6 +7,29 @@ import Foundation
 /// the app target, so the only way to check it was to swipe a simulator and
 /// look. The view keeps the state and the animation; the answers live here.
 public enum RowSwipe {
+    /// How far a touch must travel before its axis is decided.
+    ///
+    /// The same 20pt the gesture's `minimumDistance` uses. Below it the finger
+    /// has not said which way it is going, so neither the swipe nor the scroll
+    /// should claim it yet.
+    public static let axisThreshold: CGFloat = 20
+
+    /// The axis a touch has committed to, or nil while it is still under the
+    /// threshold and undecided.
+    public enum Axis: Sendable { case horizontal, vertical }
+
+    /// Which axis a touch of this translation belongs to.
+    ///
+    /// Decided once and latched by the caller: a scroll that drifts sideways
+    /// must not turn into a swipe partway down, and a swipe must not start
+    /// scrolling. The larger component wins, so the boundary is a plain 45°;
+    /// the point is that whichever axis is chosen, the other is dead until the
+    /// finger lifts and a fresh touch begins.
+    public static func axis(dx: CGFloat, dy: CGFloat) -> Axis? {
+        guard max(abs(dx), abs(dy)) >= axisThreshold else { return nil }
+        return abs(dx) >= abs(dy) ? .horizontal : .vertical
+    }
+
     /// The fraction of the screen a pull must cross to act on release.
     ///
     /// A quarter rather than the half UIKit uses: that one is tuned for a

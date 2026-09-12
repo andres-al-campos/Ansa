@@ -108,4 +108,32 @@ struct RowSwipeTests {
     func deafnessMatchesTheReturn() {
         #expect(RowSwipe.tapDeafness == RowSwipe.returnDuration)
     }
+
+    // The axis latch. A vertical scroll that drifts sideways was turning into a
+    // swipe, so the two are now mutually exclusive: the larger component wins
+    // and the caller holds that choice for the whole touch.
+    @Test("A touch under the threshold has not picked an axis")
+    func axisUndecidedBelowThreshold() {
+        #expect(RowSwipe.axis(dx: 5, dy: 5) == nil)
+        #expect(RowSwipe.axis(dx: RowSwipe.axisThreshold - 1, dy: 0) == nil)
+    }
+
+    @Test("A mostly-sideways touch is horizontal")
+    func sidewaysIsHorizontal() {
+        #expect(RowSwipe.axis(dx: 30, dy: 10) == .horizontal)
+    }
+
+    @Test("A scroll that drifts sideways stays vertical")
+    func driftingScrollStaysVertical() {
+        // The bug in one line: a finger 40pt down and 22pt across is a scroll,
+        // not a swipe, and used to arm one because 22 cleared the 20pt gate.
+        #expect(RowSwipe.axis(dx: 22, dy: 40) == .vertical)
+    }
+
+    @Test("A 45-degree pull resolves to horizontal")
+    func diagonalFavoursHorizontal() {
+        // Equal components: the tie goes to the swipe. Documented so a later
+        // change to favour scroll is a deliberate one, not a silent flip.
+        #expect(RowSwipe.axis(dx: 30, dy: 30) == .horizontal)
+    }
 }

@@ -32,6 +32,11 @@ struct RowSwipeView<Content: View>: View {
     @State private var width: CGFloat = 0
     /// The live direction of the finger, nil before the gesture commits to one.
     @State private var direction: Direction?
+    /// The axis this touch latched onto, decided once it clears the threshold.
+    /// A `.vertical` latch stands the swipe down so the list scrolls; the latch
+    /// holds until the finger lifts, so a drifting scroll can't become a swipe
+    /// (nor a swipe start scrolling) partway through.
+    @State private var axis: RowSwipe.Axis?
     /// Latched, unlike `direction`: this outlives the release so the layers
     /// under the row stay alive while it travels home.
     @State private var settling: Direction?
@@ -130,6 +135,14 @@ struct RowSwipeView<Content: View>: View {
         DragGesture(minimumDistance: 20, coordinateSpace: .local)
             .onChanged { g in
                 guard !inert else { return }
+                // Decide the axis once and latch it. A scroll that drifts
+                // sideways must not turn into a swipe, so once this touch is
+                // vertical the swipe stands down for the rest of the gesture
+                // and the list keeps scrolling.
+                if axis == nil {
+                    axis = RowSwipe.axis(dx: g.translation.width, dy: g.translation.height)
+                }
+                guard axis == .horizontal else { return }
                 // The finger writes `offset` from here on.
                 motion.stopReturn()
                 let d = g.translation.width
@@ -159,6 +172,7 @@ struct RowSwipeView<Content: View>: View {
                     onSwipingChanged(false)
                     if direction != nil { endedAt = Date() }
                     direction = nil
+                    axis = nil
                     wasArmed = false
                 }
                 guard !inert, let action else { springBack(); return }
@@ -194,6 +208,7 @@ struct RowSwipeView<Content: View>: View {
         motion.stopReturn()
         motion.offset = 0
         direction = nil
+        axis = nil
         settling = nil
         wasArmed = false
     }
