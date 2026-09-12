@@ -14,40 +14,50 @@ import type { Tree } from './tree'
  * the first real thing you add sits next to it, not buried under three fake
  * projects you have to clear out first.
  */
-const SPEC: Array<[string, string | null, string, boolean]> = [
-  ['t', null, 'Start here — a tour of Ansa', false],
+// The 5th field collapses a section by default. The tour opens as one screen: a
+// welcome node explaining what Ansa is for, then a short list of section heads
+// you expand as you reach them. The welcome node stays open so its line shows.
+// Each feature section teaches the touch gesture; the keyboard shortcuts live in
+// their own section at the end, so the feature rows read the same on phone and
+// desktop and nothing on a phone mentions keys it doesn't have.
+const SPEC: Array<[string, string | null, string, boolean, boolean?]> = [
+  ['t', null, 'Welcome to Ansa', false],
+  ['t0', 't', 'Break work down until each piece is small enough to just do. Zoom in to see only what you are on, then zoom back out.', false],
+  ['t1', 't', 'Each section below is folded. Tap its bullet to open it.', false],
 
-  ['done', 't', 'Ticking off', false],
-  ['done1', 'done', 'Ticking a task ticks everything under it too.', false],
-  ['done2', 'done', 'Tap or click the square on the left. Try it on this one.', false],
+  ['done', 't', 'Checking off', false, true],
+  ['done1', 'done', 'Tap the checkbox to mark a task done. Its sub-tasks get checked too.', false],
 
-  ['edit', 't', 'Renaming', false],
-  ['edit1', 'edit', 'Tap or click the text and type. This row is safe to practise on.', false],
-  ['edit2', 'edit', 'On the phone: Return saves and closes. New tasks go in the field at the bottom.', false],
-  ['edit3', 'edit', 'On desktop: Return saves and opens a new task below. Escape closes without one.', false],
+  ['edit', 't', 'Editing', false, true],
+  ['edit1', 'edit', 'Tap the text of a task to edit it.', false],
 
-  ['nest', 't', 'Sub-tasks', false],
-  ['nest1', 'nest', 'Anything can hold tasks underneath it, as deep as you like.', false],
-  ['nest2', 'nest', 'On the phone: drag a bullet sideways — right to tuck it under the task above, left to pull it out.', false],
-  ['nest3', 'nest', 'On desktop: Tab makes a task a sub-task, Shift-Tab moves it back out.', false],
-  ['nest4', 'nest', 'Both: drag a bullet to move a task and everything under it.', false],
+  ['nest', 't', 'Sub-tasks', false, true],
+  ['nest1', 'nest', 'A task can hold sub-tasks, and those can hold their own.', false],
+  ['nest2', 'nest', 'Press and hold a task, then drop it onto another to file it under that one.', false],
 
-  ['fold', 't', 'Collapsing', false],
-  ['fold1', 'fold', 'Folding a task hides its sub-tasks without deleting them.', false],
-  ['fold2', 'fold', 'Tap or click the bullet of anything with sub-tasks. Try it here — this row will vanish.', false],
-  ['fold3', 'fold', 'Useful once a project gets long enough to scroll.', false],
+  ['move', 't', 'Moving', false, true],
+  ['move1', 'move', 'Press and hold a task, then drop it in the gap where you want it.', false],
+  ['move2', 'move', 'A task carries its sub-tasks with it.', false],
 
-  ['zoom', 't', 'Zooming', false],
+  ['zoom', 't', 'Zooming', false, true],
   ['zoom1', 'zoom', 'Zooming makes one task the whole screen. Everything else is still there.', false],
-  ['zoom2', 'zoom', 'On the phone: swipe a task left, then tap Zoom in. The arrow at the top left comes back out.', false],
-  ['zoom3', 'zoom', 'On desktop: click a task, then click the title above the list.', false],
-  ['zoom4', 'zoom', 'Both: this is how a big tree stays workable.', false],
+  ['zoom2', 'zoom', 'Swipe a task right to zoom in. On desktop, click its bullet.', false],
+  ['zoom3', 'zoom', 'The path along the top takes you back out.', false],
 
-  ['sync', 't', 'Everywhere at once', false],
-  ['sync1', 'sync', 'The phone and the browser show the same tree. Edits appear on the other one live.', false],
-  ['sync2', 'sync', 'Ansa has an MCP server too, so Claude can read and edit this tree.', false],
+  ['del', 't', 'Deleting', false, true],
+  ['del1', 'del', 'Swipe a task left to delete it. Its sub-tasks go with it.', false],
+  ['del2', 'del', 'Nothing is lost. It goes to the Trash, and you can restore it.', false],
 
-  ['last', 't', 'Delete this whole project when you are done', false],
+  ['sync', 't', 'Everywhere at once', false, true],
+  ['sync1', 'sync', 'The same tree is live on your phone and in the browser at once.', false],
+  ['sync2', 'sync', 'Ansa has an MCP server, so an agent can read and edit it too.', false],
+
+  ['keys', 't', 'Keyboard shortcuts', false, true],
+  ['keys1', 'keys', 'Return adds a task. Ctrl-D (Cmd-D) checks one off.', false],
+  ['keys2', 'keys', 'Tab nests a task, Shift-Tab pulls it back out.', false],
+  ['keys3', 'keys', 'Alt with up or down arrow moves a task.', false],
+  ['keys4', 'keys', 'Ctrl-Z (Cmd-Z) undoes, Shift added redoes.', false],
+  ['keys5', 'keys', 'While editing: Return saves, Escape cancels, Ctrl-Backspace (Cmd-Backspace) deletes.', false],
 ]
 
 /**
@@ -60,13 +70,13 @@ const SPEC: Array<[string, string | null, string, boolean]> = [
 export function tutorialTree(): Tree {
   const now = Date.now()
   const fresh = new Map(SPEC.map(([id]) => [id, newId()]))
-  return SPEC.map(([id, parentId, text, done], i) => ({
+  return SPEC.map(([id, parentId, text, done, collapsed], i) => ({
     id: fresh.get(id)!,
     parentId: parentId === null ? null : fresh.get(parentId)!,
     text,
     done,
     order: i,
-    collapsed: false,
+    collapsed: collapsed ?? false,
     createdAt: now + i,
   }))
 }
