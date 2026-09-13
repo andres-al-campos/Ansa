@@ -53,7 +53,14 @@ private actor FakeBackend: SyncBackend {
 
     func serves(_ tree: Tree?) { self.tree = tree }
 
-    func loadTree() async -> Tree? { tree }
+    /// How many times a tree was asked for, so a test can assert that some
+    /// event did *not* cause a refetch.
+    private(set) var loadTreeCalls = 0
+
+    func loadTree() async -> Tree? {
+        loadTreeCalls += 1
+        return tree
+    }
 
     func send(_ op: Op) async -> WriteResult {
         sent.append(op)
@@ -238,6 +245,62 @@ struct SyncClientTests {
                 .setText(id: "b", text: "two"),
             ])
         #expect(client.rejected == 1)
+    }
+
+    // A dependent pair, which is what `commitSentinel` on the phone actually
+    // emits: a new task nested under an existing one is `addChild` followed by
+    // `moveNode` naming the node that `addChild` was supposed to create. The
+    // rejection rule above was written for independent ops, where carrying on is
+    // plainly right. Here the second op cannot succeed if the first did not, and
+    // this pins what the queue does about that — which is nothing. It sends the
+    // orphan and lets the server refuse it too.
+    //
+    // Recorded rather than fixed because the alternative is worse: dropping the
+    // follower means the queue has to know which ops depend on which, and it
+    // deliberately does not. The server stays consistent either way — it has
+    // neither op. What diverges is the phone, which goes on showing a task the
+    // server never accepted until the next adopt corrects it. If nesting a new
+    // task is ever reported as not syncing, start here.
+    @Test("a rejected create still sends the move that depended on it")
+    func dependentPairAfterRejection() async {
+        let api = FakeBackend()
+        await api.willAnswer([.rejected(reason: "unknown node")])
+        let (client, _) = makeClient(api)
+        client.adoptInitial([])
+
+        client.send(
+            .addChild(id: "new", parentId: "parent", text: "nested", at: 1),
+            .moveNode(id: "new", parentId: "parent", index: 0))
+        await settle(api, expecting: 2)
+
+        #expect(
+            await api.sent == [
+                .addChild(id: "new", parentId: "parent", text: "nested", at: 1),
+                .moveNode(id: "new", parentId: "parent", index: 0),
+            ])
+        // One, not two: the fake only refuses the first. A real server would
+        // refuse the orphan as well, which is the divergence described above.
+        #expect(client.rejected == 1)
+    }
+
+    @Test("a rejection does not by itself refetch the server's tree")
+    func rejectionDoesNotRefetch() async {
+        // The web client's comment says a refused edit "is about to disappear
+        // when the server's tree is adopted" — true there because a live socket
+        // pushes one. Nothing here asks for a tree on rejection, so the phone is
+        // relying on that same broadcast. Written down so that if the correction
+        // is ever made explicit, this test is what has to change.
+        let api = FakeBackend()
+        await api.willAnswer([.rejected(reason: "unknown node")])
+        let (client, _) = makeClient(api)
+        client.adoptInitial([])
+        let adoptsBefore = await api.loadTreeCalls
+
+        client.send(.setText(id: "a", text: "one"))
+        await settle(api, expecting: 1)
+
+        #expect(client.rejected == 1)
+        #expect(await api.loadTreeCalls == adoptsBefore)
     }
 
     // --------------------------------------------------------- the busy gate
