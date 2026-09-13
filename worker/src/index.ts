@@ -65,6 +65,24 @@ export function isRejectedWrite(err: unknown): boolean {
  * server: the phone saw a 500, reported "not receiving changes", and the
  * reason — a limit with a known reset time — stayed in the Worker's logs.
  */
+/**
+ * Whether a single value was too big for the object's SQLite to store.
+ *
+ * Matched on the message for the same reason as isOverQuota: the runtime raises
+ * it, so there is no `name` to key on and the prototype is gone by the time it
+ * crosses the RPC boundary.
+ *
+ * The limit is per stored value, not per tree — a hundred thousand ordinary
+ * rows write fine while one task carrying a few megabytes of pasted text does
+ * not, so the fix is to shorten that one task rather than to prune the tree.
+ * Without this case it landed in the generic 500, which told someone whose
+ * paste was too long that something had gone wrong and left them no way to
+ * guess what would work.
+ */
+export function isValueTooBig(err: unknown): boolean {
+  return err instanceof Error && /SQLITE_TOOBIG|string or blob too big/i.test(err.message)
+}
+
 export function isOverQuota(err: unknown): boolean {
   return err instanceof Error && /exceeded .*(limit|free tier)/i.test(err.message)
 }
@@ -127,6 +145,17 @@ export default {
     } catch (err) {
       if (isRejectedWrite(err)) {
         return json({ error: (err as Error).message }, 400, cors)
+      }
+      if (isValueTooBig(err)) {
+        return json(
+          {
+            error:
+              'That task holds too much text to save. ' +
+              'Shorten it, or split it into smaller tasks.',
+          },
+          413,
+          cors,
+        )
       }
       if (isOverQuota(err)) {
         console.error('Over quota', path, err)

@@ -16,7 +16,7 @@
 
 import { describe, expect, it } from 'vitest'
 import { RejectedWriteError, UnknownParentError } from './treeStore.ts'
-import { isOverQuota, isRejectedWrite } from './index.ts'
+import { isOverQuota, isRejectedWrite, isValueTooBig } from './index.ts'
 
 /** What RPC does to a thrown error: same name and message, plain prototype. */
 function acrossRpc(err: Error): Error {
@@ -70,5 +70,34 @@ describe('classifying a quota failure', () => {
     expect(isOverQuota(new Error('Cannot read properties of undefined'))).toBe(false)
     expect(isOverQuota(new UnknownParentError('ghost'))).toBe(false)
     expect(isOverQuota(undefined)).toBe(false)
+  })
+})
+
+describe('classifying an oversized value', () => {
+  // The message the Durable Object's SQLite actually raised, copied from the
+  // worker log while writing a single node holding 4MB of text.
+  const thrown = () => new Error('string or blob too big: SQLITE_TOOBIG')
+
+  it('recognises a value too big for the object to store', () => {
+    expect(isValueTooBig(acrossRpc(thrown()))).toBe(true)
+  })
+
+  it('recognises the bare SQLite code, whatever wording wraps it', () => {
+    expect(isValueTooBig(new Error('SQLITE_TOOBIG'))).toBe(true)
+  })
+
+  // The three runtime failures answer with different statuses — 413, 503, 500 —
+  // so a message matching two classifiers would take whichever branch is
+  // checked first and give the wrong advice.
+  it('is not confused with a quota failure or a refused write', () => {
+    expect(isOverQuota(acrossRpc(thrown()))).toBe(false)
+    expect(isRejectedWrite(acrossRpc(thrown()))).toBe(false)
+    expect(isValueTooBig(new Error('Exceeded allowed rows written in Durable Objects free tier.'))).toBe(false)
+    expect(isValueTooBig(new UnknownParentError('ghost'))).toBe(false)
+  })
+
+  it('does not claim an ordinary failure is a size problem', () => {
+    expect(isValueTooBig(new Error('Cannot read properties of undefined'))).toBe(false)
+    expect(isValueTooBig(undefined)).toBe(false)
   })
 })
