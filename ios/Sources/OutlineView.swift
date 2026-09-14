@@ -1262,6 +1262,13 @@ struct OutlineView: View {
     /// The waiting row is hidden — see the `isWaitingSentinel` modifiers on the
     /// row — so only the one being typed into shows.
     private func addRow() {
+        // A rename may still be open — the plus button reaches here from
+        // `startAdding` without focus ever changing, so no blur arrives and
+        // nothing commits on its own. `begin` below overwrites `edit.text`
+        // outright, so without this the typed name is gone with no op emitted
+        // and nothing to sync. Focus is not released: it is about to move to
+        // the sentinel, and dropping it takes the keyboard down on the way.
+        if edit.isEditing { commitEdit(releasingFocus: false) }
         let anchor = edit.captureParent.flatMap { TreeOps.byId(tree, $0) }
         // The visual predecessor the first sentinel follows, and the depth to
         // draw it at. A parent takes its new row as a first child one level in;
