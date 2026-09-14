@@ -909,10 +909,21 @@ struct OutlineView: View {
         if edit.adding {
             stopAdding()
         } else if edit.isEditing {
-            // Finish the rename and stop there, rather than committing it and
-            // opening a new row in one press. The button is not a plus in this
-            // state and should not act like one — a press that both saved and
-            // created gave no way to just put the keyboard down.
+            // On the grid the open field is a *project's* name, and naming a
+            // project is not the end of anything — the project is empty and the
+            // reason it was made is the first task. So finish it the way Return
+            // does: open it and start the run. `submitProjectName` also drops an
+            // empty name, which deletes the node rather than leaving a blank
+            // card behind.
+            if scope == nil {
+                submitProjectName()
+                return
+            }
+            // In an outline, finish the rename and stop there, rather than
+            // committing it and opening a new row in one press. The button is
+            // not a plus in this state and should not act like one — a press
+            // that both saved and created gave no way to just put the keyboard
+            // down.
             //
             // `captureParent` still names the row, so the *next* press files
             // the new task underneath it. The placement survives; only the
