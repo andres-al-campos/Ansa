@@ -851,6 +851,12 @@ struct OutlineView: View {
             // says what that press actually does and reads as neither the tick
             // nor a delete.
             //
+            // `4a79bbb` took the tick off the adding state for that collision,
+            // back when the button stayed a plus through a rename and the two
+            // ticks could share a screen. They no longer can, so the tick is
+            // back where it was always the clearer glyph. Restoring it depends
+            // on the rename state above — change that and this changes too.
+            //
             // Quiet in every state, matching the back and home buttons. None of
             // the glyphs is doing repeated work — Return is, while adding — and
             // a filled accent circle on a corner control that gets pressed
