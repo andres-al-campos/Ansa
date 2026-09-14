@@ -3373,7 +3373,15 @@ private struct ProjectGrid: View {
     private func projectRow(_ project: Node) -> some View {
         ProjectRow(
             project: project,
-            progress: TreeOps.progressOf(tree, project.id),
+            // 0/0 for an empty project, not the 0/1 `progressOf` returns.
+            // That rule counts a childless node as one unit of itself so a bare
+            // task still reads 0% or 100% — right for a task, wrong for a
+            // project, which is a container and not a thing to check off. The
+            // card hides the count when `total` is 0, so this reads as nothing
+            // rather than as one task waiting.
+            progress: TreeOps.childrenOf(tree, project.id).isEmpty
+                ? TreeOps.Progress(done: 0, total: 0, pct: 0)
+                : TreeOps.progressOf(tree, project.id),
             editing: editing == project.id,
             editText: $editText,
             focused: focused,
