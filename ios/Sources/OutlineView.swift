@@ -1268,7 +1268,11 @@ struct OutlineView: View {
         // outright, so without this the typed name is gone with no op emitted
         // and nothing to sync. Focus is not released: it is about to move to
         // the sentinel, and dropping it takes the keyboard down on the way.
-        if edit.isEditing { commitEdit(releasingFocus: false) }
+        // Only a real row: a sentinel commit goes through `endRun`, which would
+        // clear the run this call is part of. Callers reach here with a sentinel
+        // open only if `capture`'s adding check is bypassed, and this keeps that
+        // from quietly ending the run.
+        if let id = edit.editing, !isSentinel(id) { commitEdit(releasingFocus: false) }
         let anchor = edit.captureParent.flatMap { TreeOps.byId(tree, $0) }
         // The visual predecessor the first sentinel follows, and the depth to
         // draw it at. A parent takes its new row as a first child one level in;
