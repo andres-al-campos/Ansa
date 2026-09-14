@@ -828,6 +828,9 @@ struct OutlineView: View {
     /// underneath must not act on a screen that is sliding away.
     @ViewBuilder private func captureButton(interactive: Bool) -> some View {
         let adding = edit.adding
+        // A rename open on a real row — not a sentinel, which is the adding
+        // run's own field and already covered by `adding`.
+        let renaming = !adding && edit.isEditing
         // Not a `Button`. A Button installs its own tap recogniser, and the
         // zoom-out back swipe — a `minimumDistance: 0` drag on the whole
         // navigation stack — is recognised simultaneously with it and could win
@@ -835,17 +838,26 @@ struct OutlineView: View {
         // synthesised touches never make the two recognisers contend. A plain
         // label with a high-priority tap claims the touch ahead of that drag.
         Group {
-            // Finish-adding is a keyboard-down glyph, not a tick: the device
-            // draws the rename Return key as a checkmark too, and two ticks a
-            // thumb's width apart meaning opposite things is how a run ends by
-            // accident. "Put the keyboard away" is exactly what the button does
-            // and reads as neither the tick nor a delete.
+            // Three jobs, three glyphs, because the two non-plus states mean
+            // different things: adding ends a *run* ("no more rows"), renaming
+            // ends *one field*.
             //
-            // Quiet in both states, matching the back and home buttons. Neither
-            // glyph is doing repeated work — Return is, while adding — and a
-            // filled accent circle on a corner control that gets pressed twice
-            // per run was the loudest thing on a screen that is mostly text.
-            Image(systemName: adding ? "keyboard.chevron.compact.down" : "plus")
+            // A tick is right for the run and wrong for the rename, and which
+            // one the keyboard is showing decides it. While adding, Return is
+            // `.next` — an arrow — so the tick is unambiguously "no more rows".
+            // While renaming, Return is `.done`, which the device draws as a
+            // tick: a second tick a thumb's width away meaning something else
+            // is how an edit ends by accident. There the keyboard-down glyph
+            // says what that press actually does and reads as neither the tick
+            // nor a delete.
+            //
+            // Quiet in every state, matching the back and home buttons. None of
+            // the glyphs is doing repeated work — Return is, while adding — and
+            // a filled accent circle on a corner control that gets pressed
+            // twice per run was the loudest thing on a screen that is mostly
+            // text.
+            Image(systemName: adding ? "checkmark"
+                : renaming ? "keyboard.chevron.compact.down" : "plus")
                 .font(.system(size: 20, weight: .semibold))
                 .foregroundStyle(Color.primary)
                 // Flattened before the material, not after. `drawingGroup`
@@ -880,14 +892,29 @@ struct OutlineView: View {
         // down into the swipe-up area rather than stopping at its edge.
         .padding(.bottom, max(0, Space.corner - homeIndicator))
         .padding(.trailing, Space.corner)
-        .accessibilityLabel(adding ? "Done adding" : "Add a task")
+        .accessibilityLabel(adding ? "Done adding"
+            : renaming ? "Done editing" : "Add a task")
     }
 
 
     /// Plus at rest, a keyboard-down glyph while adding. Shared by the Button
     /// and the high-priority tap that guards it.
     private func capture() {
-        if edit.adding { stopAdding() } else { startAdding() }
+        if edit.adding {
+            stopAdding()
+        } else if edit.isEditing {
+            // Finish the rename and stop there, rather than committing it and
+            // opening a new row in one press. The button is not a plus in this
+            // state and should not act like one — a press that both saved and
+            // created gave no way to just put the keyboard down.
+            //
+            // `captureParent` still names the row, so the *next* press files
+            // the new task underneath it. The placement survives; only the
+            // automatic row is gone.
+            commitEdit()
+        } else {
+            startAdding()
+        }
     }
 
     /// The strip the system reserves at the bottom for the home indicator, or 0
