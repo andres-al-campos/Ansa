@@ -419,6 +419,14 @@ struct OutlineView: View {
                 // the chevron opposite. The circle drew a button around one of
                 // the two and not the other.
                 Image(systemName: "ellipsis")
+                    // The glyph is ~20x8pt of ink, and without a frame that ink
+                    // is the whole hit target — the band's own `minHeight: 44`
+                    // sizes the band, not what sits in it. `contentShape` is the
+                    // half that matters: the frame alone lays out the space but
+                    // still only the glyph takes the tap. Matches the back
+                    // button opposite.
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
             }
         }
     }
@@ -464,6 +472,10 @@ struct OutlineView: View {
                         if interactive { zoomOut() }
                     }
                     .labelStyle(.iconOnly)
+                    // Same 44pt target as the `...` opposite, for the same
+                    // reason: a bare glyph is only as tappable as its ink.
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
                 }
 
                 Spacer(minLength: 0)
@@ -517,10 +529,12 @@ struct OutlineView: View {
                 }
             }
             .padding(.horizontal, Space.gutter)
-            // No fixed height. The buttons already carry the 44pt hit target
-            // the system bar was sized around, so the band lands in the same
-            // place without a number that a larger Dynamic Type setting would
-            // then be squeezed into.
+            // No fixed height. The buttons carry their own 44pt hit target, so
+            // the band lands in the same place the system bar did without a
+            // number that a larger Dynamic Type setting would then be squeezed
+            // into. `minHeight` here sizes the band only — it does nothing for
+            // what sits in it, which is how the `...` and the back chevron went
+            // a long time being tappable only on their ink.
             .frame(minHeight: 44)
             // The material the bar had, not a flat fill. Rows scrolling up
             // under the header blur through it instead of vanishing at a hard
