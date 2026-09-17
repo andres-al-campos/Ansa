@@ -28,8 +28,8 @@
 import { DurableObject } from 'cloudflare:workers'
 import { RejectedWriteError, TreeStore, type TrashEntry } from './treeStore.ts'
 import type { Frame } from '../../shared/frame.ts'
-import { parseOp, parseSpecs, type Op } from '../../shared/ops.ts'
-import { fingerprint, invalidTree, type Tree } from '../../shared/tree.ts'
+import { countSpecs, nodesAdded, parseOp, parseSpecs, type Op } from '../../shared/ops.ts'
+import { fingerprint, invalidTree, tooManyNodes, type Tree } from '../../shared/tree.ts'
 import { tutorialTree } from '../../shared/tutorial.ts'
 
 /** How long a deleted subtree is kept before the sweep drops it. */
@@ -80,6 +80,7 @@ export class AnsaTree extends DurableObject {
   async applyOp(rawOp: unknown, origin: string | null): Promise<{ tree: Tree; completed: string[] }> {
     const parsed = parseOp(rawOp)
     if ('error' in parsed) throw new RejectedWriteError(parsed.error)
+    this.checkRoom(nodesAdded(parsed.op))
     const result = this.ctx.storage.transactionSync(() => this.store.applyOp(parsed.op))
     this.broadcast(result.tree, origin, parsed.op)
     if (parsed.op.op === 'removeNode' && parsed.op.trash) await this.ensureSweepScheduled()
@@ -92,6 +93,7 @@ export class AnsaTree extends DurableObject {
     // can drift into accepting a different shape.
     const parsed = parseSpecs(rawSpecs, 'nodes')
     if (typeof parsed === 'string') throw new RejectedWriteError(parsed)
+    this.checkRoom(countSpecs(parsed))
     const result = this.ctx.storage.transactionSync(() => this.store.addSubtree(parentId, parsed))
     this.broadcast(result.tree, origin)
     return result
@@ -110,6 +112,7 @@ export class AnsaTree extends DurableObject {
    * of thing that should not be data.
    */
   addChild(parentId: string | null, text: string, origin: string | null): { tree: Tree; id: string } {
+    this.checkRoom(1)
     const result = this.ctx.storage.transactionSync(() => this.store.addChild(parentId, text))
     this.broadcast(result.tree, origin)
     return result
@@ -178,6 +181,7 @@ export class AnsaTree extends DurableObject {
    * others by the path every edit already uses.
    */
   restore(entryId: string, origin: string | null): Tree | null {
+    this.checkRoom(this.store.trashEntrySize(entryId))
     const tree = this.ctx.storage.transactionSync(() => this.store.restore(entryId))
     if (tree) this.broadcast(tree, origin)
     return tree
@@ -252,10 +256,29 @@ export class AnsaTree extends DurableObject {
     }
   }
 
+  /**
+   * Refuse a write that would take the tree past the node cap.
+   *
+   * Every path that can add nodes calls this first, so the limit is enforced
+   * in one place rather than trusted to each one. The count is a SQL COUNT
+   * rather than the loaded tree's length: most callers here have not loaded
+   * the tree yet, and making them do so to check a limit that almost never
+   * binds would put the whole outline in memory on every edit.
+   */
+  private checkRoom(adding: number): void {
+    if (adding <= 0) return
+    const tooMany = tooManyNodes(this.store.count(), adding)
+    if (tooMany) throw new RejectedWriteError(tooMany)
+  }
+
   /** Whole-tree replace. Used by Import and by the migration script. */
   replaceAll(tree: unknown, origin: string | null): Tree {
     const bad = invalidTree(tree)
     if (bad) throw new RejectedWriteError(`That tree is not valid (${bad}); nothing was saved.`)
+    // Against zero, not the current count: this replaces the tree rather than
+    // adding to it, so what matters is the size of what is arriving.
+    const tooMany = tooManyNodes(0, (tree as Tree).length)
+    if (tooMany) throw new RejectedWriteError(tooMany)
     const next = this.ctx.storage.transactionSync(() => this.store.replaceAll(tree as Tree))
     this.broadcast(next, origin)
     return next

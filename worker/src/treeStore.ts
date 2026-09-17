@@ -187,6 +187,32 @@ export class TreeStore {
     }
   }
 
+  /**
+   * How many live nodes this owner has, without loading them.
+   *
+   * The node cap is checked before every write that grows the tree, which is
+   * the hot path, so it counts in SQL rather than materialising the tree to
+   * take its length. Trashed nodes are in their own table and are not counted.
+   */
+  count(): number {
+    const row = this.sql.exec('SELECT COUNT(*) AS n FROM nodes').toArray()[0]
+    return (row as unknown as { n: number }).n
+  }
+
+  /**
+   * How many nodes a trash entry would put back, or 0 if it is already gone.
+   *
+   * Restoring grows the live tree, so it is subject to the node cap like any
+   * other write, and this is how the cap learns the size without reading the
+   * saved subtree itself.
+   */
+  trashEntrySize(entryId: NodeId): number {
+    const row = this.sql.exec(
+      'SELECT COUNT(*) AS n FROM trash_nodes WHERE entryId = ?', entryId,
+    ).toArray()[0]
+    return (row as unknown as { n: number }).n
+  }
+
   /** This owner's whole tree, as the flat Node array shared/ expects. */
   load(): Tree {
     const rows = this.sql.exec('SELECT * FROM nodes').toArray() as unknown as Row[]

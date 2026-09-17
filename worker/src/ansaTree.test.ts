@@ -22,7 +22,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { AnsaTree } from './ansaTree.ts'
 import { RejectedWriteError } from './treeStore.ts'
 import type { SqlStorage } from './treeStore.ts'
-import { fingerprint } from '../../shared/tree.ts'
+import { MAX_NODES, fingerprint } from '../../shared/tree.ts'
 
 /** better-sqlite3 behind the Durable Object SQL surface. Mirrors treeStore.test.ts. */
 function sqlAdapter(file: string): SqlStorage & { db: Database.Database; close(): void } {
@@ -229,6 +229,85 @@ describe('writes roll back rather than landing half-done', () => {
       ),
     ).toThrow(RejectedWriteError)
     expect(tree.load().map((n) => n.text)).toEqual(['project'])
+  })
+})
+
+describe('the node cap', () => {
+  /** Fill the tree to `n` nodes without going through the capped paths. */
+  function fill(n: number) {
+    tree.replaceAll(
+      Array.from({ length: n }, (_, i) => ({
+        id: `n${i}`, parentId: null, text: `t${i}`,
+        done: false, order: i, collapsed: false, createdAt: 1,
+      })),
+      null,
+    )
+  }
+
+  it('refuses the op that would cross the limit, and keeps the tree', async () => {
+    fill(MAX_NODES)
+    await expect(
+      tree.applyOp({ op: 'addChild', id: 'over', parentId: null, text: 'one more', at: 1 }, null),
+    ).rejects.toThrow(/limit/)
+    expect(tree.load()).toHaveLength(MAX_NODES)
+  })
+
+  it('allows the op that exactly reaches the limit', async () => {
+    fill(MAX_NODES - 1)
+    await tree.applyOp({ op: 'addChild', id: 'last', parentId: null, text: 'fits', at: 1 }, null)
+    expect(tree.load()).toHaveLength(MAX_NODES)
+  })
+
+  it('counts a whole subtree, not one node', async () => {
+    fill(MAX_NODES - 2)
+    // Three nodes into two slots: refused as a unit rather than partly applied.
+    await expect(
+      tree.applyOp(
+        {
+          op: 'addSubtree', ids: ['a', 'b', 'c'], parentId: null, at: 1,
+          nodes: [{ text: 'root', children: [{ text: 'kid' }, { text: 'kid2' }] }],
+        },
+        null,
+      ),
+    ).rejects.toThrow(/limit/)
+    expect(tree.load()).toHaveLength(MAX_NODES - 2)
+  })
+
+  it('does not count ops that only change what is there', async () => {
+    fill(MAX_NODES)
+    await tree.applyOp({ op: 'setText', id: 'n0', text: 'renamed' }, null)
+    await tree.applyOp({ op: 'setDone', id: 'n0', done: true }, null)
+    expect(tree.load().find((n) => n.id === 'n0')?.text).toBe('renamed')
+  })
+
+  it('refuses an import bigger than the cap', () => {
+    expect(() =>
+      tree.replaceAll(
+        Array.from({ length: MAX_NODES + 1 }, (_, i) => ({
+          id: `x${i}`, parentId: null, text: 'x',
+          done: false, order: i, collapsed: false, createdAt: 1,
+        })),
+        null,
+      ),
+    ).toThrow(/limit/)
+  })
+
+  it('does not count trashed nodes against the cap', async () => {
+    fill(MAX_NODES)
+    // Delete one to the trash: the node leaves the live tree, so there is room
+    // again without having to empty the trash first.
+    await tree.remove('n0', null, true)
+    await tree.applyOp({ op: 'addChild', id: 'fresh', parentId: null, text: 'new work', at: 1 }, null)
+    expect(tree.load()).toHaveLength(MAX_NODES)
+  })
+
+  it('refuses a restore that would not fit', async () => {
+    fill(10)
+    await tree.remove('n0', null, true)
+    const entry = tree.trashPage().entries[0]
+    // Fill the space the restore was going to use.
+    fill(MAX_NODES)
+    expect(() => tree.restore(entry.id, null)).toThrow(/limit/)
   })
 })
 
