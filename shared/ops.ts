@@ -93,6 +93,42 @@ export type Op =
   | { op: 'setPinOrder'; id: NodeId; order: number }
   | { op: 'markOpened'; id: NodeId; at: number }
 
+/**
+ * How many nodes applying `op` would create.
+ *
+ * Every op that can grow the tree is listed here, so the node cap has one
+ * place to ask rather than a check at each write path that a new op kind could
+ * be added without. A new creating op that is not listed defaults to 0 and
+ * would slip past the cap — which is why this switch names every op kind
+ * explicitly instead of defaulting, so the compiler flags the omission.
+ */
+export function nodesAdded(op: Op): number {
+  switch (op.op) {
+    case 'addChild':
+    case 'insertAtDepth':
+      return 1
+    case 'addSubtree':
+      return countSpecs(op.nodes)
+    case 'setText':
+    case 'setDone':
+    case 'removeNode':
+    case 'moveNode':
+    case 'indent':
+    case 'outdent':
+    case 'adoptFollowing':
+    case 'toggleCollapsed':
+    case 'setPinned':
+    case 'setPinOrder':
+    case 'markOpened':
+      return 0
+  }
+}
+
+/** Nodes in a nested spec, counting every descendant. */
+export function countSpecs(specs: SubtreeSpec[]): number {
+  return specs.reduce((n, s) => n + 1 + countSpecs(s.children ?? []), 0)
+}
+
 export type OpKind = Op['op']
 
 /** Every op name, for validating an untrusted body without a second list. */

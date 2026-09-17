@@ -97,6 +97,36 @@ export function fingerprint(tree: Tree): string {
  */
 export const MAX_TEXT_LENGTH = 200
 
+/**
+ * The most nodes one account's tree may hold.
+ *
+ * Not a storage limit — 5,000 rows is nothing. It is the ceiling on what the
+ * rest of the system assumes: the whole tree is loaded, walked, fingerprinted
+ * and sent on every connect, and all of that is linear in this number. It is
+ * set where a runaway client (a loop minting children, an import of something
+ * that was never an outline) is stopped well before any of those get slow,
+ * while being far past what breaking your work down can reach by hand.
+ *
+ * Trashed nodes do not count. They live in their own tables and never load
+ * with the tree, so counting them would mean emptying the trash to make room
+ * for real work — a chore this app exists to avoid.
+ *
+ * If a real outline ever approaches this, the answer is the "make this node its
+ * own project" split, not a bigger number.
+ */
+export const MAX_NODES = 5000
+
+/**
+ * Why adding `adding` nodes to a tree of `current` is too many, or null when
+ * it fits. Phrased for a person: it says what to do, since the only way out is
+ * to delete something or split the outline.
+ */
+export function tooManyNodes(current: number, adding: number): string | null {
+  if (current + adding <= MAX_NODES) return null
+  return `That would put this outline over ${MAX_NODES} tasks, which is the limit. `
+    + 'Delete something, or split a branch into its own project.'
+}
+
 /** `text` cut to the limit, for a client to apply before committing. */
 export function clampText(text: string): string {
   return text.length > MAX_TEXT_LENGTH ? text.slice(0, MAX_TEXT_LENGTH) : text

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { applyOp, parseOp, reorderPinsOps, OP_KINDS, type Op } from './ops'
-import { MAX_TEXT_LENGTH } from './tree'
+import { applyOp, parseOp, reorderPinsOps, OP_KINDS, type Op, nodesAdded, countSpecs } from './ops'
+import { MAX_NODES, MAX_TEXT_LENGTH, tooManyNodes } from './tree'
 import {
   adoptFollowing,
   byId,
@@ -464,5 +464,44 @@ describe('text length', () => {
 
   it('accepts text exactly at the limit', () => {
     expect(parseOp({ op: 'setText', id: 'a', text: atLimit })).not.toHaveProperty('error')
+  })
+})
+
+
+describe('the node cap', () => {
+  it('counts only the ops that create nodes', () => {
+    expect(nodesAdded({ op: 'addChild', id: 'a', parentId: null, text: 'x', at: 1 })).toBe(1)
+    expect(
+      nodesAdded({ op: 'insertAtDepth', id: 'a', anchorId: 'b', depth: 0, side: 'after', scope: null }),
+    ).toBe(1)
+    expect(nodesAdded({ op: 'setText', id: 'a', text: 'x' })).toBe(0)
+    expect(nodesAdded({ op: 'removeNode', id: 'a' })).toBe(0)
+    expect(nodesAdded({ op: 'moveNode', id: 'a', parentId: null, index: 0 })).toBe(0)
+    expect(nodesAdded({ op: 'adoptFollowing', id: 'a' })).toBe(0)
+  })
+
+  it('counts every descendant of a subtree, not just its roots', () => {
+    expect(
+      nodesAdded({
+        op: 'addSubtree', ids: [], parentId: null, at: 1,
+        nodes: [{ text: 'a', children: [{ text: 'b', children: [{ text: 'c' }] }] }, { text: 'd' }],
+      }),
+    ).toBe(4)
+  })
+
+  it('counts a flat spec list', () => {
+    expect(countSpecs([])).toBe(0)
+    expect(countSpecs([{ text: 'a' }, { text: 'b' }])).toBe(2)
+  })
+
+  it('allows a write that exactly reaches the limit', () => {
+    expect(tooManyNodes(MAX_NODES - 1, 1)).toBeNull()
+    expect(tooManyNodes(0, MAX_NODES)).toBeNull()
+  })
+
+  it('refuses the one past it, and says what to do about it', () => {
+    const why = tooManyNodes(MAX_NODES, 1)
+    expect(why).toMatch(new RegExp(String(MAX_NODES)))
+    expect(why).toMatch(/Delete something, or split a branch/)
   })
 })
