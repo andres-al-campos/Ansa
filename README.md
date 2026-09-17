@@ -8,24 +8,20 @@ enough to actually do. *Ansa* is Latin for the handle of a thing.
 Several clients, one source of truth:
 
 ```
-React app  ─┐  writes (REST)                    ┌─ browser (WebSocket) — live
-            ├──────────────▶ server ── broadcast ┤
-MCP server ─┘                (SQLite)            └─ any other tab
+React app  ─┐  writes (REST)                     ┌─ browser (WebSocket) — live
+iOS app     ├──────────────▶ Worker ── broadcast ┤
+MCP server ─┘             (Durable Object)       └─ any other client
 (a Claude)
 ```
 
 The API is a Cloudflare Worker over one Durable Object per account, deployed and
-locally alike — `wrangler dev` runs the same code. Fastify over a SQLite file is
-still there as a second implementation of the same REST routes, but it's on its
-way out.
+locally alike — `wrangler dev` runs the same code.
 
 - **`src/`** — the React app. Reads and writes over REST; subscribes to changes
   over a WebSocket, so an edit from anywhere shows up without a reload. Writes
   go over HTTP rather than the socket, deliberately: the handshake is the only
   place a token is checked, so anything accepted on an open socket would skip
   authentication.
-- **`server/`** — Fastify + SQLite (`ansa.db`). The original backend, kept
-  around behind `./build.sh fastify` until the Worker has proven itself.
 - **`worker/`** — the deployed API: a Cloudflare Worker, with an `AnsaTree`
   Durable Object per account holding that account's tree in its own SQLite.
   Clerk verifies the token, and the verified user id picks the object — so the
@@ -37,6 +33,9 @@ way out.
   diverge.
 - **`shared/`** — the tree model and pure operations (`tree.ts`) plus the seed,
   used identically by every TypeScript client.
+- **`desktop/`** — an Electron window around the same web build, talking to
+  the live Worker. `build.sh` builds the bundle and hands it over; nothing in
+  here has logic of its own.
 - **`ios/`** — a SwiftUI app for the same tree, with its own `./build.sh` that
   builds, installs and launches on a connected iPhone. `AnsaCore` is the tree
   model and `AnsaSync` the client, both plain Swift packages testable without a
@@ -50,20 +49,22 @@ way out.
 ./build.sh
 ```
 
-Installs dependencies if they're missing, starts the API and the app, waits for
-each to answer before moving on, and opens the browser. Ctrl-C stops both. Set
-`ANSA_NO_OPEN=1` to skip opening the browser.
-
-The API is the Worker itself, under `wrangler dev` on port 8787 with real
-Durable Objects — the same code the deploy ships. Cold start is around 20s.
+Packages the desktop app, installs it to `/Applications/_vibe_coded` replacing
+the previous copy, and launches it. It talks to the live Worker, so this is the
+everyday way to run Ansa. `./build.sh desktop` is the same thing as a
+hot-reload dev window instead of a packaged app.
 
 ```bash
-./build.sh fastify
+./build.sh web
 ```
 
-runs the older Fastify + `ansa.db` server on port 4000 instead. Live sync
-doesn't work there: the client opens a WebSocket and Fastify still serves SSE,
-so edits save but a second tab won't see them until reload.
+Runs the web stack locally: installs dependencies if they're missing, starts
+the API and the Vite app, waits for each to answer, and opens the browser.
+Ctrl-C stops both. Set `ANSA_NO_OPEN=1` to skip opening the browser.
+
+The API is the Worker itself, under `wrangler dev` on port 8787 with real
+Durable Objects against throwaway local storage — the same code the deploy
+ships. Cold start is around 20s.
 
 The app opens from a localStorage cache for an instant first paint, then adopts
 the server's tree once the live connection is established.
@@ -144,8 +145,7 @@ Point an MCP client at it with a stdio command:
 
 The MCP talks to an API over HTTP, set with `ANSA_API`. It defaults to the
 deployed worker, so with a token set (below) it edits your real tree with no
-further configuration. Point it at `http://127.0.0.1:8787` for `./build.sh`, or
-`http://127.0.0.1:4000` for `./build.sh fastify`. Tools: `view_tree`,
+further configuration. Point it at `http://127.0.0.1:8787` for `./build.sh web`. Tools: `view_tree`,
 `add_subtree`, `rename_task`, `set_done`, `move_task`, `toggle_collapsed`,
 `remove_task`, `progress`.
 
