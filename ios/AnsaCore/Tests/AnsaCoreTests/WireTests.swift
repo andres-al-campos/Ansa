@@ -93,6 +93,16 @@ struct RealTreeTests {
         }
     }
 
+    @Test("fingerprints the tree exactly as the TypeScript side does")
+    func fingerprintMatchesTypeScript() throws {
+        // Pinned to the same constants as `shared/tree.test.ts`. The server
+        // stamps every frame with its fingerprint and this device compares its
+        // own; if the two implementations drift the phone refetches the tree
+        // after every remote edit, which is the old behaviour and invisible.
+        #expect(TreeOps.fingerprint(try realTree()) == "e314e562")
+        #expect(TreeOps.fingerprint([]) == "811c9dc5")
+    }
+
     @Test("re-encoding preserves every key the server sent")
     func reEncodeReal() throws {
         let tree = try realTree()

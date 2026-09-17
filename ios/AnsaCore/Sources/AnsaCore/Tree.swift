@@ -107,6 +107,44 @@ public enum TreeOps {
     }
 
 
+    /// A short hash of everything in the tree that sync has to agree on.
+    ///
+    /// Mirrors `fingerprint` in shared/tree.ts, and must produce the same
+    /// string for the same tree: the server stamps every broadcast with its
+    /// own, and `SyncClient` compares it to this at the next quiet moment to
+    /// decide whether the phone has drifted and needs to refetch. The test on
+    /// the shared fixture pins the same constant on both sides.
+    ///
+    /// Timestamps are left out on purpose. They are doubles on the wire, and
+    /// getting two languages to print the same decimal for the same double is a
+    /// problem this does not need to have; nothing sync cares about depends on
+    /// them.
+    public static func fingerprint(_ tree: Tree) -> String {
+        var rows = tree.map { n in
+            [
+                n.id,
+                n.parentId ?? "",
+                n.text,
+                n.done ? "1" : "0",
+                String(n.order),
+                n.collapsed ? "1" : "0",
+                (n.pinned ?? false) ? "1" : "0",
+                n.pinOrder.map(String.init) ?? "",
+            ].joined(separator: "\u{1F}")
+        }
+        // By UTF-16 unit, which is what JavaScript's default sort compares.
+        // Ids lead each row and are unique, so the order is total.
+        rows.sort { $0.utf16.lexicographicallyPrecedes($1.utf16) }
+        // FNV-1a, 32-bit, over the UTF-8 bytes.
+        var h: UInt32 = 0x811c_9dc5
+        for byte in rows.joined(separator: "\u{1E}").utf8 {
+            h ^= UInt32(byte)
+            h = h &* 0x0100_0193
+        }
+        let hex = String(h, radix: 16)
+        return String(repeating: "0", count: 8 - hex.count) + hex
+    }
+
     /// Direct children of `parentId`, in the tree's own manual order.
     public static func childrenOf(_ tree: Tree, _ parentId: NodeId?) -> [Node] {
         tree.filter { $0.parentId == parentId }.sorted { $0.order < $1.order }
