@@ -535,6 +535,12 @@ export default function Outliner({ initial }: { initial: Tree }) {
   // handlers all over this component) needs to reach it.
   const sync = useOutlinerSync({
     busy: editing !== null || dragId !== null,
+    tree,
+    // Someone else's edit. Applied straight into the present without a history
+    // checkpoint: it is not this user's change, so Cmd+Z should not undo it.
+    onApply: (op) => {
+      setHistory((h) => ({ ...h, present: applyOp(h.present, op).tree }))
+    },
     onAdopt: (next) => {
       setHistory((h) => ({ ...h, present: next }))
       // Re-resume against the authoritative tree. The mount-time guess came

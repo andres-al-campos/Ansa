@@ -2,21 +2,24 @@ import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { clerkMock } from './testClerk'
 import { act, cleanup, fireEvent, render } from '@testing-library/react'
 import { seedTree } from '@shared/seed'
-import type { Op } from '@shared/ops'
-import type { Tree } from '@shared/tree'
+import { applyOp, type Op } from '@shared/ops'
+import { fingerprint, type Tree } from '@shared/tree'
 import type { WriteResult } from './api'
 
 // Spy on the write path. Everything else in the api module (eventsUrl, ORIGIN)
 // stays real so the component wires up exactly as in the app.
 const sendOp = vi.fn(async (_op: Op): Promise<WriteResult> => ({ status: 'ok' }))
 const putTree = vi.fn(async (_tree: Tree) => true)
+// The recovery path. Null by default — "could not reach the server" — so a
+// test has to say what the server holds before a refetch can adopt anything.
+const fetchTree = vi.fn(async (): Promise<Tree | null> => null)
 
 /** The op names sent so far, in order. */
 const sentOps = () => sendOp.mock.calls.map(([op]) => op.op)
 vi.mock('@clerk/clerk-react', () => clerkMock())
 vi.mock('./api', async () => {
   const actual = await vi.importActual<typeof import('./api')>('./api')
-  return { ...actual, sendOp, putTree }
+  return { ...actual, sendOp, putTree, fetchTree }
 })
 
 // A fake WebSocket we drive by hand, so the test decides precisely when the
@@ -43,9 +46,15 @@ class FakeSocket {
   close() {
     this.closed = true
   }
-  // Push a server broadcast to the component.
+  // Push a server broadcast to the component: the whole tree, as the first
+  // frame on a socket and every write with no op form is.
   emit(tree: Tree, origin: string | null = null) {
-    this.onmessage?.({ data: JSON.stringify({ tree, origin }) })
+    this.onmessage?.({ data: JSON.stringify({ kind: 'tree', tree, origin, hash: fingerprint(tree) }) })
+  }
+  // An op frame, stamped with the fingerprint of `after` — the server's tree
+  // once it applied the op.
+  emitOp(op: Op, after: Tree, origin: string | null = null) {
+    this.onmessage?.({ data: JSON.stringify({ kind: 'op', op, origin, hash: fingerprint(after) }) })
   }
   // The server (or the platform) dropping this connection.
   drop() {
@@ -55,8 +64,13 @@ class FakeSocket {
 }
 
 beforeEach(() => {
-  sendOp.mockClear()
+  // Reset, not clear: several tests install a persistent answer (unreachable,
+  // rejected) and the next test must start from a server that accepts.
+  sendOp.mockReset()
+  sendOp.mockResolvedValue({ status: 'ok' })
   putTree.mockClear()
+  fetchTree.mockReset()
+  fetchTree.mockResolvedValue(null)
   live = null
   opened = []
   vi.stubGlobal('WebSocket', FakeSocket as unknown as typeof WebSocket)
@@ -646,4 +660,215 @@ test('adopting never yanks you out of a project you opened yourself', async () =
   })
 
   expect(container.querySelector('[role="checkbox"]')).toBeNull()
+})
+
+// Echo every op this tab has sent, as the server would, each stamped with
+// `server`'s fingerprint. The fingerprint check waits for these: until the
+// echo of its own op is back, a tab cannot know which side of that op the
+// server's hash is on.
+async function echoSent(stream: FakeSocket, server: Tree) {
+  const { ORIGIN } = await import('./api')
+  for (const [op] of sendOp.mock.calls) {
+    await act(async () => {
+      stream.emitOp(op, server, ORIGIN)
+    })
+  }
+  sendOp.mockClear()
+}
+
+// A node visible once scoped into "Sort out the flat".
+function taskIn(seed: Tree, text: RegExp) {
+  const flat = seed.find((n) => n.parentId === null && /flat/i.test(n.text))!
+  return seed.find((n) => n.parentId === flat.id && text.test(n.text))!
+}
+
+test('an op made elsewhere is applied, not adopted as a whole tree', async () => {
+  // This is the wire change: the server sends the op and the fingerprint of
+  // its result, and this tab is trusted to get there by applying it.
+  const { default: Outliner } = await import('./Outliner')
+  const seed = seedTree()
+  const { container } = render(<Outliner initial={seed} />)
+  const stream = await streamOpen()
+  scopeIntoProject(container)
+  await act(async () => {
+    stream.emit(seed)
+  })
+
+  const target = taskIn(seed, /./)
+  const op: Op = { op: 'setText', id: target.id, text: 'Renamed on the phone' }
+  await act(async () => {
+    stream.emitOp(op, applyOp(seed, op).tree, 'ios-1')
+  })
+
+  expect(container.textContent).toContain('Renamed on the phone')
+  // Applying it produced no write of our own, and no refetch: the fingerprint
+  // matched.
+  expect(sentOps()).not.toContain('setText')
+  expect(fetchTree).not.toHaveBeenCalled()
+})
+
+test('an op arriving mid-edit waits, and lands without losing the edit', async () => {
+  const { default: Outliner } = await import('./Outliner')
+  const seed = seedTree()
+  const { container } = render(<Outliner initial={seed} />)
+  const stream = await streamOpen()
+  scopeIntoProject(container)
+  await act(async () => {
+    stream.emit(seed)
+  })
+
+  // Start editing one row.
+  const rows = [...container.querySelectorAll('.row')]
+  const mine = rows[0].textContent ?? ''
+  const input = editRow(container, new RegExp(mine.slice(0, 8).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))
+  act(() => {
+    fireEvent.change(input, { target: { value: 'Typed here' } })
+  })
+
+  // Someone renames a different row while the input is open.
+  const other = seed.find((n) => n.id !== rows[0].getAttribute('data-id') && n.parentId === taskIn(seed, /./).parentId)!
+  const op: Op = { op: 'setText', id: other.id, text: 'Renamed meanwhile' }
+  await act(async () => {
+    stream.emitOp(op, applyOp(seed, op).tree, 'ios-1')
+  })
+  // Held: nothing yanked the input away.
+  expect(container.querySelector('input.label-input')).not.toBeNull()
+  expect(container.textContent).not.toContain('Renamed meanwhile')
+
+  // Finish the edit. Both changes are now on screen.
+  await act(async () => {
+    fireEvent.keyDown(input, { key: 'Enter' })
+  })
+  await act(async () => {
+    fireEvent.keyDown(editing(container) ?? input, { key: 'Escape' })
+  })
+  expect(container.textContent).toContain('Typed here')
+  expect(container.textContent).toContain('Renamed meanwhile')
+
+  // The server echoes our rename, stamped with the tree holding both changes.
+  // That echo is the last word, and it agrees with what is on screen.
+  const { ORIGIN } = await import('./api')
+  const ours = sendOp.mock.calls.map(([o]) => o).find((o) => o.op === 'setText')!
+  await act(async () => {
+    stream.emitOp(ours, applyOp(applyOp(seed, op).tree, ours).tree, ORIGIN)
+  })
+  expect(fetchTree).not.toHaveBeenCalled()
+})
+
+test('a fingerprint that disagrees refetches the tree', async () => {
+  // The guarantee that makes op frames safe. If this tab applies an op and
+  // does not end up where the server is, the next quiet moment notices and the
+  // server's tree replaces ours.
+  const warned = vi.spyOn(console, 'warn').mockImplementation(() => {})
+  const { default: Outliner } = await import('./Outliner')
+  const seed = seedTree()
+  const { container } = render(<Outliner initial={seed} />)
+  const stream = await streamOpen()
+  scopeIntoProject(container)
+  await act(async () => {
+    stream.emit(seed)
+  })
+  await echoSent(stream, seed)
+
+  // The server applied something we cannot reconstruct from the op alone: the
+  // frame's fingerprint is of a tree with a rename this tab never saw.
+  const target = taskIn(seed, /./)
+  const unseen: Op = { op: 'setText', id: target.id, text: 'Only the server has this' }
+  const serverTree = applyOp(seed, unseen).tree
+  fetchTree.mockResolvedValue(serverTree)
+  const op: Op = { op: 'setDone', id: target.id, done: true }
+  await act(async () => {
+    stream.emitOp(op, applyOp(serverTree, op).tree, 'ios-1')
+  })
+  await act(async () => {})
+
+  expect(fetchTree).toHaveBeenCalledTimes(1)
+  expect(warned).toHaveBeenCalled()
+  expect(container.textContent).toContain('Only the server has this')
+  warned.mockRestore()
+})
+
+test('a fingerprint that agrees never refetches', async () => {
+  // The check has to be quiet in the ordinary case or it costs a tree read on
+  // every edit, which is what op frames exist to avoid.
+  const { default: Outliner } = await import('./Outliner')
+  const seed = seedTree()
+  const { container } = render(<Outliner initial={seed} />)
+  const stream = await streamOpen()
+  scopeIntoProject(container)
+  await act(async () => {
+    stream.emit(seed)
+  })
+  await echoSent(stream, seed)
+  let server = seed
+  for (let i = 0; i < 3; i++) {
+    const op: Op = { op: 'setText', id: taskIn(seed, /./).id, text: `v${i}` }
+    server = applyOp(server, op).tree
+    await act(async () => {
+      stream.emitOp(op, server, 'ios-1')
+    })
+  }
+  expect(fetchTree).not.toHaveBeenCalled()
+})
+
+test('a refused edit refetches the tree, so the screen stops showing it', async () => {
+  // A refusal produces no frame: the server did nothing, so it broadcasts
+  // nothing. Left alone, the edit stays on screen until some other device
+  // writes. Refetching is the only thing that puts this tab straight.
+  vi.spyOn(console, 'error').mockImplementation(() => {})
+  vi.spyOn(console, 'warn').mockImplementation(() => {})
+  const { default: Outliner } = await import('./Outliner')
+  const seed = seedTree()
+  const { container } = render(<Outliner initial={seed} />)
+  const stream = await streamOpen()
+  scopeIntoProject(container)
+  await act(async () => {
+    stream.emit(seed)
+  })
+  fetchTree.mockResolvedValue(seed)
+  sendOp.mockResolvedValueOnce({ status: 'rejected', reason: 'No node with id x in this tree.' })
+
+  const box = container.querySelector('[role="checkbox"]') as HTMLElement
+  const before = box.getAttribute('aria-checked')
+  await act(async () => {
+    box.click()
+  })
+  await act(async () => {})
+
+  expect(fetchTree).toHaveBeenCalledTimes(1)
+  expect((container.querySelector('[role="checkbox"]') as HTMLElement).getAttribute('aria-checked')).toBe(before)
+  vi.restoreAllMocks()
+})
+
+test('an op frame before the first tree is ignored', async () => {
+  // There is nothing to apply it to that we trust, and the tree that follows
+  // already includes it. Applying it to the cached tree could double-apply.
+  const { default: Outliner } = await import('./Outliner')
+  const seed = seedTree()
+  const { container } = render(<Outliner initial={seed} />)
+  const stream = await streamOpen()
+  scopeIntoProject(container)
+
+  const target = taskIn(seed, /./)
+  const op: Op = { op: 'setText', id: target.id, text: 'Too early' }
+  await act(async () => {
+    stream.emitOp(op, applyOp(seed, op).tree, 'ios-1')
+  })
+  expect(container.textContent).not.toContain('Too early')
+  expect(fetchTree).not.toHaveBeenCalled()
+})
+
+test('a frame from a server that predates fingerprints is still a tree', async () => {
+  // Deploy order is clients first, so a new client has to read the old shape:
+  // `{ tree, origin }` with no kind and no hash. It adopts, and skips the check
+  // it cannot make.
+  const { default: Outliner } = await import('./Outliner')
+  const { container } = render(<Outliner initial={[]} />)
+  const stream = await streamOpen()
+  const seed = seedTree()
+  await act(async () => {
+    stream.onmessage?.({ data: JSON.stringify({ tree: seed, origin: null }) })
+  })
+  expect(container.querySelectorAll('button.proj').length).toBeGreaterThan(0)
+  expect(fetchTree).not.toHaveBeenCalled()
 })

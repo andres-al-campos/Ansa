@@ -140,6 +140,24 @@ export async function putTree(tree: Tree): Promise<boolean> {
   }
 }
 
+/**
+ * The tree the server holds right now, or null if it could not be reached.
+ *
+ * Sync normally never needs this: the socket's first frame is the tree, and
+ * every frame after it is an op to apply. This is the recovery path for when
+ * the fingerprint on a frame says the local tree is not what the server has —
+ * an op the server refused, a frame applied out of order, an applier bug.
+ */
+export async function fetchTree(): Promise<Tree | null> {
+  try {
+    const res = await fetch(`${BASE}/api/tree`, { headers: await headers() })
+    if (!res.ok) return null
+    return ((await res.json()) as { tree: Tree }).tree
+  } catch {
+    return null
+  }
+}
+
 /** What the server reports about the current session. */
 export interface WhoAmI {
   /** The id rows are filtered on — match this against the database, not a name. */
