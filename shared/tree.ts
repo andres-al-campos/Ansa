@@ -45,13 +45,35 @@ export type Tree = Node[]
  * where a number belongs surfaces far from here, as a mis-sorted project list
  * rather than a rejected write.
  */
+/**
+ * The most text one task may hold.
+ *
+ * Not a product limit — a task's text is a line or a short paragraph, and ten
+ * thousand characters is well past anything typed. It exists because there was
+ * no ceiling at all: a single task carrying megabytes is stored, echoed on every
+ * write, and broadcast to every client, and the only thing that ever refused it
+ * was SQLite's own per-value limit, far above where the cost starts. Checked at
+ * every entry point rather than at the store, so a client is told at the edge,
+ * before an op is queued behind other edits.
+ */
+export const MAX_TEXT_LENGTH = 10_000
+
+/** Why `text` is unusable as a task's text, or null when it's fine. */
+export function invalidText(text: unknown): string | null {
+  if (typeof text !== 'string') return 'must be a string'
+  if (text.length > MAX_TEXT_LENGTH) {
+    return `is too long (${text.length} characters; the limit is ${MAX_TEXT_LENGTH})`
+  }
+  return null
+}
+
 export function isNode(value: unknown): value is Node {
   if (typeof value !== 'object' || value === null) return false
   const n = value as Record<string, unknown>
   return (
     typeof n.id === 'string' &&
     (n.parentId === null || typeof n.parentId === 'string') &&
-    typeof n.text === 'string' &&
+    invalidText(n.text) === null &&
     typeof n.done === 'boolean' &&
     typeof n.order === 'number' &&
     Number.isFinite(n.order) &&

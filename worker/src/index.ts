@@ -27,7 +27,7 @@ import { misconfiguredAuth, ownerOf, type AuthEnv } from './auth.ts'
 import { corsHeaders, isPreflight, preflightResponse } from './cors.ts'
 import { RejectedWriteError } from './treeStore.ts'
 import { parseSpecs } from '../../shared/ops.ts'
-import { invalidTree } from '../../shared/tree.ts'
+import { invalidText, invalidTree } from '../../shared/tree.ts'
 
 export { AnsaTree }
 
@@ -260,7 +260,10 @@ async function route(c: Ctx): Promise<Response> {
     if (parentId !== null && typeof parentId !== 'string') {
       return json({ error: 'parentId must be a string or null' }, 400, cors)
     }
-    const { tree: next, id } = await tree.addChild(parentId, body?.text ?? '', c.origin)
+    const text = body?.text ?? ''
+    const badText = invalidText(text)
+    if (badText) return json({ error: `text ${badText}` }, 400, cors)
+    const { tree: next, id } = await tree.addChild(parentId, text, c.origin)
     return json({ tree: next, id }, 200, cors)
   }
 
@@ -296,6 +299,8 @@ async function route(c: Ctx): Promise<Response> {
     const id = decodeURIComponent(node[1])
     const body = await readJson(req)
     if (typeof body?.text === 'string') {
+      const badText = invalidText(body.text)
+      if (badText) return json({ error: `text ${badText}` }, 400, cors)
       return json({ tree: await tree.rename(id, body.text, c.origin) }, 200, cors)
     }
     if (typeof body?.done === 'boolean') {

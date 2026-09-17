@@ -22,6 +22,7 @@
  */
 
 import {
+  invalidText,
   addChild,
   addSubtree,
   adoptFollowing,
@@ -238,10 +239,11 @@ export function parseOp(input: unknown): { op: Op } | { error: string } {
       const parentId = nullableStr('parentId')
       if (parentId === undefined) return miss('parentId', 'a string or null')
       const text = str('text')
-      if (text === undefined) return miss('text', 'a string')
+      const badText = invalidText(text)
+      if (badText) return { error: `${kind}.text ${badText}` }
       const at = num('at')
       if (at === undefined) return miss('at', 'a number')
-      return { op: { op: 'addChild', id: id!, parentId, text, at } }
+      return { op: { op: 'addChild', id: id!, parentId, text: text!, at } }
     }
     case 'addSubtree': {
       const ids = Array.isArray(v.ids) && v.ids.every((x) => typeof x === 'string') ? (v.ids as string[]) : undefined
@@ -256,8 +258,9 @@ export function parseOp(input: unknown): { op: Op } | { error: string } {
     }
     case 'setText': {
       const text = str('text')
-      if (text === undefined) return miss('text', 'a string')
-      return { op: { op: 'setText', id: id!, text } }
+      const badText = invalidText(text)
+      if (badText) return { error: `${kind}.text ${badText}` }
+      return { op: { op: 'setText', id: id!, text: text! } }
     }
     case 'setDone': {
       const done = bool('done')
@@ -324,8 +327,9 @@ export function parseSpecs(val: unknown, path: string): SubtreeSpec[] | string {
   for (let i = 0; i < val.length; i++) {
     const n = val[i] as Record<string, unknown>
     if (typeof n !== 'object' || n === null) return `${path}[${i}] must be an object`
-    if (typeof n.text !== 'string') return `${path}[${i}].text must be a string`
-    const spec: SubtreeSpec = { text: n.text }
+    const badText = invalidText(n.text)
+    if (badText) return `${path}[${i}].text ${badText}`
+    const spec: SubtreeSpec = { text: n.text as string }
     if (n.children !== undefined) {
       const kids = parseSpecs(n.children, `${path}[${i}].children`)
       if (typeof kids === 'string') return kids

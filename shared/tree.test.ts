@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
+  MAX_TEXT_LENGTH,
   addChild,
   addSubtree,
   newId,
@@ -569,6 +570,13 @@ describe('invalidTree', () => {
   it('accepts an empty tree', () => {
     // A database with no projects is a legitimate state, not a broken one.
     expect(invalidTree([])).toBeNull()
+  })
+
+  it('rejects a node whose text is over the length cap', () => {
+    // Import is the one route where a whole file becomes the database, so the
+    // cap the op parsers enforce has to hold here too or it can be bypassed.
+    const long = 'x'.repeat(MAX_TEXT_LENGTH + 1)
+    expect(invalidTree([node('a', null, { text: long })])).toMatch(/tree\[0\]/)
   })
 
   it('accepts the optional root-only fields when present', () => {

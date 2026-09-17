@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { applyOp, parseOp, reorderPinsOps, OP_KINDS, type Op } from './ops'
+import { MAX_TEXT_LENGTH } from './tree'
 import {
   adoptFollowing,
   byId,
@@ -433,5 +434,35 @@ describe('reorderPinsOps — dragging a pin on the shelf', () => {
     const t = shelf(fixture(), 'taxes', 'g2', 'gather')
     const moved = reorderPinsOps(t, 2, 0).reduce((acc, op) => applyOp(acc, op).tree, t)
     expect(pinnedItems(moved).map((p) => p.node.id)).toEqual(['gather', 'taxes', 'g2'])
+  })
+})
+
+describe('text length', () => {
+  // The cap is the only thing between a pasted document and a task that every
+  // client then downloads and broadcasts on each write. It has to hold at each
+  // entry point, not just one.
+  const long = 'x'.repeat(MAX_TEXT_LENGTH + 1)
+  const atLimit = 'x'.repeat(MAX_TEXT_LENGTH)
+
+  it('rejects overlong text in setText and addChild, naming the field', () => {
+    for (const op of [
+      { op: 'setText', id: 'a', text: long },
+      { op: 'addChild', id: 'a', parentId: null, text: long, at: 1 },
+    ]) {
+      const bad = parseOp(op)
+      expect(bad).toHaveProperty('error')
+      expect('error' in bad && bad.error).toContain('text')
+      expect('error' in bad && bad.error).toContain('too long')
+    }
+  })
+
+  it('rejects overlong text anywhere in a subtree', () => {
+    const nested = { op: 'addSubtree', ids: ['a', 'b'], parentId: null, nodes: [{ text: 'ok', children: [{ text: long }] }], at: 1 }
+    const bad = parseOp(nested)
+    expect('error' in bad && bad.error).toContain('nodes[0].children[0].text')
+  })
+
+  it('accepts text exactly at the limit', () => {
+    expect(parseOp({ op: 'setText', id: 'a', text: atLimit })).not.toHaveProperty('error')
   })
 })
