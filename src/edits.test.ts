@@ -21,7 +21,7 @@ import {
   titleAndFirstTaskEdit,
 } from './edits'
 import { applyOp } from '@shared/ops'
-import { byId, childrenOf, type Tree } from '@shared/tree'
+import { byId, childrenOf, MAX_TEXT_LENGTH, type Tree } from '@shared/tree'
 
 const node = (id: string, parentId: string | null, text: string, order: number, extra = {}) => ({
   id,
@@ -156,4 +156,16 @@ test('Enter on an unnamed project is not a rename either', () => {
   // Handed back so the caller can back out of creating the project, rather
   // than leaving an "Untitled" holding one blank row.
   expect(titleAndFirstTaskEdit([node('q', null, '', 0)], 'q', '   ')).toBeNull()
+})
+
+test('a commit clamps the text to the limit before it reaches the wire', () => {
+  // The editor's input has maxLength, but the contentEditable title and a
+  // programmatic commit do not, so the clamp lives in the commit itself: the
+  // server would reject the op and the row would sit on screen with text the
+  // account never accepted.
+  const id = 'a'
+  const long = 'x'.repeat(MAX_TEXT_LENGTH + 50)
+  const edit = commitEditEdit(tree, id, long, null)
+  expect(byId(edit.tree, id)?.text).toHaveLength(MAX_TEXT_LENGTH)
+  expect(edit.ops).toEqual([{ op: 'setText', id, text: 'x'.repeat(MAX_TEXT_LENGTH) }])
 })

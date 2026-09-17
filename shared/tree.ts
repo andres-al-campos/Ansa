@@ -37,26 +37,20 @@ export type Tree = Node[]
 // ------------------------------------------------------------- validation
 
 /**
- * True when `value` is shaped like a Node. Unknown extra keys are tolerated —
- * an older or newer client's field shouldn't make a tree unreadable.
+ * The most text one task can hold, in UTF-16 units (JS string length).
  *
- * The optional fields are checked when present rather than ignored: `pinned`
- * and `lastOpenedAt` are read straight into sorting and rendering, so a string
- * where a number belongs surfaces far from here, as a mis-sorted project list
- * rather than a rejected write.
+ * A task is meant to be small; anything bigger is a project and belongs split
+ * into children. The longest title in real use is under a hundred characters,
+ * so this leaves room without letting a row become a document. Both clients
+ * clamp before committing so a user never sees a rejection, and every server
+ * entry point checks so a client that skipped the clamp is told at the edge.
  */
-/**
- * The most text one task may hold.
- *
- * Not a product limit — a task's text is a line or a short paragraph, and ten
- * thousand characters is well past anything typed. It exists because there was
- * no ceiling at all: a single task carrying megabytes is stored, echoed on every
- * write, and broadcast to every client, and the only thing that ever refused it
- * was SQLite's own per-value limit, far above where the cost starts. Checked at
- * every entry point rather than at the store, so a client is told at the edge,
- * before an op is queued behind other edits.
- */
-export const MAX_TEXT_LENGTH = 10_000
+export const MAX_TEXT_LENGTH = 200
+
+/** `text` cut to the limit, for a client to apply before committing. */
+export function clampText(text: string): string {
+  return text.length > MAX_TEXT_LENGTH ? text.slice(0, MAX_TEXT_LENGTH) : text
+}
 
 /** Why `text` is unusable as a task's text, or null when it's fine. */
 export function invalidText(text: unknown): string | null {
@@ -67,6 +61,15 @@ export function invalidText(text: unknown): string | null {
   return null
 }
 
+/**
+ * True when `value` is shaped like a Node. Unknown extra keys are tolerated —
+ * an older or newer client's field shouldn't make a tree unreadable.
+ *
+ * The optional fields are checked when present rather than ignored: `pinned`
+ * and `lastOpenedAt` are read straight into sorting and rendering, so a string
+ * where a number belongs surfaces far from here, as a mis-sorted project list
+ * rather than a rejected write.
+ */
 export function isNode(value: unknown): value is Node {
   if (typeof value !== 'object' || value === null) return false
   const n = value as Record<string, unknown>

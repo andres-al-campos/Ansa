@@ -14,7 +14,7 @@ import { execFileSync } from 'node:child_process'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod'
-import { byId, childrenOf, progressOf, type Node, type NodeId, type Tree } from '../../shared/tree.ts'
+import { byId, childrenOf, MAX_TEXT_LENGTH, progressOf, type Node, type NodeId, type Tree } from '../../shared/tree.ts'
 
 const BASE = process.env.ANSA_API ?? 'https://ansa.id3arium.workers.dev'
 
@@ -218,7 +218,7 @@ server.registerTool(
 type SubtreeInput = { text: string; children?: SubtreeInput[] }
 const subtreeNode: z.ZodType<SubtreeInput> = z.lazy(() =>
   z.object({
-    text: z.string().describe('The task title'),
+    text: z.string().max(MAX_TEXT_LENGTH).describe('The task title'),
     children: z.array(subtreeNode).optional().describe('Nested sub-tasks, same shape, any depth'),
   }),
 )
@@ -259,7 +259,7 @@ server.registerTool(
   {
     title: 'Rename a task',
     description: 'Change the title of an existing task.',
-    inputSchema: { id: z.string(), text: z.string().describe('The new title') },
+    inputSchema: { id: z.string(), text: z.string().max(MAX_TEXT_LENGTH).describe('The new title') },
   },
   async ({ id, text: t }) => {
     const { tree } = await api(`/api/nodes/${id}`, {

@@ -92,6 +92,20 @@ public typealias Tree = [Node]
 // MARK: - Structure
 
 public enum TreeOps {
+    /// The most text one task can hold, in UTF-16 units so it counts the same
+    /// way the server does (a JS string length). Mirrors MAX_TEXT_LENGTH in
+    /// shared/tree.ts; the two must agree or a row the phone accepts is
+    /// rejected on sync.
+    public static let maxTextLength = 200
+
+    /// `text` cut to `maxTextLength`, dropping whole characters from the end so
+    /// a surrogate pair is never split.
+    public static func clampText(_ text: String) -> String {
+        var s = text
+        while s.utf16.count > maxTextLength { s.removeLast() }
+        return s
+    }
+
 
     /// Direct children of `parentId`, in the tree's own manual order.
     public static func childrenOf(_ tree: Tree, _ parentId: NodeId?) -> [Node] {
@@ -420,7 +434,7 @@ public enum TreeOps {
     /// An unchanged non-empty row writes nothing, so leaving a row you only
     /// looked at does not put an op on the wire.
     public static func commitEdit(_ tree: Tree, _ id: NodeId, _ text: String) -> Op? {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmed = clampText(text.trimmingCharacters(in: .whitespacesAndNewlines))
         if trimmed.isEmpty {
             guard byId(tree, id) != nil else { return nil }
             return .removeNode(id: id)

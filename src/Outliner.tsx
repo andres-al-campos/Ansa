@@ -19,6 +19,8 @@ import AccountCard from './AccountCard'
 import SyncToast from './SyncToast'
 import { applyOp, reorderPinsOps, type Op } from '@shared/ops'
 import {
+  clampText,
+  MAX_TEXT_LENGTH,
   addChild,
   byId,
   childrenOf,
@@ -945,7 +947,7 @@ export default function Outliner({ initial }: { initial: Tree }) {
   // just made it, so clicking away from it without typing anything backs out of
   // creating it, the same as Escape and Enter do.
   function commitTitle(id: NodeId, text: string) {
-    const trimmed = text.trim()
+    const trimmed = clampText(text.trim())
     if (trimmed) setTree(setText(tree, id, trimmed), { op: 'setText', id, text: trimmed })
     else if (byId(tree, id)?.text.trim() === '') {
       cancelTitle(id)
@@ -1796,6 +1798,7 @@ export default function Outliner({ initial }: { initial: Tree }) {
                       // typed text, since defaultValue only applies on mount.
                       key={id}
                       className="label-input"
+                      maxLength={MAX_TEXT_LENGTH}
                       autoFocus
                       defaultValue={node.text}
                       onBlur={(e) => commitEdit(id, e.target.value)}

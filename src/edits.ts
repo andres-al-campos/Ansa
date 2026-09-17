@@ -18,6 +18,7 @@ import {
   addChild,
   byId,
   childrenOf,
+  clampText,
   moveNode,
   moveRow,
   newId,
@@ -62,7 +63,7 @@ export function commitAndAddSiblingEdit(
   text: string,
   scope: NodeId | null,
 ): Edit {
-  const trimmed = text.trim()
+  const trimmed = clampText(text.trim())
   const parentId = byId(tree, id)?.parentId ?? scope
   const renamed = trimmed ? setText(tree, id, trimmed) : removeNode(tree, id)
   const childId = newId()
@@ -97,7 +98,7 @@ export function commitAndAddSiblingEdit(
  * do nothing.
  */
 export function commitEditEdit(tree: Tree, id: NodeId, text: string, focus: NodeId | null): Edit {
-  const trimmed = text.trim()
+  const trimmed = clampText(text.trim())
   if (trimmed === '') {
     if (!byId(tree, id)) return unchanged(tree, focus)
     return { tree: removeNode(tree, id), ops: [{ op: 'removeNode', id }], focus }
@@ -115,7 +116,7 @@ export function commitEditEdit(tree: Tree, id: NodeId, text: string, focus: Node
  * risk the two disagreeing.
  */
 export function reindentEdit(tree: Tree, id: NodeId, text: string, dir: 'in' | 'out'): Edit {
-  const trimmed = text.trim()
+  const trimmed = clampText(text.trim())
   const withText = setText(tree, id, trimmed)
   let structural: Op
   if (dir === 'in') {
@@ -161,7 +162,7 @@ export function reorderWithTextEdit(
   dir: 'up' | 'down',
   order: NodeId[],
 ): Edit {
-  const trimmed = text.trim()
+  const trimmed = clampText(text.trim())
   const withText = setText(tree, id, trimmed)
   const ops: Op[] = [{ op: 'setText', id, text: trimmed }]
   const next = moveRow(withText, id, dir, order)
@@ -182,7 +183,7 @@ export function reorderWithTextEdit(
  * owns that path because it can also mean backing out of a project entirely.
  */
 export function titleAndFirstTaskEdit(tree: Tree, id: NodeId, text: string): Edit | null {
-  const trimmed = text.trim()
+  const trimmed = clampText(text.trim())
   if (!trimmed || childrenOf(tree, id).length > 0) return null
   const named = setText(tree, id, trimmed)
   const childId = newId()

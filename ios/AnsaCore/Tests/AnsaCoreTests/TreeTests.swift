@@ -116,6 +116,20 @@ struct CommitEditTests {
         #expect(TreeOps.commitEdit(t, node.id, " Renamed ") == .setText(id: node.id, text: "Renamed"))
     }
 
+    @Test("text is clamped to the limit, by UTF-16 length, without splitting a character")
+    func clamps() {
+        let t = fixture()
+        guard let node = t.first else { return #expect(Bool(false)) }
+        let long = String(repeating: "x", count: TreeOps.maxTextLength + 50)
+        #expect(TreeOps.commitEdit(t, node.id, long) == .setText(id: node.id, text: String(repeating: "x", count: TreeOps.maxTextLength)))
+        // Each emoji is two UTF-16 units. The server counts those, so the clamp
+        // must too, and it must drop a whole emoji rather than half of one.
+        let emoji = String(repeating: "😀", count: TreeOps.maxTextLength)
+        let clamped = TreeOps.clampText(emoji)
+        #expect(clamped.utf16.count <= TreeOps.maxTextLength)
+        #expect(clamped == String(repeating: "😀", count: TreeOps.maxTextLength / 2))
+    }
+
     @Test("emptying a row deletes it, even when it was already empty")
     func emptyDeletes() {
         // The stranded-row case: a row created and left without typing has

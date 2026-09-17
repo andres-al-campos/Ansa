@@ -2413,6 +2413,10 @@ private struct ScopeTitle: View {
             TextField("Name", text: $editText)
                 .textFieldStyle(.plain)
                 .font(.subheadline.weight(.semibold))
+                .onChange(of: editText) { _, text in
+                    let clamped = TreeOps.clampText(text)
+                    if clamped != text { editText = clamped }
+                }
                 .multilineTextAlignment(.center)
                 .focused(typing)
                 .submitLabel(.done)
@@ -2884,6 +2888,10 @@ private struct OutlineRow: View {
                         // conceptually; the axis exists only so long text wraps
                         // instead of scrolling sideways.
                         .onChange(of: editText) { _, text in
+                            // Clamp as you type, so the limit is hit at the
+                            // keyboard rather than on sync.
+                            let clamped = TreeOps.clampText(text)
+                            if clamped != text { editText = clamped }
                             guard text.contains("\n") else { return }
                             editText = text.replacingOccurrences(of: "\n", with: "")
                             onSubmit()
