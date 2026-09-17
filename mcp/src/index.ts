@@ -108,11 +108,20 @@ async function api(path: string, init?: RequestInit): Promise<{ tree: Tree } & R
   return res.json() as Promise<{ tree: Tree } & Record<string, unknown>>
 }
 
-/** One outline line for a node, at `depth` levels of indent. */
+/**
+ * One outline line for a node, at `depth` levels of indent.
+ *
+ * The title is rendered on one line, whatever it contains. A title with a line
+ * break in it would otherwise print as two outline rows, and the second one
+ * could be shaped to look like a real task with a checkbox and an id. The
+ * model reads this text as the tree, so a line break is shown as `\n` rather
+ * than taken literally.
+ */
 function renderLine(n: Node, depth: number): string {
   const box = n.done ? '[x]' : '[ ]'
   const fold = n.collapsed ? ' (collapsed)' : ''
-  return `${'  '.repeat(depth)}- ${box} ${n.text || '(untitled)'}  {${n.id}}${fold}`
+  const text = (n.text || '(untitled)').replace(/\r\n|\r|\n/g, '\\n')
+  return `${'  '.repeat(depth)}- ${box} ${text}  {${n.id}}${fold}`
 }
 
 /**

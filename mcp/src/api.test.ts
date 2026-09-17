@@ -115,3 +115,12 @@ test('the token is never written to stdout', () => {
   // both corrupt the protocol and put the token somewhere it gets logged.
   expect(source).not.toMatch(/console\.log\([^)]*TOKEN/)
 })
+
+test('a title cannot break the outline into extra rows', () => {
+  // Every outline row is `- [ ] title  {id}`, and the model addresses tasks by
+  // the id it reads there. A title containing a line break would print as two
+  // rows, and the second could carry a checkbox and an id of the author's
+  // choosing. renderLine must collapse line breaks before printing.
+  const renderLine = source.slice(source.indexOf('function renderLine('))
+  expect(renderLine.slice(0, renderLine.indexOf('\n}'))).toMatch(/\.replace\(\/\\r\\n\|\\r\|\\n\/g, '\\\\n'\)/)
+})
