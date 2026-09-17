@@ -155,6 +155,13 @@ public final class SyncClient {
     /// and is about to vanish from the screen at the next adopt.
     public private(set) var rejected = 0
 
+    /// The server's own explanation for the latest refusal, when it is one a
+    /// person can act on. The node cap is why this exists: "you are at the
+    /// limit, delete something" is advice this app cannot reconstruct from a
+    /// count, and the alternative wording would be a guess at a different
+    /// cause. Nil when the reason is internal and nothing useful can be said.
+    public private(set) var rejectedReason: String?
+
     /// Notified when `live` or `rejected` changes, so the UI can redraw.
     public var onStatusChange: (() -> Void)?
 
@@ -295,6 +302,24 @@ public final class SyncClient {
         Task { await drain() }
     }
 
+    /// Whether a refusal reason is worth putting in front of the user.
+    ///
+    /// Most are not: "unknown node: abc123" names an id nobody has seen and
+    /// describes a race nobody can act on. The limits are the exception.
+    /// Matched on the text because the server sends prose; if more of these
+    /// appear, the refusal should carry a kind and this should read that.
+    /// Mirrors `isForAPerson` in `src/useOutlinerSync.ts`.
+    private static func isForAPerson(_ reason: String) -> Bool {
+        reason.contains("which is the limit")
+    }
+
+    /// Forget the latest refusal, so its banner can be dismissed.
+    public func clearRejected() {
+        rejected = 0
+        rejectedReason = nil
+        onStatusChange?()
+    }
+
     /// Tell the client the user started or stopped editing.
     public func setBusy(_ value: Bool) {
         busy = value
@@ -365,6 +390,7 @@ public final class SyncClient {
                 // cause is an ordinary race the user can do nothing about.
                 print("Ansa: the server refused an edit — \(reason), \(op.kind)")
                 rejected += 1
+                rejectedReason = Self.isForAPerson(reason) ? reason : nil
                 onStatusChange?()
                 await refetch()
             }

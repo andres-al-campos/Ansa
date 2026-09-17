@@ -1355,7 +1355,12 @@ export default function Outliner({ initial }: { initial: Tree }) {
           </div>
         </div>
       )}
-      <SyncToast live={sync.live} rejected={sync.rejected} onDismissRejected={sync.clearRejected} />
+      <SyncToast
+        live={sync.live}
+        rejected={sync.rejected}
+        rejectedReason={sync.rejectedReason}
+        onDismissRejected={sync.clearRejected}
+      />
       <aside className="side">
         <button className="brand" onClick={() => setScope(null)} title="Home — all projects">
           Ansa

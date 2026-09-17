@@ -562,6 +562,37 @@ test('a refused edit is shown to the user, and can be dismissed', async () => {
   logged.mockRestore()
 })
 
+test("the node cap's own message is what the toast shows", async () => {
+  // The generic wording guesses at a cause ("removed on another device") that
+  // is wrong for this refusal and points nowhere. Being at the cap is a real
+  // state of the outline with a real remedy, and only the server knows it, so
+  // its words are the ones shown.
+  const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
+  const { default: Outliner } = await import('./Outliner')
+  const seed = seedTree()
+  const { container } = render(<Outliner initial={seed} />)
+  const stream = await streamOpen()
+  scopeIntoProject(container)
+  await act(async () => {
+    stream.emit(seed)
+  })
+
+  sendOp.mockResolvedValue({
+    status: 'rejected',
+    reason:
+      'That would put this outline over 5000 tasks, which is the limit. '
+      + 'Delete something, or split a branch into its own project.',
+  })
+  await act(async () => {
+    toggleFirstTask(container)
+  })
+
+  const toast = container.querySelector('.sync-toast-warn')
+  expect(toast!.textContent).toMatch(/split a branch into its own project/)
+  expect(toast!.textContent).not.toMatch(/removed on another device/)
+  logged.mockRestore()
+})
+
 test('a queue left behind by a killed run is sent on the next one', async () => {
   // The scenario this exists for: edits made offline, then the tab closed (or
   // the phone app killed by the OS) before they could go out. The tree is in

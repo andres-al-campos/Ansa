@@ -408,6 +408,35 @@ struct SyncClientTests {
         #expect(adopted().count == 2)
     }
 
+    @Test("a refusal a person can act on is kept; an internal one is not")
+    func rejectionReason() async {
+        // The node cap is the case this exists for. "unknown node" describes a
+        // race nobody can do anything about, so showing it would be noise.
+        let api = FakeBackend()
+        await api.willAnswer([
+            .rejected(reason: "That would put this outline over 5000 tasks, which is the limit. "
+                + "Delete something, or split a branch into its own project."),
+            .rejected(reason: "No node with id x in this tree."),
+        ])
+        let (client, _) = makeClient(api)
+        client.adoptInitial([])
+
+        client.send(.setText(id: "a", text: "one"))
+        await settle(api, expecting: 1)
+        #expect(client.rejectedReason?.contains("split a branch") == true)
+
+        client.send(.setText(id: "b", text: "two"))
+        await settle(api, expecting: 2)
+        #expect(client.rejectedReason == nil)
+
+        // Dismissable, since the edit is gone either way.
+        client.send(.setText(id: "c", text: "three"))
+        await settle(api, expecting: 3)
+        client.clearRejected()
+        #expect(client.rejected == 0)
+        #expect(client.rejectedReason == nil)
+    }
+
     // ---------------------------------------------------------- op frames
 
     @Test("an op from elsewhere is applied, not adopted")

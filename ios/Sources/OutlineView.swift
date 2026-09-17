@@ -570,6 +570,16 @@ struct OutlineView: View {
                     )
                 }
 
+                // Outranks the offline banner: that one says edits are still
+                // being saved, which is true of deafness and a lie here.
+                if let why = store.rejectedReason {
+                    SyncBanner(
+                        icon: "exclamationmark.triangle",
+                        text: why,
+                        onDismiss: { store.clearRejected() }
+                    )
+                }
+
                 if trash {
                     // `interactive` too: the copy drawn behind the swipe must
                     // not take the gesture either, the same as an outline's.
@@ -2563,13 +2573,25 @@ private struct ScopeTitle: View {
 /// dialog demanding acknowledgement for something they cannot act on is worse
 /// than the problem it reports.
 private struct SyncBanner: View {
+    var icon: String = "antenna.radiowaves.left.and.right.slash"
     let text: String
+    /// When set, the banner carries a close button. The offline one does not:
+    /// it clears itself when the connection comes back, and a dismissed one
+    /// would hide a state that is still true.
+    var onDismiss: (() -> Void)?
 
     var body: some View {
         HStack(spacing: 8) {
-            Image(systemName: "antenna.radiowaves.left.and.right.slash")
+            Image(systemName: icon)
             Text(text)
             Spacer()
+            if let onDismiss {
+                Button(action: onDismiss) {
+                    Image(systemName: "xmark")
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Dismiss")
+            }
         }
         .font(.footnote)
         .foregroundStyle(.secondary)

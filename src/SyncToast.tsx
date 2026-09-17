@@ -29,11 +29,14 @@ import { useEffect, useState } from 'react'
 export default function SyncToast({
   live,
   rejected,
+  rejectedReason,
   onDismissRejected,
 }: {
   live: boolean
   /** How many edits the server refused this session. */
   rejected: number
+  /** The server's own explanation, when it is one a person can act on. */
+  rejectedReason?: string | null
   onDismissRejected: () => void
 }) {
   // Dismissal covers the current outage only. A drop after a working period is
@@ -55,8 +58,10 @@ export default function SyncToast({
             {rejected === 1 ? "A change couldn't be saved" : `${rejected} changes couldn't be saved`}
           </strong>
           <p className="sync-toast-text">
-            {rejected === 1 ? 'It may have been' : 'They may have been'} an edit to something
-            removed on another device, so it has been undone here. Everything else is saved.
+            {rejectedReason ??
+              `${rejected === 1 ? 'It may have been' : 'They may have been'} an edit to ` +
+                'something removed on another device, so it has been undone here. ' +
+                'Everything else is saved.'}
           </p>
         </div>
         <button

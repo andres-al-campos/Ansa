@@ -94,8 +94,30 @@ export interface OutlinerSync {
    * about to disappear from the screen when the server's tree is adopted.
    */
   rejected: number
+  /**
+   * The server's explanation for the latest refusal, when it is one a person
+   * can act on. Null when the reason is internal and the generic wording is
+   * the honest thing to show.
+   */
+  rejectedReason: string | null
   /** Forget the rejection count, so the warning can be dismissed. */
   clearRejected: () => void
+}
+
+/**
+ * Whether a refusal reason is worth putting in front of the user.
+ *
+ * Most are not: "unknown node: abc123" names an id nobody has seen and
+ * describes a race the user cannot act on. The limits are the exception —
+ * being at the node cap is a real state of their outline with a real remedy,
+ * and only the server knows they hit it.
+ *
+ * Matched on the text rather than a code because the server sends prose today.
+ * If more of these appear, the refusal should carry a kind and this should read
+ * that instead.
+ */
+function isForAPerson(reason: string): boolean {
+  return reason.includes('which is the limit')
 }
 
 export function useOutlinerSync({
@@ -158,6 +180,13 @@ export function useOutlinerSync({
   // flag so the toast can say whether this happened once or is happening
   // repeatedly — the second means something is actually wrong.
   const [rejected, setRejected] = useState(0)
+  // The server's own words for the most recent refusal, when they are meant for
+  // a person. The node cap is the case this exists for: "you are at the limit,
+  // delete something" is advice the toast cannot reconstruct from a count, and
+  // guessing "an edit to something removed on another device" would be wrong
+  // and unactionable. Null when the reason is internal, which the toast reads
+  // as "use the generic wording".
+  const [rejectedReason, setRejectedReason] = useState<string | null>(null)
   // Bumped whenever a frame is taken. The fingerprint check reads the tree
   // through a ref, and right after a take that ref still holds the tree from
   // before the op — the state update has not rendered yet. So the check runs
@@ -266,6 +295,7 @@ export function useOutlinerSync({
           // an ordinary race the user can do nothing about.
           console.error('Ansa: the server refused an edit —', result.reason, op)
           setRejected((n) => n + 1)
+          setRejectedReason(isForAPerson(result.reason) ? result.reason : null)
           // The edit is still on screen and never will be on the server. The
           // server's tree is the only thing that puts this tab straight, and
           // nothing else is going to send it: the refusal produced no frame.
@@ -444,7 +474,10 @@ export function useOutlinerSync({
     verify()
   }, [tree, busy, taken, verify])
 
-  const clearRejected = useCallback(() => setRejected(0), [])
+  const clearRejected = useCallback(() => {
+    setRejected(0)
+    setRejectedReason(null)
+  }, [])
 
-  return { send, live, rejected, clearRejected }
+  return { send, live, rejected, rejectedReason, clearRejected }
 }

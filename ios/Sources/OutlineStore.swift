@@ -33,6 +33,9 @@ final class OutlineStore {
     /// are still saved.
     private(set) var live = true
     private(set) var rejected = 0
+    /// The server's explanation for the latest refusal, when a person can act
+    /// on it — being at the node cap, today. Nil for the ordinary races.
+    private(set) var rejectedReason: String?
 
     @ObservationIgnored private var sync: SyncClient?
     @ObservationIgnored private let api: AnsaAPI
@@ -78,6 +81,7 @@ final class OutlineStore {
             guard let self else { return }
             self.live = client.live
             self.rejected = client.rejected
+            self.rejectedReason = client.rejectedReason
         }
         sync = client
         client.start()
@@ -102,6 +106,14 @@ final class OutlineStore {
     /// most callers, but how the ripple knows a branch finished rather than a
     /// single task being ticked.
     @discardableResult
+    /// Dismiss the refusal banner. The edit is already gone either way; this
+    /// only stops the message being permanent furniture.
+    func clearRejected() {
+        sync?.clearRejected()
+        rejected = 0
+        rejectedReason = nil
+    }
+
     func apply(_ op: Op) -> [NodeId] {
         let result = TreeOps.applyOp(tree, op)
         tree = result.tree
