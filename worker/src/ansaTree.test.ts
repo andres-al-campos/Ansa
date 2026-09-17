@@ -22,7 +22,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { AnsaTree } from './ansaTree.ts'
 import { RejectedWriteError } from './treeStore.ts'
 import type { SqlStorage } from './treeStore.ts'
-import { roots } from '../../shared/tree.ts'
+import { fingerprint, roots } from '../../shared/tree.ts'
 
 /** better-sqlite3 behind the Durable Object SQL surface. Mirrors treeStore.test.ts. */
 function sqlAdapter(file: string): SqlStorage & { db: Database.Database; close(): void } {
@@ -137,7 +137,17 @@ afterEach(() => {
 })
 
 /** Every payload a socket received, parsed. */
-const received = (ws: FakeSocket) => ws.sent.map((s) => JSON.parse(s) as { tree: unknown[]; origin: string | null })
+const received = (ws: FakeSocket) =>
+  ws.sent.map(
+    (s) =>
+      JSON.parse(s) as {
+        kind: 'tree' | 'op'
+        tree?: unknown[]
+        op?: Record<string, unknown>
+        origin: string | null
+        hash: string
+      },
+  )
 
 describe('seeding', () => {
   it('seeds an empty account once and never again', () => {
@@ -230,7 +240,7 @@ describe('broadcast', () => {
     // fetch() builds a real WebSocketPair, which node has no global for, so the
     // upgrade itself is verified against wrangler dev instead — see the note at
     // the top of this file. What is asserted here is only the payload shape.
-    const payload = JSON.stringify({ tree: tree.load(), origin: null })
+    const payload = JSON.stringify({ kind: 'tree', tree: tree.load(), origin: null, hash: fingerprint(tree.load()) })
     ws.send(payload)
     expect(received(ws)[0].tree).toHaveLength(1)
   })
@@ -243,7 +253,46 @@ describe('broadcast', () => {
     tree.applyOp({ op: 'addChild', id: 'a', parentId: null, text: 'project', at: 1 }, null)
     expect(received(one)).toHaveLength(1)
     expect(received(two)).toHaveLength(1)
-    expect(roots(received(one)[0].tree as never).map((n) => n.text)).toEqual(['project'])
+    expect(received(one)[0].op?.text).toBe('project')
+  })
+
+  it('sends an op as the op, not the tree', () => {
+    // The whole point of the change: with the tree in every frame, a keystroke
+    // cost every listener the size of the outline. The op is a hundred bytes and
+    // the listener already has the tree to apply it to.
+    const ws = fakeSocket()
+    ctx.acceptWebSocket(ws)
+    tree.applyOp({ op: 'addChild', id: 'a', parentId: null, text: 'project', at: 1 }, null)
+    const [frame] = received(ws)
+    expect(frame.kind).toBe('op')
+    expect(frame.tree).toBeUndefined()
+    expect(frame.op).toEqual({ op: 'addChild', id: 'a', parentId: null, text: 'project', at: 1 })
+  })
+
+  it('stamps every frame with the fingerprint of the tree after the write', () => {
+    // A client that applies the op and lands on a different fingerprint has
+    // drifted and refetches. Without the stamp an op frame would be a promise
+    // with no way to check it.
+    const ws = fakeSocket()
+    ctx.acceptWebSocket(ws)
+    tree.applyOp({ op: 'addChild', id: 'a', parentId: null, text: 'project', at: 1 }, null)
+    tree.applyOp({ op: 'addChild', id: 'b', parentId: 'a', text: 'child', at: 2 }, null)
+    const frames = received(ws)
+    expect(frames[1].hash).toBe(fingerprint(tree.load()))
+    // And it is the tree *after* the op, so the two frames differ.
+    expect(frames[0].hash).not.toBe(frames[1].hash)
+  })
+
+  it('sends the tree for a write that has no op form', () => {
+    // The MCP's direct routes and the trash go through the store without an op,
+    // so there is nothing smaller to send than the result.
+    const ws = fakeSocket()
+    ctx.acceptWebSocket(ws)
+    tree.addChild(null, 'project', null)
+    const [frame] = received(ws)
+    expect(frame.kind).toBe('tree')
+    expect(frame.tree).toHaveLength(1)
+    expect(frame.hash).toBe(fingerprint(tree.load()))
   })
 
   it('tags the broadcast with the client that caused it', () => {

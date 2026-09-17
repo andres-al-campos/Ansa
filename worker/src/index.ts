@@ -251,7 +251,10 @@ async function route(c: Ctx): Promise<Response> {
   if (path === '/api/ops' && method === 'POST') {
     const body = await readJson(req)
     const result = await tree.applyOp(body?.op ?? body, c.origin)
-    return json(result, 200, cors)
+    // Only `completed` goes back. The tree used to as well, but the client
+    // ignores it — the broadcast is where it learns what the server holds — and
+    // returning it made every op cost a serialisation of the whole outline.
+    return json({ completed: result.completed }, 200, cors)
   }
 
   if (path === '/api/nodes' && method === 'POST') {

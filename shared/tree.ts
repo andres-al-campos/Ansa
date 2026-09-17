@@ -34,6 +34,56 @@ export interface Node {
 
 export type Tree = Node[]
 
+// ------------------------------------------------------------ fingerprint
+
+/**
+ * A short hash of everything in the tree that sync has to agree on.
+ *
+ * The server stamps every broadcast with the fingerprint of its tree after the
+ * write, and a client that is otherwise idle compares it against its own. A
+ * mismatch means the two have drifted — an op applied in a different order on
+ * each side, a rejected edit still on screen, an applier that disagrees between
+ * Swift and TypeScript — and the client refetches. This is what lets the
+ * broadcast carry one op instead of the whole tree without giving up the
+ * guarantee that every client ends up holding what the server holds.
+ *
+ * Timestamps are left out on purpose. `createdAt` and `lastOpenedAt` are
+ * floating-point on the wire, and getting two languages to print the same
+ * decimal for the same double is a problem this does not need to have. Nothing
+ * sync cares about depends on them: a node's creation time never changes, and
+ * a stale `lastOpenedAt` costs a Recents order, not a wrong tree.
+ *
+ * Mirrored by `TreeOps.fingerprint` in AnsaCore. The two must produce the same
+ * string for the same tree, and a fixture test on each side checks that.
+ */
+export function fingerprint(tree: Tree): string {
+  const rows = tree.map((n) =>
+    [
+      n.id,
+      n.parentId ?? '',
+      n.text,
+      n.done ? '1' : '0',
+      String(n.order),
+      n.collapsed ? '1' : '0',
+      n.pinned ? '1' : '0',
+      n.pinOrder === undefined || n.pinOrder === null ? '' : String(n.pinOrder),
+    ].join('\u001f'),
+  )
+  // Storage order is not meaningful, so sort. Ids lead each row and are unique,
+  // which makes the order total. The default comparator orders by UTF-16 unit,
+  // which is what the Swift side sorts by too.
+  rows.sort()
+  // FNV-1a, 32-bit. Not cryptographic and does not need to be: the question is
+  // "did these two trees come out the same", not "could someone forge one".
+  const bytes = new TextEncoder().encode(rows.join('\u001e'))
+  let h = 0x811c9dc5
+  for (const b of bytes) {
+    h ^= b
+    h = Math.imul(h, 0x01000193) >>> 0
+  }
+  return h.toString(16).padStart(8, '0')
+}
+
 // ------------------------------------------------------------- validation
 
 /**

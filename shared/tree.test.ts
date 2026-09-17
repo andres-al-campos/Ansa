@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { describe, expect, it, vi } from 'vitest'
 import {
   MAX_TEXT_LENGTH,
@@ -26,7 +29,9 @@ import {
   roots,
   setDone,
   subtreeOf,
+  type Node,
   type Tree,
+  fingerprint,
 } from './tree'
 
 /**
@@ -829,5 +834,53 @@ describe('pinnedItems — the shelf, arranged by hand', () => {
 
   it('has nothing to show when nothing is pinned', () => {
     expect(pinnedItems(fixture())).toEqual([])
+  })
+})
+
+describe('fingerprint', () => {
+  // The server stamps every broadcast with this, and a client compares it to
+  // its own. Two things have to hold: it changes when anything sync cares about
+  // changes, and Swift computes the same string — see the matching test in
+  // AnsaCoreTests, which pins the same constant on the same fixture.
+
+  const fixtureFile = join(dirname(fileURLToPath(import.meta.url)), '../ios/AnsaCore/Tests/AnsaCoreTests/Fixtures/real-tree.json')
+  const real = (): Tree => (JSON.parse(readFileSync(fixtureFile, 'utf8')) as { tree: Tree }).tree
+
+  it('is the pinned constant for the shared fixture', () => {
+    // If this changes, the Swift side has to change with it, or every phone
+    // refetches the tree after every edit.
+    expect(fingerprint(real())).toBe('e314e562')
+    expect(fingerprint([])).toBe('811c9dc5')
+  })
+
+  it('does not depend on storage order', () => {
+    const tree = real()
+    expect(fingerprint([...tree].reverse())).toBe(fingerprint(tree))
+  })
+
+  it('changes for every field sync has to agree on', () => {
+    const base = real()
+    const edits: ((n: Node) => Node)[] = [
+      (n) => ({ ...n, text: n.text + '!' }),
+      (n) => ({ ...n, done: !n.done }),
+      (n) => ({ ...n, order: n.order + 1 }),
+      (n) => ({ ...n, collapsed: !n.collapsed }),
+      (n) => ({ ...n, pinned: !n.pinned }),
+      (n) => ({ ...n, pinOrder: 3 }),
+      (n) => ({ ...n, parentId: null }),
+    ]
+    for (const edit of edits) {
+      const changed = base.map((n, i) => (i === 3 ? edit(n) : n))
+      expect(fingerprint(changed)).not.toBe(fingerprint(base))
+    }
+  })
+
+  it('ignores timestamps', () => {
+    // Doubles on the iOS side; the chance of two languages printing the same
+    // decimal is not something sync should ride on, and nothing sync cares
+    // about depends on them.
+    const base = real()
+    const stamped = base.map((n) => ({ ...n, createdAt: n.createdAt + 0.5, lastOpenedAt: 12345.678 }))
+    expect(fingerprint(stamped)).toBe(fingerprint(base))
   })
 })

@@ -27,8 +27,9 @@
 
 import { DurableObject } from 'cloudflare:workers'
 import { RejectedWriteError, TreeStore, type TrashEntry } from './treeStore.ts'
-import { parseOp, parseSpecs } from '../../shared/ops.ts'
-import { invalidTree, type Tree } from '../../shared/tree.ts'
+import type { Frame } from '../../shared/frame.ts'
+import { parseOp, parseSpecs, type Op } from '../../shared/ops.ts'
+import { fingerprint, invalidTree, type Tree } from '../../shared/tree.ts'
 import { tutorialTree } from '../../shared/tutorial.ts'
 
 /** How long a deleted subtree is kept before the sweep drops it. */
@@ -80,7 +81,7 @@ export class AnsaTree extends DurableObject {
     const parsed = parseOp(rawOp)
     if ('error' in parsed) throw new RejectedWriteError(parsed.error)
     const result = this.ctx.storage.transactionSync(() => this.store.applyOp(parsed.op))
-    this.broadcast(result.tree, origin)
+    this.broadcast(result.tree, origin, parsed.op)
     if (parsed.op.op === 'removeNode' && parsed.op.trash) await this.ensureSweepScheduled()
     return result
   }
@@ -283,7 +284,9 @@ export class AnsaTree extends DurableObject {
     this.ctx.acceptWebSocket(server)
     // The current tree immediately, so a client that just connected doesn't
     // render empty while it waits for someone else to make a change.
-    server.send(JSON.stringify({ tree: this.store.load(), origin: null }))
+    const tree = this.store.load()
+    const frame: Frame = { kind: 'tree', tree, origin: null, hash: fingerprint(tree) }
+    server.send(JSON.stringify(frame))
     return new Response(null, { status: 101, webSocket: client })
   }
 
@@ -336,8 +339,20 @@ export class AnsaTree extends DurableObject {
    * already holds that state, and re-adopting it is what used to clobber a
    * local edit mid-keystroke.
    */
-  private broadcast(tree: Tree, origin: string | null): void {
-    const payload = JSON.stringify({ tree, origin })
+  /**
+   * Push a write to every open socket.
+   *
+   * With `op`, the frame carries that op and not the tree: the receivers apply
+   * it themselves, which costs them a hundred bytes rather than the whole tree
+   * on every keystroke. Without one — a restore, an import, an MCP route with no
+   * op form — the tree goes as it always did. Either way the frame is stamped
+   * with the fingerprint of `tree`, so a receiver can tell whether it ended up
+   * holding the same thing. See shared/frame.ts.
+   */
+  private broadcast(tree: Tree, origin: string | null, op?: Op): void {
+    const hash = fingerprint(tree)
+    const frame: Frame = op ? { kind: 'op', op, origin, hash } : { kind: 'tree', tree, origin, hash }
+    const payload = JSON.stringify(frame)
     for (const ws of this.ctx.getWebSockets()) {
       try {
         ws.send(payload)
