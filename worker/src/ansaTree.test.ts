@@ -22,7 +22,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { AnsaTree } from './ansaTree.ts'
 import { RejectedWriteError } from './treeStore.ts'
 import type { SqlStorage } from './treeStore.ts'
-import { fingerprint, roots } from '../../shared/tree.ts'
+import { fingerprint } from '../../shared/tree.ts'
 
 /** better-sqlite3 behind the Durable Object SQL surface. Mirrors treeStore.test.ts. */
 function sqlAdapter(file: string): SqlStorage & { db: Database.Database; close(): void } {
