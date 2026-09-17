@@ -86,9 +86,9 @@ export class AnsaTree extends DurableObject {
   }
 
   addSubtree(parentId: string | null, rawSpecs: unknown, origin: string | null): { tree: Tree; ids: string[] } {
-    // parseSpecs returns the specs or the first problem as a string — the same
-    // wrapper the Fastify route puts around it, for the same reason: one walk,
-    // so the two write paths can't drift into accepting different shapes.
+    // parseSpecs returns the specs or the first problem as a string, so the
+    // shape check and the walk happen once, here, and no second write path
+    // can drift into accepting a different shape.
     const parsed = parseSpecs(rawSpecs, 'nodes')
     if (typeof parsed === 'string') throw new RejectedWriteError(parsed)
     const result = this.ctx.storage.transactionSync(() => this.store.addSubtree(parentId, parsed))

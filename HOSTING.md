@@ -353,7 +353,8 @@ What didn't survive:
   runtime. It survives as a test dependency, standing in for the DO SQL surface
   in `worker/src/treeStore.test.ts`.
 - **`server/src/deployment.ts`'s production mode** is dead for the same reason.
-  The Fastify server is now a local-development tool only.
+  The Fastify server became a local-development tool only, and was later
+  deleted once the Worker had been the only backend for a month.
 - **The `ANSA_DB` / volume-mount row** has no analogue. A Durable Object's
   storage is part of the object, so there is nothing to mount and nothing that
   dies with a redeploy.
