@@ -17,15 +17,15 @@ import type { Tree } from '@shared/tree'
 // localhost page from calling 127.0.0.1 — so a hardcoded 127.0.0.1 breaks when
 // the app is served from localhost. Deriving the host sidesteps that entirely.
 //
-// That default is a local-dev convenience and nothing else. A deployed build has
-// no server on port 4000 of its own hostname, so VITE_ANSA_API must point at the
-// Worker — and because Vite inlines it at build time, an unset variable is an
+// That default is a local-dev convenience and nothing else: 8787 is where
+// `wrangler dev` listens under ./build.sh web. A deployed build has no server
+// on that port of its own hostname, so VITE_ANSA_API must point at the Worker — and because Vite inlines it at build time, an unset variable is an
 // empty string rather than an error. Failing here beats shipping a build whose
 // every request goes to a port that isn't listening.
 const BASE =
   import.meta.env.VITE_ANSA_API ||
   (import.meta.env.DEV
-    ? `${window.location.protocol}//${window.location.hostname}:4000`
+    ? `${window.location.protocol}//${window.location.hostname}:8787`
     : missingApiBase())
 
 function missingApiBase(): never {

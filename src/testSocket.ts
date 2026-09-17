@@ -3,7 +3,7 @@
  *
  * Without it those tests open a real socket. jsdom implements WebSocket for
  * real, so rendering the outliner starts an actual connection to
- * ws://localhost:4000 — which useOutlinerSync then retries with backoff when it
+ * ws://localhost:8787 — which useOutlinerSync then retries with backoff when it
  * fails. Nothing usually listens there, so it passes; but the suite quietly
  * behaves differently when a dev server *is* running, and a test that depends on
  * what else is running on the machine is not a test.
