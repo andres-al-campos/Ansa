@@ -8,7 +8,6 @@
 #   ./build.sh              package the desktop .app and install it, the default
 #   ./build.sh desktop      dev run of the desktop app (hot-reload window)
 #   ./build.sh web          run the local web stack: API + Vite app together
-#   ./build.sh web fastify  the web stack against the old Fastify + ansa.db server
 #   ./build.sh deploy       test, then publish the API and the app
 #   ./build.sh deploy api   the Worker only
 #   ./build.sh deploy app   the Pages bundle only
@@ -21,12 +20,7 @@
 # ad-hoc signs for local use; a Developer ID signed/notarised build is separate.
 #
 # The web stack runs `wrangler dev`, the *same code that is deployed* — the
-# Worker, with real Durable Objects, against local throwaway storage. The
-# Fastify server is a second implementation of the same API on its way out; the
-# Worker is the default backend so the vestigial path isn't exercised daily. The
-# Worker path is also the only local one where live sync works: the client
-# speaks WebSocket, Fastify still serves SSE, so under `web fastify` edits save
-# but a second tab won't see them until reload.
+# Worker, with real Durable Objects, against local throwaway storage.
 #
 set -euo pipefail
 
@@ -34,10 +28,8 @@ set -euo pipefail
 cd "$(dirname "$0")"
 
 APP_PORT=5173
-API_PORT=4000
-# wrangler's own default. Distinct from Fastify's 4000 so both can run at once —
-# useful while comparing the two backends, which is the point of keeping Fastify.
-WORKER_PORT=8787
+# wrangler's own default, and the port src/api.ts falls back to in dev.
+API_PORT=8787
 APP_URL="http://localhost:${APP_PORT}"
 
 # The deployed pieces. The app is a Pages project; the API is a separate Worker
@@ -89,9 +81,6 @@ check_port_free() {
     exit 1
   fi
 }
-# The API port isn't known yet — it depends on which backend was asked for — so
-# that check happens once the argument has been parsed.
-#
 # Only `web` binds the app port. Deploying builds and uploads a bundle; the
 # desktop paths run Electron or package a .app — none hold 5173. Guarding them
 # refused perfectly good runs because something unrelated happened to hold the
@@ -600,37 +589,24 @@ case "${1:-}" in
     desktop; exit 0 ;;
   deploy) deploy "${2:-both}"; exit 0 ;;
   web)
-    case "${2:-}" in
-      '') BACKEND=worker ;;
-      fastify) BACKEND=fastify ;;
-      *)
-        echo "Unknown web backend: $2" >&2
-        echo "Usage: ./build.sh web [fastify]" >&2
-        exit 1
-        ;;
-    esac
+    if [ -n "${2:-}" ]; then
+      echo "'web' takes no argument." >&2
+      echo "Usage: ./build.sh web" >&2
+      exit 1
+    fi
     ;;
   *)
     echo "Unknown argument: $1" >&2
-    echo "Usage: ./build.sh [desktop | web [fastify] | deploy [app|api]]" >&2
+    echo "Usage: ./build.sh [desktop | web | deploy [app|api]]" >&2
     exit 1
     ;;
 esac
 
-# Which API the app talks to. Both serve the same routes; the Worker is the one
-# that is actually deployed, so it's the default.
-if [ "$BACKEND" = worker ]; then
-  API_PORT=$WORKER_PORT
-  API_CMD=(npx wrangler dev --port "$WORKER_PORT")
-  API_NAME="worker (wrangler dev)"
-  # Vite otherwise defaults BASE to port 4000 — see src/api.ts.
-  export VITE_ANSA_API="http://localhost:${WORKER_PORT}"
-else
-  API_CMD=(npm run server)
-  API_NAME="fastify + ansa.db"
-  echo "Note: live sync doesn't work under fastify — it serves SSE and the" >&2
-  echo "client speaks WebSocket. Edits save; a second tab won't see them." >&2
-fi
+API_CMD=(npx wrangler dev --port "$API_PORT")
+API_NAME="worker (wrangler dev)"
+# Explicit even though src/api.ts would derive the same URL in dev, so the port
+# is decided in one place.
+export VITE_ANSA_API="http://localhost:${API_PORT}"
 
 check_port_free "$API_PORT" "server"
 
@@ -639,9 +615,9 @@ echo "Starting ${API_NAME} on http://127.0.0.1:${API_PORT} …"
 pids+=($!)
 
 # Wait for the API to answer before starting the app, so the app's first
-# connect finds the server already up. wrangler takes ~20s on a cold start,
-# considerably slower than Fastify — hence no timeout here beyond the child
-# check, which is what actually catches a failure.
+# connect finds the server already up. wrangler takes ~20s on a cold start, so
+# there is no timeout here beyond the child check, which is what actually
+# catches a failure.
 while ! curl -sf "http://127.0.0.1:${API_PORT}/api/health" >/dev/null 2>&1; do
   # Check the child first: a dead child plus a healthy curl means something
   # else is on the port, which is a lie we don't want to wait on.
