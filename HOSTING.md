@@ -8,12 +8,22 @@ becomes a development environment.
 Five phases, each one landing on its own. The order is chosen so that when
 something breaks there's one candidate cause rather than four.
 
-Phases 1 and 1.5 are done: ownership, and Clerk verifying real sessions. The dev
-stub still exists but Clerk overrides it wherever it's configured, and the
-process refuses to boot with the stub under `NODE_ENV=production`.
+## Where this stands
 
-Phase 2 is next, and the deploy is the small half of it. The migration of my 59
-nodes off `legacy` is the part that deserves the care.
+The goal is met. Phases 1, 1.5 and 2 are done, on Cloudflare rather than the
+Railway the plan assumed: the API is a Worker with one Durable Object per
+account, the app is on Pages, and the data was migrated over the API. The
+Fastify + SQLite server the early phases were built on has since been deleted.
+
+The remaining two phases were superseded rather than done. Phase 3 (Postgres on
+Neon) existed to get the data off one disk on one machine; a Durable Object's
+storage is part of the object and replicated by the platform, so the reason went
+away. Phase 4 (a phone UI in the web app) became a native app instead, in
+`ios/`, against the same API.
+
+The rest of this document is the plan as it was written, with what actually
+happened noted under each phase. It is kept for the reasoning, not as a to-do.
+
 
 ## What already works, and what doesn't
 
@@ -358,11 +368,10 @@ Two things the plan didn't anticipate, both of which cost real time:
   holding a different tree. Switching from test to production keys is a data
   migration, not a config change, and that is why it hasn't been done.
 
-Local dev has a known gap left by all this: the client speaks WebSocket and the
-local Fastify server still serves SSE, so live sync doesn't work locally. See
-the README.
+## Phase 3 — Postgres on Neon — SUPERSEDED
 
-## Phase 3 — Postgres on Neon
+Not needed on Durable Objects; see "Where this stands" at the top. Left as
+written.
 
 Only once phase 2 is stable and boring.
 
@@ -382,7 +391,10 @@ because it operates on trees and ops rather than on rows.
 **Done when:** the Railway volume can be deleted and nothing is lost — verified
 by restoring from a Neon backup, not by trusting that backups exist.
 
-## Phase 4 — Phone UI
+## Phase 4 — Phone UI — SUPERSEDED
+
+Became the native iOS app in `ios/`; see "Where this stands" at the top. Left
+as written.
 
 Still last, because it's the part with no clear finish line and it shouldn't
 block the parts that do. Hover-only affordances need touch equivalents, and
