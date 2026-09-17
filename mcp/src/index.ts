@@ -68,10 +68,11 @@ async function api(path: string, init?: RequestInit): Promise<{ tree: Tree } & R
     res = await fetch(`${BASE}${path}`, {
       ...init,
       headers: {
-        // Only when there's something to declare a type for. Sending it on a
-        // bodyless request — every DELETE — makes Fastify expect JSON, find an
-        // empty body, and reject with FST_ERR_CTP_EMPTY_JSON_BODY before the
-        // route ever runs.
+        // Only when there's something to declare a type for. A content-type on
+        // a bodyless request — every DELETE — is a claim about a body that isn't
+        // there; the old Node server rejected it as an empty JSON body before
+        // the route ran, which is how remove_task once failed every time. The
+        // Worker doesn't check, but the header is still wrong to send.
         ...(init?.body === undefined ? {} : { 'content-type': 'application/json' }),
         'x-ansa-origin': 'mcp',
         // The token when there is one, the stub header otherwise. Never both:
@@ -158,8 +159,8 @@ function renderProjects(tree: Tree): string {
  * What a write tool echoes back: the affected subtree, not the whole outline.
  *
  * The server returns the entire tree on every write — the right call for the
- * browser, which replaces its state wholesale over SSE and so can never be
- * partially updated. A model is a different consumer: re-printing every node
+ * browser, which replaces its state wholesale from the WebSocket and so can
+ * never be partially updated. A model is a different consumer: re-printing every node
  * after each call spends context, the scarcest thing in the loop, on lines that
  * did not change. `view_tree` is still there when the whole picture is wanted.
  */

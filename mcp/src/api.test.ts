@@ -16,11 +16,11 @@ import { expect, test } from 'vitest'
 const source = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'index.ts'), 'utf8')
 
 test('content-type is only sent when there is a body', () => {
-  // Sending `content-type: application/json` on a bodyless request makes
-  // Fastify expect a JSON payload, find none, and reject the request with
-  // FST_ERR_CTP_EMPTY_JSON_BODY before the route handler runs. Every DELETE is
-  // bodyless, so an unconditional header made `remove_task` fail 100% of the
-  // time — it could never delete anything.
+  // `content-type: application/json` on a bodyless request declares a payload
+  // that isn't there. The old Node server rejected that before the route ran,
+  // and since every DELETE is bodyless an unconditional header made
+  // `remove_task` fail 100% of the time. The Worker is lenient, but the guard
+  // stays: the header is a false claim either way.
   //
   // Match the guard rather than the exact expression, so reformatting doesn't
   // fail this but dropping the condition does.
@@ -44,7 +44,7 @@ test('the stub header is not sent alongside a real token', () => {
 
 test('only view_tree echoes the whole outline', () => {
   // The server returns the entire tree on every write — right for the browser,
-  // which replaces its state wholesale over SSE. For a model it means every
+  // which replaces its state wholesale from the WebSocket. For a model it means every
   // call spends context re-printing nodes that did not change: measured against
   // an 86-node tree, adding one task echoed 3413 characters to say 34.
   //

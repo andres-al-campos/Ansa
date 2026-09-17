@@ -3,7 +3,7 @@
  * same JSON is what export/import hands around.
  *
  * The server owns the tree now (see api.ts); this is the offline cache and the
- * boot value, so the app draws something before the first SSE frame lands. It's
+ * boot value, so the app draws something before the first socket frame lands. It's
  * whatever this browser last saw, not the truth — the server's tree replaces it
  * on connect. There's no schema migration story yet, so loading is defensive: a
  * blob that isn't a valid tree is ignored rather than allowed to crash the app.

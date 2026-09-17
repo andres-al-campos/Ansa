@@ -6,8 +6,8 @@ import { seedTree } from '@shared/seed'
 import { loadTree } from './storage'
 import './index.css'
 
-// First paint only. The server (SQLite) is the source of truth and the app
-// adopts its tree the moment the SSE stream connects; this localStorage cache
+// First paint only. The server is the source of truth and the app adopts its
+// tree the moment the WebSocket connects; this localStorage cache
 // (or the seed, on a first-ever visit) just avoids a blank frame before that
 // first message arrives, and is what shows if the server is unreachable.
 const initial = loadTree() ?? seedTree()

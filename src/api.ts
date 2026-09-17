@@ -171,10 +171,11 @@ export async function whoami(): Promise<WhoAmI | null> {
  */
 export async function seedIfEmpty(): Promise<boolean> {
   try {
-    // No content-type: this POST has no body, and Fastify rejects an empty body
-    // declared as application/json with FST_ERR_CTP_EMPTY_JSON_BODY before the
-    // route ever runs. That 400 is how this silently did nothing at first — a
-    // fresh account got no tutorial and no error.
+    // No content-type: this POST has no body. The old Node server rejected an
+    // empty body declared as application/json before the route ran, and that
+    // 400 is how this silently did nothing at first — a fresh account got no
+    // tutorial and no error. The Worker doesn't check, but a bodyless request
+    // shouldn't claim a body type either way.
     const { 'content-type': _omit, ...rest } = await headers()
     const res = await fetch(`${BASE}/api/seed`, { method: 'POST', headers: rest })
     if (!res.ok) {

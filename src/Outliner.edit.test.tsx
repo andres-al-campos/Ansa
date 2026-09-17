@@ -5,7 +5,7 @@ import { act, cleanup, fireEvent, render } from '@testing-library/react'
 import { seedTree } from '@shared/seed'
 
 // Editing is local-first, so none of this needs the server. Stub the write path
-// and the SSE stream so the component mounts without reaching for either.
+// and the WebSocket so the component mounts without reaching for either.
 vi.mock('@clerk/clerk-react', () => clerkMock())
 vi.mock('./api', async () => {
   const actual = await vi.importActual<typeof import('./api')>('./api')

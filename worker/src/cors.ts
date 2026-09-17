@@ -1,14 +1,12 @@
 /**
  * Cross-origin rules for the API.
  *
- * The frontend is served from Pages and the API from a worker, so unlike the
- * production Node server — which served both from one origin — every real
+ * The frontend is served from Pages and the API from a worker, so every real
  * request here is cross-origin. That makes this file load-bearing rather than a
  * dev convenience.
  *
- * The rule is the same as server/src/deployment.ts: reflect anything in local
- * dev, allow only a configured list once deployed. What is *not* the same is
- * that a mistake matters more. `Access-Control-Allow-Origin: *` together with
+ * The rule: reflect anything in local dev, allow only a configured list once
+ * deployed. A mistake here matters. `Access-Control-Allow-Origin: *` together with
  * credentials is rejected by browsers, but the real hazard is quieter — the
  * bearer token travels in a header, so a permissive allowlist lets any page the
  * user visits read their tree with a token it tricked the browser into sending.

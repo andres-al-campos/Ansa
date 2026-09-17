@@ -155,9 +155,10 @@ public actor AnsaAPI {
     @discardableResult
     public func seedIfEmpty() async -> Bool {
         var req = await request("/api/seed", method: "POST")
-        // No content-type on a bodyless POST: Fastify rejects an empty body
-        // declared as application/json before the route runs, which is how this
-        // silently did nothing on the web at first.
+        // No content-type on a bodyless POST. The old Node server rejected an
+        // empty body declared as application/json before the route ran, which
+        // is how this silently did nothing on the web at first. The Worker is
+        // lenient, but a bodyless request shouldn't claim a body type.
         req.setValue(nil, forHTTPHeaderField: "content-type")
         guard let (_, response) = try? await session.data(for: req) else { return false }
         return (response as? HTTPURLResponse)?.statusCode == 200
