@@ -91,13 +91,13 @@ private actor FakeBackend: SyncBackend {
 /// frames), and one that opens and later drops (`drop()`).
 private actor FakeStream: EventStream {
     private let opens: Bool
-    private var frames: [Broadcast]
+    private var frames: [Frame]
     private var dropped = false
     private var pings: Bool
     private(set) var closed = false
     private(set) var pinged = 0
 
-    init(opens: Bool = true, frames: [Broadcast] = [], pings: Bool = true) {
+    init(opens: Bool = true, frames: [Frame] = [], pings: Bool = true) {
         self.opens = opens
         self.frames = frames
         self.pings = pings
@@ -105,7 +105,7 @@ private actor FakeStream: EventStream {
 
     func open() async -> Bool { opens }
 
-    func next() async -> Broadcast? {
+    func next() async -> Frame? {
         if !frames.isEmpty { return frames.removeFirst() }
         // Out of scripted frames: either the connection is finished, or it is
         // an open socket with nothing to say. The latter must not return — a
@@ -129,6 +129,14 @@ private actor FakeStream: EventStream {
     func drop() { dropped = true }
 }
 
+extension Frame {
+    /// An op frame. With no hash the frame is unstamped, which the client
+    /// treats as nothing to check — the tests that want a check pass one.
+    fileprivate static func op(_ op: Op, origin: String?, hash: String = "") -> Frame {
+        Frame(op: op, origin: origin, hash: hash)
+    }
+}
+
 private func node(_ id: NodeId, _ text: String) -> Node {
     Node(id: id, parentId: nil, text: text, done: false, order: 0,
          collapsed: false, createdAt: 0)
@@ -141,14 +149,25 @@ struct SyncClientTests {
     /// A client plus the trees it adopted, which is the only thing the app sees
     /// it do. `start()` is deliberately not called: it opens a real socket and
     /// a real timer, and every rule here is reachable without either.
+    ///
+    /// The client also keeps a stand-in for the store's tree: adopts replace
+    /// it, applied ops are applied to it, and the fingerprint check reads it.
+    /// Local edits are not applied to it — a test that needs the local tree
+    /// ahead of the server's edits `state` itself.
     private func makeClient(
-        _ api: FakeBackend, pingEvery: Duration = .milliseconds(5)
+        _ api: FakeBackend, pingEvery: Duration = .milliseconds(5),
+        state: Box<Tree> = Box([])
     ) -> (SyncClient, () -> [Tree]) {
         let adopted = Box<[Tree]>([])
         // Pings fast by default: the tests that care about the keepalive would
         // otherwise wait the app's 25 seconds, and the ones that do not are
         // unaffected, since a healthy fake answers every ping.
-        let client = SyncClient(api: api, queueURL: tempURL(), pingEvery: pingEvery) {
+        let client = SyncClient(
+            api: api, queueURL: tempURL(), pingEvery: pingEvery,
+            current: { state.value },
+            onApply: { state.value = TreeOps.applyOp(state.value, $0).tree }
+        ) {
+            state.value = $0
             adopted.value.append($0)
         }
         return (client, { adopted.value })
@@ -283,16 +302,14 @@ struct SyncClientTests {
         #expect(client.rejected == 1)
     }
 
-    @Test("a rejection does not by itself refetch the server's tree")
-    func rejectionDoesNotRefetch() async {
-        // The web client's comment says a refused edit "is about to disappear
-        // when the server's tree is adopted" — true there because a live socket
-        // pushes one. Nothing here asks for a tree on rejection, so the phone is
-        // relying on that same broadcast. Written down so that if the correction
-        // is ever made explicit, this test is what has to change.
-        let api = FakeBackend()
+    @Test("a rejection refetches the server's tree")
+    func rejectionRefetches() async {
+        // The refused edit is still on screen and never will be on the server.
+        // Nothing else corrects that: a refusal produces no frame, and the
+        // server no longer pushes whole trees on other people's writes.
+        let api = FakeBackend(tree: [node("a", "server")])
         await api.willAnswer([.rejected(reason: "unknown node")])
-        let (client, _) = makeClient(api)
+        let (client, adopted) = makeClient(api)
         client.adoptInitial([])
         let adoptsBefore = await api.loadTreeCalls
 
@@ -300,7 +317,8 @@ struct SyncClientTests {
         await settle(api, expecting: 1)
 
         #expect(client.rejected == 1)
-        #expect(await api.loadTreeCalls == adoptsBefore)
+        #expect(await api.loadTreeCalls == adoptsBefore + 1)
+        #expect(adopted().last == [node("a", "server")])
     }
 
     // --------------------------------------------------------- the busy gate
@@ -390,6 +408,116 @@ struct SyncClientTests {
         #expect(adopted().count == 2)
     }
 
+    // ---------------------------------------------------------- op frames
+
+    @Test("an op from elsewhere is applied, not adopted")
+    func opIsApplied() async {
+        let api = FakeBackend()
+        let state = Box<Tree>([])
+        let (client, adopted) = makeClient(api, state: state)
+        client.adoptInitial([node("a", "before")])
+
+        client.deliverForTesting(.op(.setText(id: "a", text: "after"), origin: "other"))
+        await settle(api, expecting: 0)
+
+        #expect(state.value.map(\.text) == ["after"])
+        // One adopt: the initial one. The op did not go through `onAdopt`.
+        #expect(adopted().count == 1)
+    }
+
+    @Test("ops arriving mid-edit wait, then land in order")
+    func opsWaitForIdle() async {
+        let api = FakeBackend()
+        let state = Box<Tree>([])
+        let (client, _) = makeClient(api, state: state)
+        client.adoptInitial([node("a", "start")])
+        client.setBusy(true)
+
+        client.deliverForTesting(.op(.setText(id: "a", text: "one"), origin: "other"))
+        client.deliverForTesting(.op(.setText(id: "a", text: "two"), origin: "other"))
+        #expect(state.value.map(\.text) == ["start"])
+
+        client.setBusy(false)
+        await settle(api, expecting: 0)
+        #expect(state.value.map(\.text) == ["two"])
+    }
+
+    @Test("an op before the first tree is ignored")
+    func opBeforeSyncIsDropped() async {
+        // There is no tree to apply it to, and the tree that is coming will
+        // already include it.
+        let api = FakeBackend()
+        let state = Box<Tree>([node("a", "cached")])
+        let (client, _) = makeClient(api, state: state)
+
+        client.deliverForTesting(.op(.setText(id: "a", text: "applied"), origin: "other"))
+        await settle(api, expecting: 0)
+
+        #expect(state.value.map(\.text) == ["cached"])
+    }
+
+    // -------------------------------------------------------- the fingerprint
+
+    @Test("a fingerprint that disagrees refetches the tree")
+    func mismatchRefetches() async {
+        let api = FakeBackend(tree: [node("a", "truth")])
+        let (client, adopted) = makeClient(api)
+        client.adoptInitial([node("a", "start")])
+
+        // The server says the result is something this device did not reach.
+        client.deliverForTesting(
+            .op(.setText(id: "a", text: "one"), origin: "other",
+                hash: TreeOps.fingerprint([node("a", "something else")])))
+        await settle(api, expecting: 0)
+
+        #expect(await api.loadTreeCalls == 1)
+        #expect(adopted().last == [node("a", "truth")])
+    }
+
+    @Test("a fingerprint that agrees never refetches")
+    func matchDoesNotRefetch() async {
+        let api = FakeBackend()
+        let (client, adopted) = makeClient(api)
+        client.adoptInitial([node("a", "start")])
+
+        client.deliverForTesting(.op(.setText(id: "a", text: "one"), origin: "other"))
+        client.deliverForTesting(.op(.setText(id: "a", text: "two"), origin: "other"))
+        await settle(api, expecting: 0)
+
+        #expect(await api.loadTreeCalls == 0)
+        #expect(adopted().count == 1)
+    }
+
+    @Test("the check waits for this device's own echo")
+    func checkWaitsForEcho() async {
+        // The HTTP answer to our op can land before its echo does. The frame
+        // between them carries a fingerprint from before our op, and our tree
+        // already holds it — a check there would refetch a tree that is right.
+        let api = FakeBackend(origin: "this-device")
+        let state = Box<Tree>([])
+        let (client, _) = makeClient(api, state: state)
+        client.adoptInitial([node("a", "start")])
+
+        // The local edit, as the store would have applied it.
+        state.value = TreeOps.applyOp(state.value, .setText(id: "a", text: "mine")).tree
+        client.send(.setText(id: "a", text: "mine"))
+        await settle(api, expecting: 1)
+
+        // Someone else's edit, stamped before ours reached the server.
+        client.deliverForTesting(
+            .op(.setDone(id: "a", done: true), origin: "other",
+                hash: TreeOps.fingerprint([node("a", "start")].map { var n = $0; n.done = true; return n })))
+        await settle(api, expecting: 1)
+        #expect(await api.loadTreeCalls == 0)
+
+        // Our echo, stamped with a tree that has both. Now it checks: it agrees.
+        client.deliverForTesting(
+            .op(.setText(id: "a", text: "mine"), origin: "this-device",
+                hash: TreeOps.fingerprint(state.value)))
+        await settle(api, expecting: 1)
+        #expect(await api.loadTreeCalls == 0)
+    }
+
     // ------------------------------------------------------------ own echo
 
     @Test("this device's own broadcast is not re-adopted")
@@ -400,10 +528,15 @@ struct SyncClientTests {
         let (client, adopted) = makeClient(api)
         client.adoptInitial([node("a", "local")])
 
-        client.deliverForTesting(tree: [node("a", "stale echo")], origin: "this-device")
+        // Stamped as a real echo is: with the server's tree after our write,
+        // which is the one we hold. The frame's own tree is not consulted.
+        client.deliverForTesting(
+            tree: [node("a", "stale echo")], origin: "this-device",
+            hash: TreeOps.fingerprint([node("a", "local")]))
         await settle(api, expecting: 0)
 
         #expect(adopted().count == 1)
+        #expect(await api.loadTreeCalls == 0)
     }
 
     @Test("an echo still opens the write path when it arrives first")
@@ -428,11 +561,11 @@ struct SyncClientTests {
         // The phone's normal case rather than its unlucky one. Two clients over
         // one queue file stand in for the app being killed and relaunched.
         let url = tempURL()
-        let first = SyncClient(api: FakeBackend(), queueURL: url) { _ in }
+        let first = SyncClient(api: FakeBackend(), queueURL: url, current: { [] }, onApply: { _ in }) { _ in }
         first.send(.setText(id: "a", text: "unsent"))
 
         let api = FakeBackend()
-        let second = SyncClient(api: api, queueURL: url) { _ in }
+        let second = SyncClient(api: api, queueURL: url, current: { [] }, onApply: { _ in }) { _ in }
         second.adoptInitial([])
         await settle(api, expecting: 1)
 
@@ -520,7 +653,7 @@ struct SyncClientTests {
     func socketFrameIsAdopted() async {
         let served: Tree = [node("a", "from the server")]
         let api = FakeBackend()
-        await api.willConnect([FakeStream(frames: [Broadcast(tree: served, origin: "other")])])
+        await api.willConnect([FakeStream(frames: [Frame(tree: served, origin: "other")])])
         let (client, adopted) = makeClient(api)
 
         client.start()

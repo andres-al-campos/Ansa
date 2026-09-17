@@ -311,16 +311,56 @@ struct ErrorEnvelope: Decodable {
     let error: String
 }
 
-/// A broadcast frame: the new tree, stamped with whoever caused it.
-public struct Broadcast: Decodable, Sendable {
-    public let tree: Tree
-    /// The `x-ansa-origin` of the client whose write this was, or nil for a
-    /// change with no client behind it. Matching our own means this is the echo
-    /// of our own edit and must not be re-adopted.
-    public let origin: String?
+/// What the server pushes down the socket. Mirrors shared/frame.ts.
+///
+/// An ordinary edit arrives as the op that was applied, so a write costs this
+/// device a hundred bytes rather than the whole tree. Writes with no op form —
+/// a restore from the trash, an import, the MCP's direct routes — arrive as the
+/// tree, and so does the first frame on every socket. Either way the frame
+/// carries the fingerprint of the server's tree after the write, which is what
+/// lets `SyncClient` check that applying the op got it to the same place.
+public struct Frame: Decodable, Sendable, Equatable {
+    public enum Payload: Sendable, Equatable {
+        case tree(Tree)
+        case op(Op)
+    }
 
-    public init(tree: Tree, origin: String?) {
-        self.tree = tree
+    public let payload: Payload
+    /// The `x-ansa-origin` of the client whose write this was, or nil for a
+    /// change with no client behind it. Matching our own means this is the
+    /// echo of our own edit and must not be applied again.
+    public let origin: String?
+    /// `TreeOps.fingerprint` of the server's tree after this write. Empty when
+    /// the server predates fingerprints, in which case there is nothing to
+    /// check against.
+    public let hash: String
+
+    public init(tree: Tree, origin: String?, hash: String? = nil) {
+        payload = .tree(tree)
         self.origin = origin
+        self.hash = hash ?? TreeOps.fingerprint(tree)
+    }
+
+    public init(op: Op, origin: String?, hash: String) {
+        payload = .op(op)
+        self.origin = origin
+        self.hash = hash
+    }
+
+    private enum CodingKeys: String, CodingKey { case kind, tree, op, origin, hash }
+
+    /// Tolerates the shape from before frames had a kind: `{ tree, origin }`
+    /// is a tree frame with no fingerprint, so a phone updated ahead of the
+    /// server keeps working.
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let kind = try c.decodeIfPresent(String.self, forKey: .kind)
+        if kind == "op" {
+            payload = .op(try c.decode(Op.self, forKey: .op))
+        } else {
+            payload = .tree(try c.decode(Tree.self, forKey: .tree))
+        }
+        origin = try c.decodeIfPresent(String.self, forKey: .origin)
+        hash = try c.decodeIfPresent(String.self, forKey: .hash) ?? ""
     }
 }

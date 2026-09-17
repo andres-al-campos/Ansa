@@ -20,7 +20,7 @@ public protocol EventStream: Sendable {
     /// The next frame, or nil once the connection has dropped. A connection
     /// that is open but idle simply suspends here, which is the normal state:
     /// frames only arrive when somebody edits something.
-    func next() async -> Broadcast?
+    func next() async -> Frame?
 
     /// Ask the server to prove it is still there. False means it isn't.
     ///
@@ -60,7 +60,7 @@ final class WebSocketStream: EventStream {
 
     func open() async -> Bool { await opener.opened() }
 
-    func next() async -> Broadcast? {
+    func next() async -> Frame? {
         guard let message = try? await task.receive() else { return nil }
         let data: Data? =
             switch message {
@@ -71,7 +71,7 @@ final class WebSocketStream: EventStream {
         guard let data else { return nil }
         // An undecodable frame is not a dropped connection. Returning nil here
         // would tear down a working socket over one bad message.
-        return try? JSONDecoder().decode(Broadcast.self, from: data)
+        return try? JSONDecoder().decode(Frame.self, from: data)
     }
 
     func ping() async -> Bool {

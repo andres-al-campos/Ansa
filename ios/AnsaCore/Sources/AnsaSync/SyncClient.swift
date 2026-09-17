@@ -25,8 +25,16 @@ import Foundation
 ///    is held until the first adopt and replayed, which is already what an op
 ///    made while offline gets.
 ///
-///  - **Interruption.** An incoming tree must not be swapped in mid-edit, so it
-///    is stashed and adopted the moment the user is idle.
+///  - **Interruption.** An incoming change must not be applied mid-edit, so
+///    frames are held in order and applied the moment the user is idle.
+///
+///  - **Drift.** The server sends an op, not the tree, so this device is
+///    trusted to apply it and end up where the server is. Every frame carries
+///    the fingerprint of the server's tree, and the next quiet moment — nothing
+///    queued, nothing in flight, nothing held, no echo outstanding — compares
+///    it to ours. A mismatch means something went wrong (a refused op still on
+///    screen, an op applied against a tree it was not made for, an applier
+///    that disagrees with the TypeScript one) and the tree is refetched.
 ///
 ///  - **Deafness.** A dropped socket is never noticed on its own, because
 ///    writes go over HTTP and keep working. The app saves fine and silently
@@ -82,14 +90,41 @@ public final class SyncClient {
 
     /// Called with a server tree that should replace local state.
     private let onAdopt: (Tree) -> Void
+    /// Called with an op made elsewhere that should be applied to local state.
+    /// Not a local edit: it must not be queued.
+    private let onApply: (Op) -> Void
+    /// The tree as the app currently holds it, for the fingerprint check.
+    private let currentTree: () -> Tree
 
     /// Whether the server's authoritative tree has been adopted at least once.
     /// Until it has, queued ops stay put — see the stale-cache note above.
     private var synced = false
     /// True while a send is in flight, so the queue drains strictly in order.
     private var sending = false
-    /// A tree that arrived while the user was busy, waiting for them to stop.
-    private var stashed: Tree?
+    /// Frames that arrived while the user was busy, oldest first, waiting for
+    /// them to stop. Ops have to be applied in the order the server applied
+    /// them, so this is a list and not a slot. A tree frame makes everything
+    /// before it moot, so it empties the list when it lands.
+    private var stashed: [Frame] = []
+    /// The fingerprint on the last frame seen, from any origin — our own echo
+    /// counts, since after it the server's tree should be ours. Empty until a
+    /// frame carrying one arrives.
+    private var lastHash = ""
+    /// Set by every frame, cleared by the check it triggers. Checking once per
+    /// frame rather than on every local change keeps a local-only divergence
+    /// where it has always been: on screen until the next remote change.
+    private var unverified = false
+    /// Own ops the server accepted whose echo has not come back yet. The echo
+    /// and the HTTP response travel on different connections, so either can
+    /// arrive first, and a check run between the response and the echo would
+    /// compare a tree holding the op against a fingerprint from before it.
+    /// Nothing is checked until this is zero. Reset when a socket opens: echoes
+    /// for ops sent while the old one was down went nowhere, and the new
+    /// socket's first frame is a whole tree anyway.
+    private var awaitingEcho = 0
+    /// True while a refetch is in flight, so a burst of frames does not start
+    /// several.
+    private var refetching = false
     /// True while the user is editing — do not yank the tree away.
     private var busy = false
 
@@ -125,11 +160,15 @@ public final class SyncClient {
 
     public init(
         api: any SyncBackend, queueURL: URL, pingEvery: Duration = .seconds(25),
+        current: @escaping () -> Tree,
+        onApply: @escaping (Op) -> Void,
         onAdopt: @escaping (Tree) -> Void
     ) {
         self.api = api
         self.queue = OpQueue(url: queueURL)
         self.pingEvery = pingEvery
+        self.currentTree = current
+        self.onApply = onApply
         self.onAdopt = onAdopt
     }
 
@@ -199,13 +238,39 @@ public final class SyncClient {
 
         Task { [weak self] in
             guard let self else { return }
-            guard let served = await self.api.loadTree() else { return }
-            // Through the same busy gate as any other server tree: coming back
-            // to the app with the keyboard already up is ordinary, and adopting
-            // under a half-typed row is the bug `busy` exists to prevent.
-            self.adoptFromServer(served)
+            await self.refetch()
             await self.drain()
         }
+    }
+
+    /// Replace the local tree with the server's, through the busy gate like
+    /// any other frame — coming back to the app with the keyboard already up
+    /// is ordinary, and adopting under a half-typed row is the bug `busy`
+    /// exists to prevent.
+    ///
+    /// The fingerprint of what comes back is the new baseline: the server may
+    /// have moved on again by the time it arrives, and if so the next frame
+    /// says so.
+    private func refetch() async {
+        guard !refetching else { return }
+        refetching = true
+        defer { refetching = false }
+        guard let served = await api.loadTree() else { return }
+        lastHash = TreeOps.fingerprint(served)
+        unverified = false
+        adoptFromServer(Frame(tree: served, origin: nil, hash: lastHash))
+    }
+
+    /// The check. Only meaningful when quiet: with an op queued or in flight
+    /// the local tree is legitimately ahead of the server, and with frames
+    /// held the server is legitimately ahead of us. Neither is drift.
+    private func verify() {
+        guard unverified, !lastHash.isEmpty else { return }
+        guard !busy, !sending, queue.isEmpty, stashed.isEmpty, awaitingEcho == 0 else { return }
+        unverified = false
+        if TreeOps.fingerprint(currentTree()) == lastHash { return }
+        print("Ansa: this device had drifted from the server; refetching the tree.")
+        Task { await refetch() }
     }
 
     /// Queue ops to send, in order. The caller has already applied them locally.
@@ -233,22 +298,28 @@ public final class SyncClient {
     /// Tell the client the user started or stopped editing.
     public func setBusy(_ value: Bool) {
         busy = value
-        // They stopped — apply whatever arrived meanwhile.
-        if !value, let next = stashed {
-            stashed = nil
-            adopt(next)
+        // They stopped — apply whatever arrived meanwhile, in the order it
+        // arrived.
+        if !value {
+            while !stashed.isEmpty { take(stashed.removeFirst()) }
+            verify()
         }
     }
 
-    /// Deliver one broadcast frame, as if it had arrived over the socket.
+    /// Deliver one frame, as if it had arrived over the socket.
     ///
     /// The socket itself is not fakeable — `receive()` drives `URLSession`
     /// straight from a URL — so this is where a test injects what the server
     /// would have pushed. It is the same call `receive()` makes on a decoded
     /// frame, so what the tests exercise is the real handler rather than a
     /// parallel one written to be testable.
-    func deliverForTesting(tree: Tree, origin: String?) {
-        handle(Broadcast(tree: tree, origin: origin))
+    func deliverForTesting(_ frame: Frame) {
+        handle(frame)
+    }
+
+    /// A whole-tree frame, stamped with its own fingerprint unless told otherwise.
+    func deliverForTesting(tree: Tree, origin: String?, hash: String? = nil) {
+        handle(Frame(tree: tree, origin: origin, hash: hash))
     }
 
     /// Adopting is not a local change, so it must not enqueue anything: the
@@ -256,6 +327,14 @@ public final class SyncClient {
     private func adopt(_ tree: Tree) {
         synced = true
         onAdopt(tree)
+    }
+
+    /// Take one frame now. Callers have already decided the user is not busy.
+    private func take(_ frame: Frame) {
+        switch frame.payload {
+        case .tree(let tree): adopt(tree)
+        case .op(let op): onApply(op)
+        }
     }
 
     /// Drain the queue one op at a time.
@@ -270,15 +349,16 @@ public final class SyncClient {
     ///  - **Rejected.** The server has judged this op and will judge it the
     ///    same way every time, so it is discarded rather than retried. Keeping
     ///    it would block every later edit forever while the app looked healthy.
+    ///    The edit is still on screen and never will be on the server, and the
+    ///    refusal produced no frame, so the server's tree is refetched.
     private func drain() async {
-        guard !sending, synced else { return }
+        guard !sending, synced, !queue.isEmpty else { return }
         sending = true
-        defer { sending = false }
-
         while let op = queue.head {
             let result = await api.send(op)
             if result == .unreachable { break }
             queue.removeHead()
+            if result == .ok { awaitingEcho += 1 }
             if case .rejected(let reason) = result {
                 // Loud in the log because a malformed op is a client bug and
                 // should be debuggable; the UI stays plain because the common
@@ -286,8 +366,13 @@ public final class SyncClient {
                 print("Ansa: the server refused an edit — \(reason), \(op.kind)")
                 rejected += 1
                 onStatusChange?()
+                await refetch()
             }
         }
+        sending = false
+        // The queue just emptied (or stalled). If a frame arrived mid-drain,
+        // this is the first quiet moment since.
+        verify()
     }
 
     /// Hold a socket open, reconnecting for as long as this task lives.
@@ -366,6 +451,7 @@ public final class SyncClient {
             await stream.close()
             return .refused
         }
+        awaitingEcho = 0
 
         // Only now that it is open — a ping against a socket still handshaking
         // proves nothing, and would tear this connection down before it began.
@@ -404,33 +490,53 @@ public final class SyncClient {
         }
     }
 
-    private func handle(_ frame: Broadcast) {
+    private func handle(_ frame: Frame) {
+        if !frame.hash.isEmpty {
+            lastHash = frame.hash
+            unverified = true
+        }
         if frame.origin == api.origin {
             // The echo of our own write. The local tree already has it, but
             // this is also proof the server is listening — so if it is the
             // first message, it still opens the write path.
+            if awaitingEcho > 0 { awaitingEcho -= 1 }
             if !synced {
                 synced = true
                 Task { await drain() }
             }
+            verify()
             return
         }
-        adoptFromServer(frame.tree)
+        if case .op = frame.payload {
+            // An op is only meaningful against the tree it was applied to.
+            // Before the first tree has landed we do not have that, and the
+            // tree that is coming will already include this op.
+            guard synced else { return }
+            if busy {
+                stashed.append(frame)
+                return
+            }
+            take(frame)
+            verify()
+            return
+        }
+        adoptFromServer(frame)
         // Ops held back before this point now have a real tree to replay onto.
         Task { await drain() }
+        verify()
     }
 
     /// Take a server tree, or stash it if the user is mid-edit.
     ///
     /// Shared by the socket and by the foreground refetch so there is one busy
     /// gate rather than two that can disagree.
-    private func adoptFromServer(_ tree: Tree) {
+    private func adoptFromServer(_ frame: Frame) {
         // Until the first sync, adopt even mid-edit: this is the authoritative
         // baseline, and it has to land before any op is replayed on top of it.
         if busy, synced {
-            stashed = tree
+            stashed = [frame]
             return
         }
-        adopt(tree)
+        take(frame)
     }
 }

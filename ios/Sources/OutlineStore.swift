@@ -53,7 +53,18 @@ final class OutlineStore {
 
     func start() {
         guard sync == nil else { return }
-        let client = SyncClient(api: api, queueURL: Self.queueURL) { [weak self] tree in
+        let client = SyncClient(
+            api: api, queueURL: Self.queueURL,
+            current: { [weak self] in self?.tree ?? [] },
+            // Someone else's edit, applied straight in. Not sent back: it is
+            // the server's already. Counted as an adopt because the trash
+            // watches that counter and a remote delete lands here.
+            onApply: { [weak self] op in
+                guard let self else { return }
+                self.tree = TreeOps.applyOp(self.tree, op).tree
+                self.adopted += 1
+            }
+        ) { [weak self] tree in
             self?.tree = tree
             self?.adopted += 1
         }
