@@ -665,11 +665,14 @@ struct OutlineView: View {
                     adding: edit.adding,
                     onBeginEdit: { beginEdit(row.node) },
                     onBlur: { id in commitEdit(from: id, releasingFocus: false) },
-                    // Return means one thing per mode. Renaming, it commits and
-                    // stops — a rename is finished when the words are right, and
-                    // there is nothing to advance to. Adding, it commits and
-                    // opens the next row, which is the whole shape of a run.
-                    onSubmit: { edit.adding ? submitAdding() : commitEdit() },
+                    // Return means one thing, in both modes: this row is
+                    // finished, put the keyboard down. It used to branch —
+                    // commit while renaming, open another row while adding —
+                    // which meant the same key ended the session or extended it
+                    // depending on how the field had been opened, something the
+                    // screen never showed. Adding another row is the plus
+                    // button's job now, in either mode.
+                    onSubmit: { commitEdit() },
                     // No-ops behind the swipe. A gesture there could pick
                     // up a row on a screen the user may be about to slide away
                     // from, and its coordinates would be measured against a
@@ -851,10 +854,6 @@ struct OutlineView: View {
     /// Inert behind a swipe for the same reason as a row's field — the copy
     /// underneath must not act on a screen that is sliding away.
     @ViewBuilder private func captureButton(interactive: Bool) -> some View {
-        let adding = edit.adding
-        // A rename open on a real row — not a sentinel, which is the adding
-        // run's own field and already covered by `adding`.
-        let renaming = !adding && edit.isEditing
         // Not a `Button`. A Button installs its own tap recogniser, and the
         // zoom-out back swipe — a `minimumDistance: 0` drag on the whole
         // navigation stack — is recognised simultaneously with it and could win
@@ -862,32 +861,22 @@ struct OutlineView: View {
         // synthesised touches never make the two recognisers contend. A plain
         // label with a high-priority tap claims the touch ahead of that drag.
         Group {
-            // Three jobs, three glyphs, because the two non-plus states mean
-            // different things: adding ends a *run* ("no more rows"), renaming
-            // ends *one field*.
+            // One glyph now, because the button has one job: add a row. Return
+            // ends the edit in both modes, so nothing here has to offer a way
+            // out — and a plus that stays a plus is a plus you can press twice
+            // without reading it.
             //
-            // A tick is right for the run and wrong for the rename, and which
-            // one the keyboard is showing decides it. While adding, Return is
-            // `.next` — an arrow — so the tick is unambiguously "no more rows".
-            // While renaming, Return is `.done`, which the device draws as a
-            // tick: a second tick a thumb's width away meaning something else
-            // is how an edit ends by accident. There the keyboard-down glyph
-            // says what that press actually does and reads as neither the tick
-            // nor a delete.
+            // It used to change: a tick while adding, a keyboard-down while
+            // renaming. Both existed to give a press that *ended* something,
+            // which was only needed while Return meant "another row". The tick
+            // also had to dodge Return's own `.done` tick a thumb's width away
+            // (`4a79bbb`) — a collision that now applies in every state, which
+            // is the second reason not to draw one.
             //
-            // `4a79bbb` took the tick off the adding state for that collision,
-            // back when the button stayed a plus through a rename and the two
-            // ticks could share a screen. They no longer can, so the tick is
-            // back where it was always the clearer glyph. Restoring it depends
-            // on the rename state above — change that and this changes too.
-            //
-            // Quiet in every state, matching the back and home buttons. None of
-            // the glyphs is doing repeated work — Return is, while adding — and
-            // a filled accent circle on a corner control that gets pressed
-            // twice per run was the loudest thing on a screen that is mostly
-            // text.
-            Image(systemName: adding ? "checkmark"
-                : renaming ? "keyboard.chevron.compact.down" : "plus")
+            // Quiet, matching the back and home buttons. A filled accent circle
+            // on a corner control pressed once per task was the loudest thing
+            // on a screen that is mostly text.
+            Image(systemName: "plus")
                 .font(.system(size: 20, weight: .semibold))
                 .foregroundStyle(Color.primary)
                 // Flattened before the material, not after. `drawingGroup`
@@ -922,16 +911,18 @@ struct OutlineView: View {
         // down into the swipe-up area rather than stopping at its edge.
         .padding(.bottom, max(0, Space.corner - homeIndicator))
         .padding(.trailing, Space.corner)
-        .accessibilityLabel(adding ? "Done adding"
-            : renaming ? "Done editing" : "Add a task")
+        .accessibilityLabel("Add a task")
     }
 
 
-    /// Plus at rest, a keyboard-down glyph while adding. Shared by the Button
-    /// and the high-priority tap that guards it.
+    /// Add a task, from any state. Shared by the Button and the high-priority
+    /// tap that guards it.
     private func capture() {
         if edit.adding {
-            stopAdding()
+            // Mid-run: finish this row and open the next, which is what Return
+            // used to do here. The press is now the only way to continue a run,
+            // so it has to be the thing that advances it.
+            submitAdding()
         } else if edit.isEditing {
             // On the grid the open field is a *project's* name, and naming a
             // project is not the end of anything — the project is empty and the
@@ -943,16 +934,17 @@ struct OutlineView: View {
                 submitProjectName()
                 return
             }
-            // In an outline, finish the rename and stop there, rather than
-            // committing it and opening a new row in one press. The button is
-            // not a plus in this state and should not act like one — a press
-            // that both saved and created gave no way to just put the keyboard
-            // down.
+            // Finish the rename and open a row under it, in one press. The
+            // button is a plus in this state and now acts like one: Return is
+            // the way to just put the keyboard down, so this press does not
+            // have to double as an exit the way it did when it drew a
+            // keyboard-down glyph.
             //
-            // `captureParent` still names the row, so the *next* press files
-            // the new task underneath it. The placement survives; only the
-            // automatic row is gone.
+            // This is the edge that was missing — from a rename there was no
+            // way to add a row without dismissing the keyboard and hunting the
+            // button again.
             commitEdit()
+            startAdding()
         } else {
             startAdding()
         }
@@ -1427,14 +1419,18 @@ struct OutlineView: View {
         }
     }
 
-    /// Return, inside the adding run.
+    /// The plus, inside the adding run — what advances a sequence.
     ///
     /// Two meanings, split on whether the row has anything in it. With text it
-    /// is "next" — commit and open another below. Empty it is "done", because
-    /// there is no next task to ask for and pressing Return twice at the end of
-    /// a run is how people stop typing.
+    /// is "next" — commit and open another below. Empty it is "never mind",
+    /// because there is nothing to file and asking for a second blank row would
+    /// only give the user two to get out of.
     ///
     /// The empty case creates nothing, so there is no blank to clean up.
+    ///
+    /// Return used to come here too, which is where the "press it twice to
+    /// stop" escape lived. Return now ends the edit in both modes, so this is
+    /// the plus's path alone.
     private func submitAdding() {
         guard !edit.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             stopAdding()
@@ -2892,12 +2888,10 @@ private struct OutlineRow: View {
                     TextField("", text: $editText, axis: .vertical)
                         .textFieldStyle(.plain)
                         .focused($focusedRow, equals: node.id)
-                        // What Return actually does here, which is not the
-                        // same in both modes: it finishes a rename, and it asks
-                        // for another row in a run. The key said "done" in both
-                        // and was therefore labelled as the opposite of what it
-                        // did while adding.
-                        .submitLabel(adding ? .next : .done)
+                        // Return finishes the row in both modes, so the key says
+                        // so in both. It read `.next` while adding, back when
+                        // Return opened another row there.
+                        .submitLabel(.done)
                         // Return commits and dismisses. It goes through
                         // onSubmit rather than the focus-loss commit so the
                         // two paths stay distinguishable — blur can also be a

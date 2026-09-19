@@ -20,9 +20,9 @@ final class EditController {
 
     /// Whether the user is in a run of adding tasks.
     ///
-    /// A mode because Return has to mean one thing inside it: commit this row
-    /// and open the next. Separate from `editing`, which only says a field is
-    /// open — the mode is what makes the *next* one appear.
+    /// A mode because the capture button has to mean one thing inside it:
+    /// commit this row and open the next. Separate from `editing`, which only
+    /// says a field is open — the mode is what makes the *next* one appear.
     var adding = false
 
     /// The row a new task lands below, or nil for the bottom of the project.
