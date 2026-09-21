@@ -242,11 +242,11 @@ struct OutlineView: View {
                 switch phase {
                 case .active: store.resume()
                 case .background:
-                    // End any open add run before suspending. The waiting rows
+                    // End any open session before suspending. The waiting rows
                     // are local sentinels that never touch the tree, so nothing
-                    // blank would sync — but a typed row mid-run should commit
-                    // rather than be lost when the app leaves the foreground.
-                    if edit.adding { stopAdding() }
+                    // blank would sync — but a typed row should commit rather
+                    // than be lost when the app leaves the foreground.
+                    if edit.isEditing { stopAdding() }
                     store.suspend()
                 default: break
                 }
@@ -641,10 +641,18 @@ struct OutlineView: View {
             HStack(spacing: 0) {
                 if edit.isEditing { depthButtons(interactive: interactive) }
                 Spacer(minLength: 0)
+                // One slot, two occupants, never both: Done while a field is
+                // open, the plus otherwise. The plus does not move or hide —
+                // it keeps its corner and the keyboard covers it, so what
+                // stands here during a session is the way out rather than a
+                // second way in.
+                //
                 // Not in the trash. Everything here makes something — a task,
                 // or a project from the grid — and the trash is the one screen
                 // where there is nothing to add to.
-                if !trash {
+                if edit.isEditing {
+                    doneButton(interactive: interactive)
+                } else if !trash {
                     captureButton(interactive: interactive)
                 }
             }
@@ -684,17 +692,18 @@ struct OutlineView: View {
                     onCollapse: { toggleFold(row.node.id, proxy: proxy) },
                     rippleDelay: interactive ? ripple.delay(for: row.node.id) : nil,
                     groupDone: groupDone(row.node),
-                    adding: edit.adding,
                     onBeginEdit: { beginEdit(row.node) },
                     onBlur: { id in commitEdit(from: id, releasingFocus: false) },
-                    // Return means one thing, in both modes: this row is
-                    // finished, put the keyboard down. It used to branch —
-                    // commit while renaming, open another row while adding —
-                    // which meant the same key ended the session or extended it
-                    // depending on how the field had been opened, something the
-                    // screen never showed. Adding another row is the plus
-                    // button's job now, in either mode.
-                    onSubmit: { commitEdit() },
+                    // Return commits this row and opens the next. One meaning,
+                    // always — there is no longer an adding mode for it to
+                    // branch on.
+                    //
+                    // It is not also the way out. Committing an *empty* row is,
+                    // and `submitAdding` ends the session on one because there
+                    // is nothing to file. So pressing Return on the blank it
+                    // just opened puts the keyboard down, without Return itself
+                    // having to check anything.
+                    onSubmit: { submitAdding() },
                     // No-ops behind the swipe. A gesture there could pick
                     // up a row on a screen the user may be about to slide away
                     // from, and its coordinates would be measured against a
@@ -869,9 +878,11 @@ struct OutlineView: View {
         }
     }
 
-    /// The one control: plus at rest, a keyboard-down glyph while adding. The
-    /// same button is also the way out, and the symbol swap is what says the
-    /// mode is on.
+    /// The one control: a plus, always, that starts an editing session.
+    ///
+    /// It does not move or hide when the keyboard comes up — it sits behind it.
+    /// Riding the bottom safe-area inset is what used to lift it clear; the
+    /// inset now holds the depth bar, and the button keeps its corner.
     ///
     /// Inert behind a swipe for the same reason as a row's field — the copy
     /// underneath must not act on a screen that is sliding away.
@@ -883,10 +894,10 @@ struct OutlineView: View {
         // synthesised touches never make the two recognisers contend. A plain
         // label with a high-priority tap claims the touch ahead of that drag.
         Group {
-            // One glyph now, because the button has one job: add a row. Return
-            // ends the edit in both modes, so nothing here has to offer a way
-            // out — and a plus that stays a plus is a plus you can press twice
-            // without reading it.
+            // One glyph, because the button has one job: open a row. Return
+            // continues a session and Done ends one, so nothing here has to
+            // offer a way out — and a plus that stays a plus is a plus you can
+            // press twice without reading it.
             //
             // It used to change: a tick while adding, a keyboard-down while
             // renaming. Both existed to give a press that *ended* something,
@@ -914,9 +925,9 @@ struct OutlineView: View {
                 .drawingGroup()
                 .frame(width: 52, height: 52)
                 .modifier(CaptureButtonSurface())
-                // Deliberately no `.id(adding)` and no transition. Either one
-                // makes the two states separate views, so SwiftUI removes one
-                // and inserts the other, which is a second way to get two
+                // Deliberately no `.id(...)` and no transition. Either one
+                // would make a changed glyph a separate view, so SwiftUI would
+                // remove one and insert the other — a second way to get two
                 // buttons on screen at once.
         }
         .contentShape(Circle())
@@ -940,12 +951,7 @@ struct OutlineView: View {
     /// Add a task, from any state. Shared by the Button and the high-priority
     /// tap that guards it.
     private func capture() {
-        if edit.adding {
-            // Mid-run: finish this row and open the next, which is what Return
-            // used to do here. The press is now the only way to continue a run,
-            // so it has to be the thing that advances it.
-            submitAdding()
-        } else if edit.isEditing {
+        if edit.isEditing {
             // On the grid the open field is a *project's* name, and naming a
             // project is not the end of anything — the project is empty and the
             // reason it was made is the first task. So finish it the way Return
@@ -956,17 +962,11 @@ struct OutlineView: View {
                 submitProjectName()
                 return
             }
-            // Finish the rename and open a row under it, in one press. The
-            // button is a plus in this state and now acts like one: Return is
-            // the way to just put the keyboard down, so this press does not
-            // have to double as an exit the way it did when it drew a
-            // keyboard-down glyph.
-            //
-            // This is the edge that was missing — from a rename there was no
-            // way to add a row without dismissing the keyboard and hunting the
-            // button again.
-            commitEdit()
-            startAdding()
+            // The same thing Return does, because a field being open is the
+            // only state there is now. Reached when the keyboard is down over
+            // the button, or on the grid, where the branch above sends a
+            // project name somewhere else.
+            submitAdding()
         } else {
             startAdding()
         }
@@ -1024,6 +1024,39 @@ struct OutlineView: View {
         apply(op)
     }
 
+    /// End the session, filing whatever is in the open field.
+    ///
+    /// The explicit way out, for a row you have typed something into — the
+    /// implicit one is Return on an empty row, which is the same exit reached
+    /// by a rule rather than by a button. `stopAdding` is both, so a half-typed
+    /// row is saved here exactly as blur saves it.
+    ///
+    /// A glyph rather than the word "Done", to match the two indent buttons
+    /// sharing the strip. `checkmark` and not `checkmark.circle.fill`, which is
+    /// what a row's own checkbox reaches for when a task is complete — the two
+    /// never share a screen edge, but they should not share a weight either.
+    @ViewBuilder
+    private func doneButton(interactive: Bool) -> some View {
+        Button(action: stopAdding) {
+            Image(systemName: "checkmark")
+                .font(.body.weight(.medium))
+                .frame(width: Space.island, height: Space.island)
+                .background(.thinMaterial, in: Circle())
+                // The drawn circle is smaller than the 44pt Apple asks for, and
+                // the tap target is not: the second frame pads it back out and
+                // `contentShape` takes the touch. The keyboard's own keys are
+                // built the same way — a space bar measures 43pt of drawn key
+                // with slop past its edges — so a circle sized to the guidance
+                // would loom over the row of keys it sits above.
+                .frame(width: Space.tap, height: Space.tap)
+                .contentShape(Circle())
+        }
+        .disabled(!interactive)
+        .accessibilityLabel("Done")
+        .padding(.trailing, Space.corner)
+        .padding(.bottom, max(0, Space.corner - homeIndicator))
+    }
+
     /// Indent and outdent, riding the keyboard.
     ///
     /// These are how you move between sequences rather than a way to fix a
@@ -1031,30 +1064,36 @@ struct OutlineView: View {
     /// per task — `indentOp` carries the children along.
     ///
     /// Left, so both stay under the thumb and the right side stays clear of
-    /// Return. No dismiss chevron: Return already puts the keyboard down and
-    /// sits directly below where the chevron would go, so it would be the same
-    /// action twice, a hand's width apart. No plus either — the capture button
-    /// is already in this strip.
+    /// Return. No plus: Return already opens the next row, so there is nothing
+    /// for one to do during a session.
     @ViewBuilder
     private func depthButtons(interactive: Bool) -> some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 0) {
             Button(action: outdentRow) {
                 Image(systemName: "decrease.indent")
+                    .frame(width: Space.tap, height: Space.island)
+                    .contentShape(Rectangle())
             }
             .disabled(!interactive || !canOutdentRow)
             .accessibilityLabel("Outdent")
 
             Button(action: indentRow) {
                 Image(systemName: "increase.indent")
+                    .frame(width: Space.tap, height: Space.island)
+                    .contentShape(Rectangle())
             }
             .disabled(!interactive || !canIndentRow)
             .accessibilityLabel("Indent")
         }
         // Outdent first, reading left to right as the direction each one moves
         // the row on screen.
-        .font(.title2)
-        .padding(.bottom, max(0, Space.corner - homeIndicator))
+        .font(.body.weight(.medium))
+        // One pill holding both, because they are one control with two
+        // directions — and a surface under them, so they read as objects
+        // floating over the list rather than glyphs loose on the page.
+        .background(.thinMaterial, in: Capsule())
         .padding(.leading, Space.corner)
+        .padding(.bottom, max(0, Space.corner - homeIndicator))
     }
 
     /// The strip the system reserves at the bottom for the home indicator, or 0
@@ -1301,7 +1340,6 @@ struct OutlineView: View {
             addProject()
             return
         }
-        edit.adding = true
         addRow()
     }
 
@@ -1344,7 +1382,6 @@ struct OutlineView: View {
         // After the scope change, so the first task lands inside the new
         // project rather than beside it. `setScope` clears the run, which is
         // why this comes second.
-        edit.adding = true
         addRow()
     }
 
@@ -1376,7 +1413,6 @@ struct OutlineView: View {
             if releasingFocus { focusedRow = nil }
             clearSentinels()
         }
-        edit.stopAdding()
     }
 
     /// Turn the active sentinel into a real task when it has text. The `addChild`
@@ -1526,18 +1562,18 @@ struct OutlineView: View {
         }
     }
 
-    /// The plus, inside the adding run — what advances a sequence.
+    /// Commit this row and open the next — what Return does, every time.
     ///
-    /// Two meanings, split on whether the row has anything in it. With text it
-    /// is "next" — commit and open another below. Empty it is "never mind",
-    /// because there is nothing to file and asking for a second blank row would
-    /// only give the user two to get out of.
+    /// Except on an empty row, which files nothing and ends the session
+    /// instead. That is the whole way out: an empty task is not a task, so
+    /// saving one can only mean you are done. It also spares the user a second
+    /// blank row they would then have to get out of.
     ///
     /// The empty case creates nothing, so there is no blank to clean up.
     ///
-    /// Return used to come here too, which is where the "press it twice to
-    /// stop" escape lived. Return now ends the edit in both modes, so this is
-    /// the plus's path alone.
+    /// The `sentinels.count > 1` fallback below is what makes Return work on a
+    /// *tapped* row: `beginEdit` mounts no sentinels, so there is no waiting
+    /// row to hop to and this commits and opens one the ordinary way.
     private func submitAdding() {
         guard !edit.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             stopAdding()
@@ -2770,6 +2806,14 @@ enum Space {
     /// a fixed one would clip whichever row outgrew it.
     static let tap: CGFloat = 48
 
+    /// The drawn height of a control floating over the keyboard.
+    ///
+    /// Under `tap`, which stays the target: measured against a real keyboard,
+    /// a space bar is 43pt of drawn key inside a taller slop area, so a pill
+    /// sized to the guidance rather than to its neighbours sits too heavy over
+    /// the row of keys below it.
+    static let island: CGFloat = 36
+
     /// The screen edge. Anything that has to line up with another section's
     /// left edge measures from here.
     static let gutter: CGFloat = 16
@@ -2792,11 +2836,6 @@ private struct OutlineRow: View {
     /// True when this row is done *and* so is the group around it, which is
     /// what colours the box green. See `DonePalette`.
     let groupDone: Bool
-    /// Whether this field belongs to a run of new tasks rather than a rename.
-    ///
-    /// Nothing about the keyboard depends on it any more — Return reads `.done`
-    /// in both modes. Kept because the row's own layout still asks.
-    let adding: Bool
     let onBeginEdit: () -> Void
     let onBlur: (NodeId) -> Void
     let onSubmit: () -> Void
@@ -2997,10 +3036,16 @@ private struct OutlineRow: View {
                     TextField("", text: $editText, axis: .vertical)
                         .textFieldStyle(.plain)
                         .focused($focusedRow, equals: node.id)
-                        // Return finishes the row in both modes, so the key says
-                        // so in both. It read `.next` while adding, back when
-                        // Return opened another row there.
-                        .submitLabel(.done)
+                        // Return commits this row and opens another, so the key
+                        // says the one true thing about it. Not `.done`, which
+                        // is now the checkmark's job at the end of the bar —
+                        // and which iOS draws here as a bare ✓, a glyph this
+                        // app already spends on marking a task complete.
+                        //
+                        // `.next` is the closest of the nine `UIReturnKeyType`
+                        // cases; none of them says "add". The key takes an enum,
+                        // not a string, so there is no wording to choose here.
+                        .submitLabel(.next)
                         // Return commits and dismisses. It goes through
                         // onSubmit rather than the focus-loss commit so the
                         // two paths stay distinguishable — blur can also be a

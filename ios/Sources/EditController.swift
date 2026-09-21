@@ -18,13 +18,6 @@ final class EditController {
     /// underneath without resetting what is being typed.
     var text = ""
 
-    /// Whether the user is in a run of adding tasks.
-    ///
-    /// A mode because the capture button has to mean one thing inside it:
-    /// commit this row and open the next. Separate from `editing`, which only
-    /// says a field is open — the mode is what makes the *next* one appear.
-    var adding = false
-
     /// The row a new task lands below, or nil for the bottom of the project.
     ///
     /// Set by touching any row, so the plus button files next to whatever was
@@ -74,12 +67,5 @@ final class EditController {
         captureParent = rememberAnchor
         editing = nil
         text = ""
-    }
-
-    /// Leave the adding run. The caller decides what happens to the open row —
-    /// this only drops the mode, so a plain rename started afterwards does not
-    /// inherit it.
-    func stopAdding() {
-        adding = false
     }
 }
