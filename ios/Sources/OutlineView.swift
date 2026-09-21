@@ -353,9 +353,17 @@ struct OutlineView: View {
             // None of this reproduces on the simulator, where a synthesised
             // touch path never makes the recognisers contend.
             .simultaneousGesture(zoomOutSwipe)
-            // No `.toolbar`. The bar belongs to the `NavigationStack` and
-            // renders outside this view, so `backPull`'s offset moved the whole
-            // screen except its header. The header is drawn inside the slab.
+            // No *navigation* `.toolbar`. That bar belongs to the
+            // `NavigationStack` and renders outside this view, so `backPull`'s
+            // offset moved the whole screen except its header. The header is
+            // drawn inside the slab.
+            //
+            // `.keyboard` placement is a different surface — it rides the
+            // keyboard's own accessory view, not the nav bar, so the offset
+            // problem above does not apply. It also means the bar exists
+            // exactly when a field is focused, which is the behaviour we
+            // wanted: Obsidian's bar appears with the keyboard and leaves with
+            // it, rather than sitting on screen permanently.
             .navigationBarHidden(true)
         }
     }
@@ -619,12 +627,26 @@ struct OutlineView: View {
         // it to inside a project left the empty state telling people to start
         // one below a field that no longer exists, with no way to make a first
         // project at all.
-        .safeAreaInset(edge: .bottom, alignment: .trailing, spacing: 0) {
-            // Not in the trash. Everything here makes something — a task, or a
-            // project from the grid — and the trash is the one screen where
-            // there is nothing to add to.
-            if !trash {
-                captureButton(interactive: interactive)
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            // Both riders in one strip: the depth buttons on the left, the
+            // capture button on the right, sharing the inset that rises with
+            // the keyboard.
+            //
+            // Not `ToolbarItemGroup(placement: .keyboard)`, which the design
+            // named. It renders nothing here — a bare `TextField` with one in
+            // a stock `NavigationStack`, built in this project, showed no bar
+            // either, so it is not something in this view suppressing it. The
+            // inset was already carrying the plus for the same reason the bar
+            // needs, and it draws.
+            HStack(spacing: 0) {
+                if edit.isEditing { depthButtons(interactive: interactive) }
+                Spacer(minLength: 0)
+                // Not in the trash. Everything here makes something — a task,
+                // or a project from the grid — and the trash is the one screen
+                // where there is nothing to add to.
+                if !trash {
+                    captureButton(interactive: interactive)
+                }
             }
         }
         // Opaque, so the rows behind cannot show through the slab as it
@@ -948,6 +970,91 @@ struct OutlineView: View {
         } else {
             startAdding()
         }
+    }
+
+    /// The row the depth buttons act on: whatever field is open.
+    ///
+    /// A sentinel is excluded because it is not in the tree yet — there is no
+    /// node for `moveNode` to name, so indent has nothing to reparent. The
+    /// buttons grey out on a fresh empty row and come back the moment it is
+    /// committed, which is the same row the user is looking at either way.
+    private var depthTarget: NodeId? {
+        guard let id = edit.editing, !isSentinel(id) else { return nil }
+        return id
+    }
+
+    /// Whether indent would move the open row. Nothing to nest under when it is
+    /// the first among its siblings.
+    private var canIndentRow: Bool {
+        guard let id = depthTarget else { return false }
+        return TreeOps.canIndent(tree, id)
+    }
+
+    /// Whether outdent is allowed — scope-relative, not tree-relative.
+    ///
+    /// `TreeOps.canOutdent` answers the tree's question (is there a parent?),
+    /// which is the wrong one here. Zoomed into a project, that project is the
+    /// floor: a row whose parent *is* the scope root would leave the view
+    /// entirely and read as having been deleted, with no undo on screen. So the
+    /// floor moves with the scope rather than sitting at the tree root.
+    ///
+    /// At the top level (`scope == nil`) the tree root is the floor, and the
+    /// two questions agree.
+    private var canOutdentRow: Bool {
+        guard let id = depthTarget, let node = TreeOps.byId(tree, id) else { return false }
+        guard let parentId = node.parentId else { return false }
+        return parentId != scope
+    }
+
+    /// Tuck the open row under its preceding sibling.
+    ///
+    /// The op comes from `TreeOps.indentOp` rather than being derived here: the
+    /// wire carries `moveNode`, and the parent and index it needs follow rules
+    /// that belong next to `indent` itself, not copied into a view.
+    private func indentRow() {
+        guard canIndentRow, let id = depthTarget,
+              let op = TreeOps.indentOp(tree, id) else { return }
+        apply(op)
+    }
+
+    /// Pop the open row up a level, landing after its old parent.
+    private func outdentRow() {
+        guard canOutdentRow, let id = depthTarget,
+              let op = TreeOps.outdentOp(tree, id) else { return }
+        apply(op)
+    }
+
+    /// Indent and outdent, riding the keyboard.
+    ///
+    /// These are how you move between sequences rather than a way to fix a
+    /// mistake, which is why a whole sub-tree costs one indent rather than one
+    /// per task — `indentOp` carries the children along.
+    ///
+    /// Left, so both stay under the thumb and the right side stays clear of
+    /// Return. No dismiss chevron: Return already puts the keyboard down and
+    /// sits directly below where the chevron would go, so it would be the same
+    /// action twice, a hand's width apart. No plus either — the capture button
+    /// is already in this strip.
+    @ViewBuilder
+    private func depthButtons(interactive: Bool) -> some View {
+        HStack(spacing: 8) {
+            Button(action: outdentRow) {
+                Image(systemName: "decrease.indent")
+            }
+            .disabled(!interactive || !canOutdentRow)
+            .accessibilityLabel("Outdent")
+
+            Button(action: indentRow) {
+                Image(systemName: "increase.indent")
+            }
+            .disabled(!interactive || !canIndentRow)
+            .accessibilityLabel("Indent")
+        }
+        // Outdent first, reading left to right as the direction each one moves
+        // the row on screen.
+        .font(.title2)
+        .padding(.bottom, max(0, Space.corner - homeIndicator))
+        .padding(.leading, Space.corner)
     }
 
     /// The strip the system reserves at the bottom for the home indicator, or 0
@@ -2686,7 +2793,9 @@ private struct OutlineRow: View {
     /// what colours the box green. See `DonePalette`.
     let groupDone: Bool
     /// Whether this field belongs to a run of new tasks rather than a rename.
-    /// Only the Return key's label depends on it.
+    ///
+    /// Nothing about the keyboard depends on it any more — Return reads `.done`
+    /// in both modes. Kept because the row's own layout still asks.
     let adding: Bool
     let onBeginEdit: () -> Void
     let onBlur: (NodeId) -> Void
