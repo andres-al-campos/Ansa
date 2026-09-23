@@ -133,6 +133,8 @@ struct OutlineView: View {
     /// The focus value of `keyboardHolder`, a field that is never a row.
     private static let keyboardHolderId: NodeId = "\u{0}keyboard-holder"
     @State private var keyboardHolderText = ""
+    /// Whether the holder capitalizes, copied from the field it takes over.
+    @State private var keyboardHolderCaps = false
     /// The empty row waiting below the one being typed in, during a run.
     ///
     /// Return has to land on a field that already exists — building one and
@@ -1533,6 +1535,16 @@ struct OutlineView: View {
 
     /// Drop every mounted sentinel. Nothing to un-apply — they were never in the
     /// tree — so this is just clearing local state.
+    /// Drop these sentinels only, leaving any minted since.
+    private func dropSentinels(_ ids: [NodeId]) {
+        sentinels.removeAll { ids.contains($0.id) }
+        for id in ids {
+            sentinelPlace[id] = nil
+            sentinelAnchor[id] = nil
+            sentinelSlot[id] = nil
+        }
+    }
+
     private func clearSentinels() {
         sentinels.removeAll()
         sentinelPlace.removeAll()
@@ -1567,6 +1579,7 @@ struct OutlineView: View {
         // clear the run this call is part of. Callers reach here with a sentinel
         // open only if `capture`'s adding check is bypassed, and this keeps that
         // from quietly ending the run.
+        let leavingEmpty = edit.text.isEmpty
         if let id = edit.editing, !isSentinel(id) { commitEdit(releasingFocus: false) }
         let anchor = edit.captureParent.flatMap { TreeOps.byId(tree, $0) }
         // The visual predecessor the first sentinel follows, and the depth to
@@ -1586,7 +1599,7 @@ struct OutlineView: View {
         // A field is up (a Return on a tapped row, or the plus mid-edit): the
         // new row is built in this same update, so focus waits in the holder.
         if focusedRow != nil {
-            holdKeyboard(until: first.id)
+            holdKeyboard(until: first.id, leavingEmpty: leavingEmpty)
         } else {
             focusedRow = first.id
         }
@@ -1610,10 +1623,9 @@ struct OutlineView: View {
             // Same return key as the rows, so the keyboard does not redraw it
             // for the one turn it is here.
             .submitLabel(.next)
-            // An empty field asks for a capital, so the keys flashed to caps
-            // for the turn focus sat here. Rows being edited usually hold text
-            // and want lower case.
-            .textInputAutocapitalization(.never)
+            // Copied from the field being left, so the keys do not flip
+            // between caps and lower case for the turn focus sits here.
+            .textInputAutocapitalization(keyboardHolderCaps ? .sentences : .never)
             .frame(width: 1, height: 1)
             .opacity(0.01)
             .allowsHitTesting(false)
@@ -1622,11 +1634,29 @@ struct OutlineView: View {
 
     /// Park focus on `keyboardHolder`, then hand it to `id` a turn later, once
     /// the update that builds `id`'s field has landed.
-    private func holdKeyboard(until id: NodeId) {
+    private func holdKeyboard(
+        until id: NodeId, leavingEmpty: Bool, then landed: (() -> Void)? = nil
+    ) {
+        keyboardHolderCaps = leavingEmpty
         focusedRow = Self.keyboardHolderId
-        DispatchQueue.main.async {
-            // Only if nothing else claimed focus in the meantime.
-            if focusedRow == Self.keyboardHolderId { focusedRow = id }
+        DispatchQueue.main.async { handOff(to: id, triesLeft: 10, then: landed) }
+    }
+
+    /// Move focus from the holder to `id`, retrying until it sticks. One turn
+    /// is not always enough: if `id`'s field is not built yet the write lands
+    /// on nothing and focus stays in the holder, where typing goes nowhere
+    /// visible. Seen on the phone after Return on a tapped row.
+    private func handOff(to id: NodeId, triesLeft: Int, then landed: (() -> Void)?) {
+        // Something else claimed focus in the meantime; leave it.
+        guard focusedRow == Self.keyboardHolderId else { return }
+        focusedRow = id
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.03) {
+            if focusedRow == id {
+                landed?()
+            } else if focusedRow == Self.keyboardHolderId, triesLeft > 0 {
+                handOff(to: id, triesLeft: triesLeft - 1, then: landed)
+            } else {
+            }
         }
     }
 
@@ -2208,12 +2238,19 @@ struct OutlineView: View {
         // Filing a new row rebuilds its field, so its focus cannot pass straight
         // to the tapped row. See `keyboardHolder`.
         let leavingNewRow = edit.editing.map(isSentinel) ?? false
+        let leavingEmpty = edit.text.isEmpty
         // Save the row being left before `begin` takes its place. The old
         // field's blur does arrive, but after `begin` has already replaced
         // `edit.editing` and `edit.text` with this row's — so `shouldCommit`
         // turned it away and the typed text was lost. Tapping another task is
         // a save, never a discard.
-        if wasEditing, edit.editing != node.id {
+        // Except an empty new row, which has nothing to save and is only
+        // dropped. Dropping it now deletes the list cell holding the keyboard
+        // in the same update that moves focus, and iOS took the keyboard down
+        // for that. It stays mounted until focus has landed on the tapped row.
+        let leftEmpty = wasEditing && leavingNewRow && leavingEmpty
+            ? sentinels.map(\.id) : nil
+        if wasEditing, edit.editing != node.id, leftEmpty == nil {
             commitEdit(releasingFocus: false)
         }
         edit.begin(node)
@@ -2228,8 +2265,12 @@ struct OutlineView: View {
         // SwiftUI has already applied `edit.begin` by the time this runs inside
         // a transaction — and going through `async` there is precisely the gap
         // where no field is focused and iOS takes the keyboard down.
-        if wasEditing, leavingNewRow {
-            holdKeyboard(until: node.id)
+        if let leftEmpty {
+            holdKeyboard(until: node.id, leavingEmpty: true) {
+                dropSentinels(leftEmpty)
+            }
+        } else if wasEditing, leavingNewRow {
+            holdKeyboard(until: node.id, leavingEmpty: leavingEmpty)
         } else if wasEditing {
             focusedRow = node.id
         } else {
