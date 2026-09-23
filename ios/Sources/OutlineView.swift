@@ -1042,13 +1042,6 @@ struct OutlineView: View {
                 .font(.body.weight(.medium))
                 .frame(width: Space.island, height: Space.island)
                 .background(.thinMaterial, in: Circle())
-                // The drawn circle is smaller than the 44pt Apple asks for, and
-                // the tap target is not: the second frame pads it back out and
-                // `contentShape` takes the touch. The keyboard's own keys are
-                // built the same way — a space bar measures 43pt of drawn key
-                // with slop past its edges — so a circle sized to the guidance
-                // would loom over the row of keys it sits above.
-                .frame(width: Space.tap, height: Space.tap)
                 .contentShape(Circle())
         }
         .disabled(!interactive)
@@ -2070,6 +2063,14 @@ struct OutlineView: View {
         // rename. See `ReorderDrag.justEnded` for why the Button fires at all.
         guard !drag.justEnded else { return }
         let wasEditing = edit.isEditing
+        // Save the row being left before `begin` takes its place. The old
+        // field's blur does arrive, but after `begin` has already replaced
+        // `edit.editing` and `edit.text` with this row's — so `shouldCommit`
+        // turned it away and the typed text was lost. Tapping another task is
+        // a save, never a discard.
+        if wasEditing, edit.editing != node.id {
+            commitEdit(releasingFocus: false)
+        }
         edit.begin(node)
         // Still a turn late, and it has to be: `editing` is what builds the
         // field, so focusing in the same pass targets one that does not exist.
@@ -2808,11 +2809,9 @@ enum Space {
 
     /// The drawn height of a control floating over the keyboard.
     ///
-    /// Under `tap`, which stays the target: measured against a real keyboard,
-    /// a space bar is 43pt of drawn key inside a taller slop area, so a pill
-    /// sized to the guidance rather than to its neighbours sits too heavy over
-    /// the row of keys below it.
-    static let island: CGFloat = 36
+    /// Matched to the keyboard below it: a space bar measures 43pt. 36 was
+    /// tried first and read as too small on a device.
+    static let island: CGFloat = 44
 
     /// The screen edge. Anything that has to line up with another section's
     /// left edge measures from here.
