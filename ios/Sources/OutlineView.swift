@@ -159,6 +159,14 @@ struct OutlineView: View {
     /// at the project root. nil means "no anchor, append to the project".
     @State private var sentinelAnchor: [NodeId: NodeId?] = [:]
 
+    /// Where a sentinel will be filed, once indent or outdent has moved it.
+    ///
+    /// Absent until the depth buttons touch it; `sentinelAnchor` decides until
+    /// then. A sentinel is not in the tree, so `indentOp` has nothing to move —
+    /// the move is recorded here and lands with the row's first write, which
+    /// keeps an empty row out of the synced tree even after it was indented.
+    @State private var sentinelSlot: [NodeId: (parent: NodeId?, index: Int)] = [:]
+
     /// The sentinel the cursor is in — the first one, or nil outside a run.
     private var activeSentinel: NodeId? { sentinels.first?.id }
 
@@ -985,7 +993,79 @@ struct OutlineView: View {
 
     /// Whether indent would move the open row. Nothing to nest under when it is
     /// the first among its siblings.
+    /// The new row being typed into, when there is one. It has no node for
+    /// `indentOp` to move, so the depth buttons plan its slot instead.
+    private var activeSentinelEditing: NodeId? {
+        guard let id = edit.editing, id == activeSentinel else { return nil }
+        return id
+    }
+
+    /// Where the sentinel would be filed if committed now: the slot a depth
+    /// button chose, or the one below its anchor, or the end of the project.
+    /// Pure — `slot(below:)` expands a folded anchor, which a read must not.
+    private func plannedSlot(of id: NodeId) -> (parent: NodeId?, index: Int)? {
+        if let chosen = sentinelSlot[id] { return chosen }
+        guard let anchor = sentinelAnchor[id].flatMap({ $0 }).flatMap({ TreeOps.byId(tree, $0) }) else {
+            return (scope, TreeOps.childrenOf(tree, scope).count)
+        }
+        if !TreeOps.childrenOf(tree, anchor.id).isEmpty { return (anchor.id, 0) }
+        guard let i = TreeOps.childrenOf(tree, anchor.parentId)
+            .firstIndex(where: { $0.id == anchor.id }) else { return nil }
+        return (anchor.parentId, i + 1)
+    }
+
+    /// Re-home a sentinel to a new slot and redraw it where that slot is. It
+    /// follows the last visible row of whatever precedes it in the new parent,
+    /// so it sits exactly where the committed row will appear.
+    private func placeSentinel(_ id: NodeId, in slot: (parent: NodeId?, index: Int)) {
+        sentinelSlot[id] = slot
+        let real = rows.filter { !isSentinel($0.node.id) }
+        let parentDepth = slot.parent == scope ? -1
+            : (real.first { $0.node.id == slot.parent }?.depth ?? -1)
+        let siblings = TreeOps.childrenOf(tree, slot.parent)
+        var after: NodeId? = slot.parent == scope ? nil : slot.parent
+        if slot.index > 0, slot.index - 1 < siblings.count {
+            let prev = siblings[slot.index - 1].id
+            after = prev
+            if let i = real.firstIndex(where: { $0.node.id == prev }) {
+                var j = i
+                while j + 1 < real.count, real[j + 1].depth > real[i].depth { j += 1 }
+                after = real[j].node.id
+            }
+        }
+        sentinelPlace[id] = (after, parentDepth + 1)
+        // The waiting row rides behind at the same depth, so the next Return
+        // lands where this one now is.
+        if let waiting = sentinels.dropFirst().first?.id {
+            sentinelPlace[waiting] = (id, parentDepth + 1)
+        }
+    }
+
+    /// Make the new row the last child of the sibling above it.
+    private func indentSentinel(_ id: NodeId) {
+        guard let slot = plannedSlot(of: id), slot.index > 0 else { return }
+        let siblings = TreeOps.childrenOf(tree, slot.parent)
+        guard slot.index - 1 < siblings.count else { return }
+        let prev = siblings[slot.index - 1]
+        // Open a folded parent, or the row would be filed out of sight.
+        if prev.collapsed { apply(.toggleCollapsed(id: prev.id)) }
+        placeSentinel(id, in: (prev.id, TreeOps.childrenOf(tree, prev.id).count))
+    }
+
+    /// Make the new row the sibling just after its parent. Never past the
+    /// project it is in, the same floor the real rows keep.
+    private func outdentSentinel(_ id: NodeId) {
+        guard let slot = plannedSlot(of: id), let parentId = slot.parent,
+              parentId != scope, let parent = TreeOps.byId(tree, parentId),
+              let i = TreeOps.childrenOf(tree, parent.parentId)
+                .firstIndex(where: { $0.id == parentId }) else { return }
+        placeSentinel(id, in: (parent.parentId, i + 1))
+    }
+
     private var canIndentRow: Bool {
+        if let id = activeSentinelEditing {
+            return (plannedSlot(of: id)?.index ?? 0) > 0
+        }
         guard let id = depthTarget else { return false }
         return TreeOps.canIndent(tree, id)
     }
@@ -1001,6 +1081,10 @@ struct OutlineView: View {
     /// At the top level (`scope == nil`) the tree root is the floor, and the
     /// two questions agree.
     private var canOutdentRow: Bool {
+        if let id = activeSentinelEditing {
+            guard let parent = plannedSlot(of: id)?.parent else { return false }
+            return parent != scope
+        }
         guard let id = depthTarget, let node = TreeOps.byId(tree, id) else { return false }
         guard let parentId = node.parentId else { return false }
         return parentId != scope
@@ -1012,6 +1096,10 @@ struct OutlineView: View {
     /// wire carries `moveNode`, and the parent and index it needs follow rules
     /// that belong next to `indent` itself, not copied into a view.
     private func indentRow() {
+        if let id = activeSentinelEditing {
+            indentSentinel(id)
+            return
+        }
         guard canIndentRow, let id = depthTarget,
               let op = TreeOps.indentOp(tree, id) else { return }
         apply(op)
@@ -1019,6 +1107,10 @@ struct OutlineView: View {
 
     /// Pop the open row up a level, landing after its old parent.
     private func outdentRow() {
+        if let id = activeSentinelEditing {
+            outdentSentinel(id)
+            return
+        }
         guard canOutdentRow, let id = depthTarget,
               let op = TreeOps.outdentOp(tree, id) else { return }
         apply(op)
@@ -1418,10 +1510,11 @@ struct OutlineView: View {
               let node = sentinels.first(where: { $0.id == id }) else { return nil }
         let text = edit.text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return nil }
-        // The anchor recorded at mint time, not `edit.captureParent`: focusing
-        // the sentinel overwrote that with the sentinel's own id.
+        // A slot the depth buttons chose wins. Otherwise the anchor recorded
+        // at mint time, not `edit.captureParent`: focusing the sentinel
+        // overwrote that with the sentinel's own id.
         let anchor = sentinelAnchor[id].flatMap { $0 }.flatMap { TreeOps.byId(tree, $0) }
-        let place = slot(below: anchor)
+        let place = sentinelSlot[id] ?? slot(below: anchor)
         // Reuse the sentinel's own id, so focus and the field that already hold
         // it keep pointing at the same row as it becomes real.
         apply(.addChild(
@@ -1439,6 +1532,7 @@ struct OutlineView: View {
         sentinels.removeAll()
         sentinelPlace.removeAll()
         sentinelAnchor.removeAll()
+        sentinelSlot.removeAll()
     }
 
     /// Create the empty row the user types into, below the anchor.
