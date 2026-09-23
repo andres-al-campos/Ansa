@@ -62,9 +62,16 @@ struct OutlineView: View {
     /// Whether the trash sheet is up.
     /// Whether the trash is the screen showing. A second axis beside `scope`
     /// rather than a case of it: every navigation helper here keys off a
-    /// `NodeId?`, and the trash has no node to be. Only ever true at the grid,
-    /// so back from it means home and nothing else.
+    /// `NodeId?`, and the trash has no node to be. `scope` is left as it was, so
+    /// back from the trash returns to the screen it was opened over.
     @State private var inTrash = false
+
+    /// Whether the sidebar was opened by hand. It also shows whenever there is
+    /// no scope to draw — see `sidebarShown`.
+    @State private var sidebarOpen = false
+    /// How far an edge swipe at a project's top level has drawn the sidebar in,
+    /// in points. 0 when no such swipe is running.
+    @State private var sidebarPull: CGFloat = 0
 
     @State private var renamingScope: NodeId?
     @State private var renameText = ""
@@ -226,8 +233,9 @@ struct OutlineView: View {
             if backPull > 0 {
                 // `inTrash` is read by `slab` itself, so the copy behind a
                 // trash pull has to be drawn with it already false — otherwise
-                // the screen revealed is a second trash.
-                slab(for: inTrash ? nil : peekBack.scope,
+                // the screen revealed is a second trash. Back from the trash
+                // lands on the scope it was opened over, which is still `scope`.
+                slab(for: inTrash ? scope : peekBack.scope,
                      interactive: false, trash: false,
                      restoring: inTrash ? nil : peekBack.at)
                 // Over the revealed screen, under the one being lifted off it.
@@ -348,15 +356,11 @@ struct OutlineView: View {
                     ? "It stays in the trash for 30 days."
                     : "This deletes \(count) task\(count == 1 ? "" : "s") under it. They stay in the trash for 30 days.")
             }
-            // Swipe right from the left edge to zoom out. Zooming changes
-            // `scope` in place rather than pushing, so there is no stack entry
-            // for `NavigationStack` to pop and the gesture has to be built.
-            //
-            // Edge-only: the rows carry their own swipe, and a full-width
-            // recogniser would race it.
-            // The ground names where the swipe is going rather than being a
-            // bare colour: two near-identical dark surfaces with nothing on the
-            // lower one read as the app failing to draw, not as depth.
+
+            // Above both slabs, so it covers whichever screen is showing. Inside
+            // the ZStack rather than an overlay on the stack so the edge swipe
+            // that draws it in is attached to the same view it moves.
+            sidebar
             }
             // Simultaneous, not exclusive. Attached plainly this broke the row
             // drag on a real phone: an ancestor `DragGesture` recognises at 20pt
@@ -470,76 +474,26 @@ struct OutlineView: View {
     @ViewBuilder private func header(for scope: NodeId?, interactive: Bool, trash: Bool)
         -> some View
     {
-        // The home screen (no scope, not the trash) gets a band too, but only
-        // to carry the account button — there is no Back and no scope menu
-        // there. It appears only on the signed-in path, since the account
-        // button is what the band is for; the keyless build keeps the old
-        // headerless home. The deeper and trash screens keep the Back/title/menu
-        // band exactly as before.
-        let isHome = !trash && scope == nil
-        if trash || scope != nil || (isHome && signedIn) {
+        // No band with no scope. That state is only ever seen under the
+        // sidebar, which carries the account and the project list itself.
+        if trash || scope != nil {
             HStack(spacing: Space.row) {
-                if isHome {
-                    // The account avatar sits where Back sits one screen in —
-                    // the conventional top-left account spot. Inert on the copy
-                    // behind a swipe, like every other control in this band.
-                    Group {
-                        if interactive {
-                            AccountButton()
-                        } else {
-                            // Reserve the slot so the revealed copy doesn't reflow.
-                            Color.clear.frame(width: 36, height: 36)
-                        }
-                    }
-                    // The band has no edge inset of its own; each end control
-                    // sets its own 8pt.
-                    .padding(.leading, Space.row)
-                } else {
-                    // Inert on the copy behind the swipe, like everything else
-                    // there — it is a screen you may still slide away from.
-                    Button("Back", systemImage: "chevron.left") {
-                        if interactive { zoomOut() }
-                    }
-                    .labelStyle(.iconOnly)
-                    // Same 44pt target as the `...` opposite, for the same
-                    // reason: a bare glyph is only as tappable as its ink.
-                    // Ink 8pt from the edge; the target extends inward.
-                    .padding(.leading, Space.row)
-                    .frame(width: 44, height: 44, alignment: .leading)
-                    .contentShape(Rectangle())
-                }
+                backButton(for: scope, interactive: interactive, trash: trash)
 
                 Spacer(minLength: 0)
 
-                // The destination, not the route. The strip below used to name
-                // the scope and the crumbs above used to name the way in; the
-                // name was on screen twice and the two bands cost ~104pt
-                // between them. This is one band.
-                //
-                // The trail is still here, folded into the title: tapping the
-                // name opens the path as a menu. What is gone is the horizontal
-                // path, which spent width to answer a question asked far less
-                // often than "how far in am I".
+                // The destination, not the route. The path is on Back's
+                // long-press instead, so the title is only a name.
                 if trash {
-                    // A plain name. `ScopeTitle` carries a progress ring and
-                    // opens the lineage as a menu, and the trash has neither.
+                    // A plain name. `ScopeTitle` carries the rename field and
+                    // the drop target, and the trash has neither.
                     Text("Trash").font(.headline)
-                } else if isHome {
-                    // A plain label, not a `ScopeTitle`: the home screen is the
-                    // top of the path, so there is no lineage menu to open and
-                    // it is never a drop target. Same face as the scope title
-                    // so the two bands read as one thing.
-                    Text(title(of: nil))
-                        .font(.title3.weight(.semibold))
-                        .lineLimit(1)
                 } else {
                     ScopeTitle(
                         title: title(of: scope),
                         // Only the live copy can be a drop target; a drag and a
                         // back swipe cannot both be running.
                         lit: interactive && litRoot,
-                        path: scope.map { TreeOps.lineageOf(tree, $0) } ?? [],
-                        onTap: { if interactive { setScope($0) } },
                         editing: interactive && renamingScope != nil && renamingScope == scope,
                         editText: $renameText,
                         typing: $renamingFocus,
@@ -548,13 +502,9 @@ struct OutlineView: View {
 
                 Spacer(minLength: 0)
 
-                // Balances the leading control opposite so the title stays
-                // centred: the scope menu deeper in, and an empty avatar-sized
-                // box on the home screen and the trash.
+                // Balances Back opposite so the title stays centred.
                 if trash {
                     Image(systemName: "ellipsis").opacity(0)
-                } else if isHome {
-                    Color.clear.frame(width: 36, height: 36).padding(.trailing, Space.row)
                 } else {
                     scopeMenu.disabled(!interactive)
                 }
@@ -572,6 +522,47 @@ struct OutlineView: View {
             // in the page rather than the bar it replaced.
             .background(.bar)
         }
+    }
+
+    /// Back, with the path above this scope on a long-press.
+    ///
+    /// Greyed rather than hidden at a project's top level, where there is no
+    /// level above to go to: a chevron that comes and goes would move the title
+    /// with it. The sidebar is the way out of a project from there.
+    ///
+    /// The path used to hang off the title as a menu. It moved here because it
+    /// is a list of places back could go, and because a title that is a button
+    /// cannot also be only a name.
+    @ViewBuilder private func backButton(for scope: NodeId?, interactive: Bool, trash: Bool)
+        -> some View
+    {
+        // Root first, and without the scope itself, which is where you already
+        // are. Empty in the trash: its path is the scope underneath, and one
+        // tap of Back already goes there.
+        let ancestors = trash ? [] : scope.map { Array(TreeOps.lineageOf(tree, $0).dropLast()) } ?? []
+        let enabled = interactive && (trash || !ancestors.isEmpty)
+        let glyph = Image(systemName: "chevron.left")
+            // Same 44pt target as the `...` opposite, for the same reason: a
+            // bare glyph is only as tappable as its ink. Ink 8pt from the edge;
+            // the target extends inward.
+            .padding(.leading, Space.row)
+            .frame(width: 44, height: 44, alignment: .leading)
+            .contentShape(Rectangle())
+        Button {
+            if interactive { zoomOut() }
+        } label: { glyph }
+        // A context menu rather than `Menu(primaryAction:)`, which showed the
+        // path on a long-press but dropped the tap — Back did nothing.
+        .contextMenu {
+            // Outermost first — the path read the way it is written.
+            ForEach(ancestors) { node in
+                Button(node.text.isEmpty ? "Untitled" : node.text) {
+                    setScope(node.id)
+                }
+            }
+        }
+        .disabled(!enabled)
+        .accessibilityLabel("Back")
     }
 
     /// One screen's worth of outline, for a given scope.
@@ -615,20 +606,11 @@ struct OutlineView: View {
                     // not take the gesture either, the same as an outline's.
                     TrashView(store: store, backing: interactive && backPull > 0)
                 } else if scope == nil {
-                    ProjectGrid(
-                        tree: tree, loaded: store.loaded,
-                        editing: edit.editing, editText: $edit.text,
-                        focused: $focusedRow,
-                        onOpen: openProject,
-                        onBeginEdit: beginEdit,
-                        // Return on a project name means "done naming", not
-                        // "next project" — a run of projects is not a thing
-                        // people do, so this is a plain commit either way.
-                        onSubmit: submitProjectName,
-                        onDelete: confirmDeleteProject,
-                        onMoveProject: moveProject,
-                        onMovePin: movePin,
-                        onOpenTrash: { openTrash() })
+                    // Nothing to draw. This is only ever seen under the
+                    // sidebar, which `sidebarShown` holds open whenever there
+                    // is no scope — a launch with no projects, or the project
+                    // you were in deleted.
+                    Color(.systemGroupedBackground)
                 } else {
                     // Under the bar, above the list: the figure the title used
                     // to carry as a caption. Only here — the grid and the trash
@@ -645,10 +627,8 @@ struct OutlineView: View {
         // would put the button under it at exactly the moment it becomes the
         // way out.
         //
-        // On the grid too, where it makes a project rather than a task. Gating
-        // it to inside a project left the empty state telling people to start
-        // one below a field that no longer exists, with no way to make a first
-        // project at all.
+        // Projects are made from the sidebar's own plus, so this one only ever
+        // makes a task.
         .safeAreaInset(edge: .bottom, spacing: 0) {
             // Both riders in one strip: the depth buttons on the left, the
             // capture button on the right, sharing the inset that rises with
@@ -662,7 +642,11 @@ struct OutlineView: View {
             // needs, and it draws.
             HStack(spacing: 0) {
                 if edit.isEditing || focusedRow != nil { keyboardHolder }
-                if edit.isEditing { depthButtons(interactive: interactive) }
+                if edit.isEditing {
+                    depthButtons(interactive: interactive)
+                } else if trash || scope != nil {
+                    sidebarButton(interactive: interactive)
+                }
                 Spacer(minLength: 0)
                 // One slot, two occupants, never both: Done while a field is
                 // open, the plus otherwise. The plus does not move or hide —
@@ -670,12 +654,10 @@ struct OutlineView: View {
                 // stands here during a session is the way out rather than a
                 // second way in.
                 //
-                // Not in the trash. Everything here makes something — a task,
-                // or a project from the grid — and the trash is the one screen
-                // where there is nothing to add to.
+                // Not in the trash, where there is nothing to add to.
                 if edit.isEditing {
                     doneButton(interactive: interactive)
-                } else if !trash {
+                } else if !trash && scope != nil {
                     captureButton(interactive: interactive)
                 }
             }
@@ -971,24 +953,119 @@ struct OutlineView: View {
     }
 
 
+    /// Opens the sidebar. The capture button's twin in the opposite corner:
+    /// the same disc and the same distance from the edges, so the two read as
+    /// a pair rather than one control and one stray.
+    ///
+    /// `sidebar.left` rather than a hamburger, matching the web's toggle, which
+    /// draws the same panel-with-a-rule.
+    @ViewBuilder private func sidebarButton(interactive: Bool) -> some View {
+        // A high-priority tap rather than a `Button`, for the capture button's
+        // reason: the back swipe's `minimumDistance: 0` drag can win a
+        // Button's tap on a device.
+        Image(systemName: "sidebar.left")
+            .font(.system(size: 19, weight: .medium))
+            .foregroundStyle(Color.primary)
+            .drawingGroup()
+            .frame(width: 52, height: 52)
+            .modifier(CaptureButtonSurface())
+            .contentShape(Circle())
+            .highPriorityGesture(
+                TapGesture().onEnded { openSidebar() },
+                including: interactive ? .all : .none)
+            .padding(.bottom, max(0, Space.corner - homeIndicator))
+            .padding(.leading, Space.corner)
+            .accessibilityLabel("Show projects")
+            .accessibilityAddTraits(.isButton)
+    }
+
+    /// How wide the sidebar is: most of the screen, so a sliver of the scope
+    /// under it stays in view and says where closing it goes back to.
+    private var sidebarWidth: CGFloat { min(slabWidth * 0.85, 360) }
+
+    /// The projects, pins and trash, sliding over the screen from the left.
+    ///
+    /// Always in the tree and moved off screen when closed, so an edge swipe
+    /// can draw it in under the finger rather than waiting for it to be built.
+    @ViewBuilder private var sidebar: some View {
+        let shown = sidebarShown
+        let progress = shown ? 1 : sidebarPull / max(sidebarWidth, 1)
+        ZStack(alignment: .leading) {
+            // Dims what is behind and closes on a tap. Not with no scope, where
+            // there is nothing behind to go back to — `closeSidebar` leaves it
+            // up then.
+            Color.black.opacity(0.3 * progress)
+                .ignoresSafeArea()
+                .contentShape(Rectangle())
+                .onTapGesture { closeSidebar() }
+                .allowsHitTesting(shown)
+
+            sidebarPanel
+                .frame(width: sidebarWidth)
+                .frame(maxHeight: .infinity)
+                .background(Color(.systemGroupedBackground).ignoresSafeArea())
+                // One shadow for the panel. Without flattening first, every
+                // card and the top row cast their own onto what is under them.
+                .compositingGroup()
+                .shadow(color: .black.opacity(0.18 * progress), radius: 8, x: 3)
+                // Clear of the edge by the shadow's reach, or its glow shows at
+                // the screen's left edge while closed.
+                .offset(x: shown ? 0 : sidebarPull - sidebarWidth - 16)
+                .allowsHitTesting(shown)
+                .accessibilityHidden(!shown)
+        }
+        // Keyed on `shown` alone, so the pull under a finger is not animated
+        // and opening or closing is, whichever path changed it — a tap, a
+        // released swipe, or a project opened from the list.
+        .animation(.easeOut(duration: 0.25), value: shown)
+    }
+
+    private var sidebarPanel: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: Space.row) {
+                // The account, at the top where the home screen had it. Only
+                // signed in: the keyless build has no Clerk to read, and
+                // reading one is a crash.
+                if signedIn { AccountRow() }
+                Spacer(minLength: 0)
+                Button {
+                    addProject()
+                } label: {
+                    Image(systemName: "plus")
+                        .font(.system(size: 20, weight: .medium))
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
+                }
+                .accessibilityLabel("New project")
+            }
+            .padding(.leading, Space.gutter)
+            .padding(.trailing, Space.row)
+            .frame(minHeight: 52)
+
+            ProjectGrid(
+                tree: tree, loaded: store.loaded,
+                editing: edit.editing, editText: $edit.text,
+                focused: $focusedRow,
+                onOpen: openProject,
+                onBeginEdit: beginEdit,
+                // Return on a project name means "done naming", not "next
+                // project" — a run of projects is not a thing people do, so
+                // this is a plain commit either way.
+                onSubmit: submitProjectName,
+                onDelete: confirmDeleteProject,
+                onMoveProject: moveProject,
+                onMovePin: movePin,
+                onOpenTrash: { openTrash() })
+        }
+    }
+
     /// Add a task, from any state. Shared by the Button and the high-priority
     /// tap that guards it.
     private func capture() {
         if edit.isEditing {
-            // On the grid the open field is a *project's* name, and naming a
-            // project is not the end of anything — the project is empty and the
-            // reason it was made is the first task. So finish it the way Return
-            // does: open it and start the run. `submitProjectName` also drops an
-            // empty name, which deletes the node rather than leaving a blank
-            // card behind.
-            if scope == nil {
-                submitProjectName()
-                return
-            }
             // The same thing Return does, because a field being open is the
             // only state there is now. Reached when the keyboard is down over
-            // the button, or on the grid, where the branch above sends a
-            // project name somewhere else.
+            // the button.
             submitAdding()
         } else {
             startAdding()
@@ -1217,9 +1294,18 @@ struct OutlineView: View {
         scope.flatMap { TreeOps.byId(tree, $0)?.parentId }
     }
 
-    /// Whether there is a screen behind this one. The grid is the floor, and
-    /// the trash sits one step above it however deep the scope underneath was.
-    private var canGoBack: Bool { inTrash || scope != nil }
+    /// Whether there is a screen behind this one. A project's top level is the
+    /// floor — the sidebar is the way to another project from there — and the
+    /// trash sits one step above whatever it was opened over.
+    private var canGoBack: Bool { inTrash || parentScope != nil }
+
+    /// Whether the sidebar is on screen. Held open with no scope, since there
+    /// is nothing under it to go back to: a launch with no projects, or the
+    /// project you were in deleted.
+    private var sidebarShown: Bool { sidebarOpen || (scope == nil && !inTrash) }
+
+    /// Whether an edge swipe here draws the sidebar in rather than going back.
+    private var swipeOpensSidebar: Bool { !canGoBack && !sidebarShown }
 
     /// The rows the outline draws, flattened depth-first with a folded subtree
     /// counting as the single line it shows.
@@ -1431,19 +1517,10 @@ struct OutlineView: View {
     /// row emptied by a rename, and that is exactly what an untouched new row
     /// is, so the cleanup comes for free.
     private func startAdding() {
-        // On the grid there is no row to type into: `ProjectGrid` draws cards,
-        // not editable rows, so a nameless new project would have nowhere to
-        // put the name. It gets one straight away and opens, and the run starts
-        // on its first task — which is where you were going anyway, since a
-        // project with nothing in it is not a destination.
-        if scope == nil {
-            addProject()
-            return
-        }
         addRow()
     }
 
-    /// Make a project and open its name for typing, on the grid.
+    /// Make a project and open its name for typing, in the sidebar.
     ///
     /// It used to name the project "New project" and jump straight inside,
     /// because the grid had no field to type into. That left every project
@@ -1849,6 +1926,27 @@ struct OutlineView: View {
     private func openTrash() {
         endRun(releasingFocus: true)
         inTrash = true
+        closeSidebar()
+    }
+
+    /// Slide the sidebar in. Any open field is committed first, the same as a
+    /// navigation: the sidebar covers it, and a keyboard typing into a row you
+    /// cannot see is worse than the edit ending.
+    private func openSidebar() {
+        endRun(releasingFocus: true)
+        withAnimation(.easeOut(duration: 0.25)) {
+            sidebarOpen = true
+            sidebarPull = 0
+        }
+    }
+
+    /// Slide it out. A project name being typed in it is committed, the same
+    /// as tapping away from any other field.
+    ///
+    /// Does nothing visible with no scope, where `sidebarShown` holds it open.
+    private func closeSidebar() {
+        if sidebarShown, edit.isEditing { commitEdit() }
+        withAnimation(.easeOut(duration: 0.25)) { sidebarOpen = false }
     }
 
     /// Open a project: zoom in, and record that it was opened.
@@ -1859,9 +1957,13 @@ struct OutlineView: View {
     private func openProject(_ id: NodeId) {
         // The run and the anchor are cleared by `setScope`, which every
         // navigation goes through.
+        // Out of the trash too: a project opened from the sidebar is where you
+        // are going, and the trash sitting over it would hide it.
+        inTrash = false
         setScope(id)
         let root = TreeOps.lineageOf(tree, id).first?.id ?? id
         apply(.markOpened(id: root, at: Date().timeIntervalSince1970 * 1000))
+        closeSidebar()
     }
 
     // MARK: - Dragging
@@ -2366,6 +2468,12 @@ struct OutlineView: View {
                 // which cannot be known yet and so cannot gate the claim.
                 if claims(g) { backHolding = true }
                 guard armed(g) else { return }
+                // At a project's top level the same pull draws the sidebar in,
+                // one-to-one and stopping at its full width.
+                if swipeOpensSidebar {
+                    sidebarPull = min(max(0, g.translation.width), sidebarWidth)
+                    return
+                }
                 // One-to-one all the way to the threshold, damped only past
                 // it. The damping used to start at 60pt, well short of where
                 // the gesture commits, so for most of the pull the edge you
@@ -2390,7 +2498,17 @@ struct OutlineView: View {
                 // Released, so the row swipe is available again — a cancelled
                 // back swipe hands the row back rather than leaving it inert.
                 backHolding = false
-                guard armed(g), g.translation.width > backThreshold else {
+                if sidebarPull > 0 {
+                    // The same threshold as back, so the two uses of one
+                    // gesture commit at the same distance.
+                    if g.translation.width > backThreshold {
+                        openSidebar()
+                    } else {
+                        withAnimation(.easeOut(duration: 0.22)) { sidebarPull = 0 }
+                    }
+                    return
+                }
+                guard canGoBack, armed(g), g.translation.width > backThreshold else {
                     // Short of the threshold: back where it came from, which is
                     // what tells you the gesture was seen and declined.
                     withAnimation(.easeOut(duration: 0.22)) { backPull = 0 }
@@ -2480,7 +2598,7 @@ struct OutlineView: View {
     /// habitually lands past 32, so a strip covering only where the pull *acts*
     /// leaves the row open across the band where it is attempted.
     private func claims(_ g: DragGesture.Value) -> Bool {
-        canGoBack && !drag.isActive && !rowSwiping && g.startLocation.x < backClaim
+        (canGoBack || swipeOpensSidebar) && !drag.isActive && !rowSwiping && g.startLocation.x < backClaim
     }
 
     /// Whether this drag is a back swipe rather than a scroll or a row action.
@@ -2493,7 +2611,7 @@ struct OutlineView: View {
     /// see the attachment site. Everything here is deliberately cheap and
     /// side-effect free, because it runs on every drag anywhere on screen.
     private func armed(_ g: DragGesture.Value) -> Bool {
-        canGoBack
+        (canGoBack || swipeOpensSidebar || sidebarPull > 0)
             // Not while a row is in the air. The two gestures are recognised
             // simultaneously, so without this a swipe can begin under a drag
             // that is already running and the row would follow a finger that
@@ -2518,7 +2636,7 @@ struct OutlineView: View {
     /// pull is running it stays running, since a gesture that has visibly begun
     /// should not be revoked by a wobble halfway through.
     private func goingSideways(_ g: DragGesture.Value) -> Bool {
-        if backPull > 0 { return true }
+        if backPull > 0 || sidebarPull > 0 { return true }
         return g.translation.width > 0
             && abs(g.translation.height) < abs(g.translation.width) * 1.5
     }
@@ -2570,7 +2688,9 @@ struct OutlineView: View {
     /// empty screen that reads as the app failing.
     private var peekBack: BackStep {
         for step in backTrail.reversed() {
-            guard let id = step.scope else { return step }
+            // Nor the empty scope. There is no screen there any more, only the
+            // sidebar, and back is not the way to open it.
+            guard let id = step.scope else { continue }
             if TreeOps.byId(tree, id) != nil { return step }
         }
         // Off the end of the trail: the tree parent, with nowhere remembered.
@@ -2713,10 +2833,6 @@ private struct ScopeTitle: View {
     /// project is the list, not a task in it — but it is the same question a
     /// drag is asking, so it gets the same answer.
     let lit: Bool
-    /// Root-first, current scope last, as `TreeOps.lineageOf` gives it.
-    /// Empty on the project grid, where there is no path.
-    let path: [Node]
-    let onTap: (NodeId?) -> Void
 
     /// Renaming happens in the header because the header *is* the scope's row:
     /// zooming in is exactly what turned that row into this title.
@@ -2732,21 +2848,12 @@ private struct ScopeTitle: View {
     let onCommit: () -> Void
 
     var body: some View {
-        // The path vertically, on demand, rather than horizontally and always.
-        //
-        // The crumb trail this replaces spent the width of the bar on a route
-        // you mostly already know, and elided its middle exactly when the trail
-        // got long enough to be worth reading. A menu has as many lines as the
-        // path has steps.
-        //
-        // It also fixes what the width was costing: a crumb is a small target
-        // beside other small targets, so leaving a scope by tapping the wrong
-        // one was easy. Opening the menu is deliberate, and every row in it is
-        // full width.
+        // A name and nothing else. The path it used to open as a menu is on
+        // Back's long-press now.
         if editing {
             nameField
         } else {
-            pathMenu
+            titleLabel
         }
     }
 
@@ -2778,49 +2885,6 @@ private struct ScopeTitle: View {
         .padding(.vertical, Space.tight)
     }
 
-    private var pathMenu: some View {
-        Menu {
-            // Top down, outermost first — the path read the way it is written,
-            // and the way the crumb trail read left to right. Nearest-first
-            // puts the commonest jump under the finger, but it also inverts
-            // the one thing the menu is for: showing where you are in a
-            // hierarchy. Back already covers one step up.
-            //
-            // Projects heads the list because it is the top of the path, not
-            // an escape bolted to the end.
-            Button {
-                onTap(nil)
-            } label: {
-                Label("Projects", systemImage: "house")
-            }
-
-            // No glyph on these. The same arrow beside every row distinguishes
-            // nothing, and the order already says which way the path runs.
-            ForEach(ancestors) { node in
-                Button(node.text.isEmpty ? "Untitled" : node.text) {
-                    onTap(node.id)
-                }
-            }
-        } label: {
-            titleLabel
-        }
-        // A `Menu` tints its label with the accent colour, and that tint is
-        // what the label's own `.primary`/`.secondary` then resolve against —
-        // so the title came out blue and the status line a pale blue at about
-        // 1.8:1. `.tint(.primary)` puts the stack back on the label palette;
-        // `titleLabel` still paints itself, and `lit` still overrides for a
-        // drop.
-        .tint(.primary)
-        // Off on the grid, where the path is empty and there is nowhere to go.
-        .disabled(path.isEmpty)
-    }
-
-    /// The path above the current scope. The scope itself is the title, and
-    /// offering it would be a row that navigates nowhere.
-    private var ancestors: [Node] {
-        path.dropLast()
-    }
-
     /// How wide the title may be: the screen less the space the leading and
     /// trailing buttons occupy. Back is a chevron and the exit is a house, so
     /// the reserve is the same on both sides and the title stays centred.
@@ -2848,20 +2912,10 @@ private struct ScopeTitle: View {
         // One line, not a stack. The figure moved to its own row under the bar,
         // which is what lets the name have the whole height here instead of
         // splitting it with a caption.
-        HStack(spacing: 4) {
-            Text(title)
-                .font(.title3.weight(.semibold))
-                .lineLimit(1)
-                .truncationMode(.tail)
-
-            // The mark that says the name is a control. Without it the
-            // title reads as a label and the menu never gets found.
-            if !path.isEmpty {
-                Image(systemName: "chevron.down")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(.tertiary)
-            }
-        }
+        Text(title)
+            .font(.title3.weight(.semibold))
+            .lineLimit(1)
+            .truncationMode(.tail)
         .foregroundStyle(
             lit ? AnyShapeStyle(DropPalette.nest) : AnyShapeStyle(.primary))
         // As wide as the bar allows. A drop on the header is easy to miss when
@@ -3734,7 +3788,10 @@ private struct ProjectGrid: View {
                             // *inset* alone left it far tighter than every other
                             // break on the screen; matching the header's whole
                             // span was too much, empty.
-                            gapAbove: Space.headerBreak))
+                            gapAbove: Space.headerBreak,
+                            // Trash is a place, not a project. The line says so
+                            // before the row has been read.
+                            divider: true))
                 }
             }
             .listStyle(.plain)
@@ -3868,6 +3925,9 @@ private struct HomeCard: ViewModifier {
     /// Blank space above the card, for a section that has no header to carry it.
     /// `.plain` puts nothing between sections of its own.
     var gapAbove: CGFloat = 0
+    /// A hairline across the middle of `gapAbove`, for a row that belongs to a
+    /// different kind of thing than the list above it.
+    var divider = false
 
     private var radius: CGFloat { 10 }
 
@@ -3902,6 +3962,14 @@ private struct HomeCard: ViewModifier {
                     }
                 }
                 .animation(.easeOut(duration: 0.12), value: lifted)
+                .overlay(alignment: .top) {
+                    if divider {
+                        Rectangle()
+                            .fill(Color(.separator))
+                            .frame(height: 1 / UIScreen.main.scale)
+                            .padding(.top, gapAbove / 2)
+                    }
+                }
                 // The card is inset from the screen; `.listRowInsets` only
                 // insets the row's content, so without this the card runs edge
                 // to edge and the grey page never shows beside it.
