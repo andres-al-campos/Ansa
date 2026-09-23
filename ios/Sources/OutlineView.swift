@@ -446,8 +446,10 @@ struct OutlineView: View {
                     // sizes the band, not what sits in it. `contentShape` is the
                     // half that matters: the frame alone lays out the space but
                     // still only the glyph takes the tap. Matches the back
-                    // button opposite.
-                    .frame(width: 44, height: 44)
+                    // button opposite. Ink pinned 8pt from the screen edge, the
+                    // rest of the 44pt target reaching inward.
+                    .padding(.trailing, Space.row)
+                    .frame(width: 44, height: 44, alignment: .trailing)
                     .contentShape(Rectangle())
             }
         }
@@ -481,12 +483,17 @@ struct OutlineView: View {
                     // The account avatar sits where Back sits one screen in —
                     // the conventional top-left account spot. Inert on the copy
                     // behind a swipe, like every other control in this band.
-                    if interactive {
-                        AccountButton()
-                    } else {
-                        // Reserve the slot so the revealed copy doesn't reflow.
-                        Color.clear.frame(width: 36, height: 36)
+                    Group {
+                        if interactive {
+                            AccountButton()
+                        } else {
+                            // Reserve the slot so the revealed copy doesn't reflow.
+                            Color.clear.frame(width: 36, height: 36)
+                        }
                     }
+                    // The band has no edge inset of its own; each end control
+                    // sets its own 8pt.
+                    .padding(.leading, Space.row)
                 } else {
                     // Inert on the copy behind the swipe, like everything else
                     // there — it is a screen you may still slide away from.
@@ -496,7 +503,9 @@ struct OutlineView: View {
                     .labelStyle(.iconOnly)
                     // Same 44pt target as the `...` opposite, for the same
                     // reason: a bare glyph is only as tappable as its ink.
-                    .frame(width: 44, height: 44)
+                    // Ink 8pt from the edge; the target extends inward.
+                    .padding(.leading, Space.row)
+                    .frame(width: 44, height: 44, alignment: .leading)
                     .contentShape(Rectangle())
                 }
 
@@ -545,12 +554,11 @@ struct OutlineView: View {
                 if trash {
                     Image(systemName: "ellipsis").opacity(0)
                 } else if isHome {
-                    Color.clear.frame(width: 36, height: 36)
+                    Color.clear.frame(width: 36, height: 36).padding(.trailing, Space.row)
                 } else {
                     scopeMenu.disabled(!interactive)
                 }
             }
-            .padding(.horizontal, Space.gutter)
             // No fixed height. The buttons carry their own 44pt hit target, so
             // the band lands in the same place the system bar did without a
             // number that a larger Dynamic Type setting would then be squeezed
@@ -2817,17 +2825,17 @@ private struct ScopeTitle: View {
     /// trailing buttons occupy. Back is a chevron and the exit is a house, so
     /// the reserve is the same on both sides and the title stays centred.
     private var titleWidth: CGFloat {
-        UIScreen.main.bounds.width - buttonZone * 2
+        // Less the header's four stack gaps too (button, spacer, title, spacer,
+        // button). Leaving them out made the header 32pt wider than the
+        // screen, which pushed the whole column 16pt past each edge — the
+        // progress bar's gutter was there, just off screen.
+        UIScreen.main.bounds.width - buttonZone * 2 - Space.row * 4
     }
 
-    /// A toolbar button's tap target plus the bar's own edge inset. Nothing
-    /// exposes this, so it is measured: the chevron sits ~16pt from the edge
-    /// and is ~44pt wide.
-    ///
-    /// The box runs to exactly this, with no gutter subtracted. The air between
-    /// the box and the buttons is the buttons' own inset; taking a gutter off
-    /// as well made the box smaller than the space it was meant to fill.
-    private let buttonZone: CGFloat = 60
+    /// A header button's 44pt target. The glyph sits 8pt from the screen edge
+    /// inside it, so the band needs no inset of its own and every point goes
+    /// to the title.
+    private let buttonZone: CGFloat = 44
 
     /// A toolbar button's tap target, which is what the box matches.
     ///
