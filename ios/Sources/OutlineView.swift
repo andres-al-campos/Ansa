@@ -129,6 +129,10 @@ struct OutlineView: View {
     /// being torn down and the one being built, and Return-for-new-sibling
     /// lost it every time. Naming the id makes the target unambiguous.
     @FocusState private var focusedRow: NodeId?
+
+    /// The focus value of `keyboardHolder`, a field that is never a row.
+    private static let keyboardHolderId: NodeId = "\u{0}keyboard-holder"
+    @State private var keyboardHolderText = ""
     /// The empty row waiting below the one being typed in, during a run.
     ///
     /// Return has to land on a field that already exists — building one and
@@ -647,6 +651,7 @@ struct OutlineView: View {
             // inset was already carrying the plus for the same reason the bar
             // needs, and it draws.
             HStack(spacing: 0) {
+                if edit.isEditing || focusedRow != nil { keyboardHolder }
                 if edit.isEditing { depthButtons(interactive: interactive) }
                 Spacer(minLength: 0)
                 // One slot, two occupants, never both: Done while a field is
@@ -1578,8 +1583,51 @@ struct OutlineView: View {
         // same render is safe: `focusedRow` is a plain value the field binds to
         // via `.focused(equals:)`, and `rows(of:)` already emits the sentinel.
         edit.begin(id: first.id, text: "")
-        focusedRow = first.id
+        // A field is up (a Return on a tapped row, or the plus mid-edit): the
+        // new row is built in this same update, so focus waits in the holder.
+        if focusedRow != nil {
+            holdKeyboard(until: first.id)
+        } else {
+            focusedRow = first.id
+        }
         scrollInto(first.id)
+    }
+
+    /// An invisible field that holds the keyboard while the rows rebuild.
+    ///
+    /// iOS takes the keyboard down the moment the focused field leaves the
+    /// window, and brings it back with the full slide when the next one takes
+    /// focus. Moving focus between two rows is safe only when the target row
+    /// already exists. A row created in the same update as the focus move, or a
+    /// new row whose field is torn down as it is filed, leaves a frame where
+    /// nothing is focused. This field is mounted for the whole session and
+    /// never moves, so focus can wait here until the target's field is built.
+    /// Measured on the phone: without it the keyboard hid and slid back on the
+    /// first Return from a tapped row and on tapping away from a new row.
+    private var keyboardHolder: some View {
+        TextField("", text: $keyboardHolderText)
+            .focused($focusedRow, equals: Self.keyboardHolderId)
+            // Same return key as the rows, so the keyboard does not redraw it
+            // for the one turn it is here.
+            .submitLabel(.next)
+            // An empty field asks for a capital, so the keys flashed to caps
+            // for the turn focus sat here. Rows being edited usually hold text
+            // and want lower case.
+            .textInputAutocapitalization(.never)
+            .frame(width: 1, height: 1)
+            .opacity(0.01)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+    }
+
+    /// Park focus on `keyboardHolder`, then hand it to `id` a turn later, once
+    /// the update that builds `id`'s field has landed.
+    private func holdKeyboard(until id: NodeId) {
+        focusedRow = Self.keyboardHolderId
+        DispatchQueue.main.async {
+            // Only if nothing else claimed focus in the meantime.
+            if focusedRow == Self.keyboardHolderId { focusedRow = id }
+        }
     }
 
     /// The row a new sentinel follows and the depth to draw it at — the visual
@@ -2157,6 +2205,9 @@ struct OutlineView: View {
         // rename. See `ReorderDrag.justEnded` for why the Button fires at all.
         guard !drag.justEnded else { return }
         let wasEditing = edit.isEditing
+        // Filing a new row rebuilds its field, so its focus cannot pass straight
+        // to the tapped row. See `keyboardHolder`.
+        let leavingNewRow = edit.editing.map(isSentinel) ?? false
         // Save the row being left before `begin` takes its place. The old
         // field's blur does arrive, but after `begin` has already replaced
         // `edit.editing` and `edit.text` with this row's — so `shouldCommit`
@@ -2177,7 +2228,9 @@ struct OutlineView: View {
         // SwiftUI has already applied `edit.begin` by the time this runs inside
         // a transaction — and going through `async` there is precisely the gap
         // where no field is focused and iOS takes the keyboard down.
-        if wasEditing {
+        if wasEditing, leavingNewRow {
+            holdKeyboard(until: node.id)
+        } else if wasEditing {
             focusedRow = node.id
         } else {
             DispatchQueue.main.async { focusedRow = node.id }
@@ -3128,6 +3181,11 @@ private struct OutlineRow: View {
                 if editing {
                     TextField("", text: $editText, axis: .vertical)
                         .textFieldStyle(.plain)
+                        // Caps only on an empty row. Focusing a row that has
+                        // text flashed the keys to caps for a frame (the shift
+                        // is judged before the cursor reaches the end), so a
+                        // row with text never asks for a capital.
+                        .textInputAutocapitalization(editText.isEmpty ? .sentences : .never)
                         .focused($focusedRow, equals: node.id)
                         // Return commits this row and opens another, so the key
                         // says the one true thing about it. Not `.done`, which
