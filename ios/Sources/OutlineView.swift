@@ -521,7 +521,7 @@ struct OutlineView: View {
                     // it is never a drop target. Same face as the scope title
                     // so the two bands read as one thing.
                     Text(title(of: nil))
-                        .font(.subheadline.weight(.semibold))
+                        .font(.title3.weight(.semibold))
                         .lineLimit(1)
                 } else {
                     ScopeTitle(
@@ -2750,7 +2750,7 @@ private struct ScopeTitle: View {
         Group {
             TextField("Name", text: $editText)
                 .textFieldStyle(.plain)
-                .font(.subheadline.weight(.semibold))
+                .font(.title3.weight(.semibold))
                 .onChange(of: editText) { _, text in
                     let clamped = TreeOps.clampText(text)
                     if clamped != text { editText = clamped }
@@ -2842,7 +2842,7 @@ private struct ScopeTitle: View {
         // splitting it with a caption.
         HStack(spacing: 4) {
             Text(title)
-                .font(.subheadline.weight(.semibold))
+                .font(.title3.weight(.semibold))
                 .lineLimit(1)
                 .truncationMode(.tail)
 
