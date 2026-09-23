@@ -1146,7 +1146,7 @@ struct OutlineView: View {
         .disabled(!interactive)
         .accessibilityLabel("Done")
         .padding(.trailing, Space.corner)
-        .padding(.bottom, max(0, Space.corner - homeIndicator))
+        .padding(.bottom, Space.row)
     }
 
     /// Indent and outdent, riding the keyboard.
@@ -1185,7 +1185,7 @@ struct OutlineView: View {
         // floating over the list rather than glyphs loose on the page.
         .background(.thinMaterial, in: Capsule())
         .padding(.leading, Space.corner)
-        .padding(.bottom, max(0, Space.corner - homeIndicator))
+        .padding(.bottom, Space.row)
     }
 
     /// The strip the system reserves at the bottom for the home indicator, or 0
