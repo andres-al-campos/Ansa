@@ -3568,6 +3568,16 @@ private struct OutlineRow: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            // The box sits 20pt from a leaf's dot and 20pt from the text —
+            // equal around the mark most rows show, since most tasks are
+            // leaves, and the same step as one indent. A parent's 18pt ring
+            // comes 6pt closer, to 14. With the plain spacing the gaps were
+            // 29.5 from the dot (13 + 10 + 6.5, the empty parts of both
+            // columns plus the gap) and 16.5 to the text (6.5 + 10). The
+            // leading pull still leaves 0.5 between this tap column and the
+            // bullet's.
+            .padding(.leading, -9.5)
+            .padding(.trailing, 3.5)
 
             // Tap the label to rename in place. The field replaces the text
             // rather than sitting beside it, so the row does not reflow when
