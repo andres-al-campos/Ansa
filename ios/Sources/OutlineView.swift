@@ -372,6 +372,7 @@ struct OutlineView: View {
             // the ZStack rather than an overlay on the stack so the edge swipe
             // that draws it in is attached to the same view it moves.
             sidebar
+            pathOverlay
             }
             // Simultaneous, not exclusive. Attached plainly this broke the row
             // drag on a real phone: an ancestor `DragGesture` recognises at 20pt
@@ -564,46 +565,66 @@ struct OutlineView: View {
             if backHeld { backHeld = false; return }
             if interactive { zoomOut() }
         } label: { glyph }
-        // A popover on a long-press, not `.contextMenu`, which lifts and
-        // enlarges the button over the progress bar while the menu is up and
-        // gives no say over row height. `Menu(primaryAction:)` avoided the lift
-        // but dropped the tap.
+        // A long-press opening `pathOverlay`, not `.contextMenu`, which lifts
+        // and enlarges the button over the progress bar while the menu is up
+        // and gives no say over row height. `Menu(primaryAction:)` avoided the
+        // lift but dropped the tap.
         .simultaneousGesture(
             LongPressGesture(minimumDuration: 0.4).onEnded { _ in
                 guard interactive, !ancestors.isEmpty else { return }
                 backHeld = true
                 pathShown = true
             })
-        .popover(
-            isPresented: interactive ? $pathShown : .constant(false),
-            attachmentAnchor: .rect(.bounds), arrowEdge: .top
-        ) {
-            pathList(ancestors)
-                .presentationCompactAdaptation(.popover)
-        }
         .disabled(!enabled)
         .accessibilityLabel("Back")
     }
 
-    /// The path above this scope, outermost first, as 44pt rows.
-    private func pathList(_ ancestors: [Node]) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
-            ForEach(Array(ancestors.enumerated()), id: \.element.id) { i, node in
-                if i > 0 { Divider() }
-                Button {
-                    pathShown = false
-                    setScope(node.id)
-                } label: {
-                    Text(node.text.isEmpty ? "Untitled" : node.text)
-                        .lineLimit(1)
-                        .padding(.horizontal, Space.gutter)
-                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-                        .contentShape(Rectangle())
+    /// The path above this scope, outermost first, as 44pt rows, hung under
+    /// Back while its long-press has it up.
+    ///
+    /// Drawn here rather than as a `.popover`: iOS 26 draws popovers as glass
+    /// with its own large corner radius, and `presentationCornerRadius` does
+    /// not reach them.
+    @ViewBuilder private var pathOverlay: some View {
+        if pathShown, !inTrash, let scope {
+            let ancestors = Array(TreeOps.lineageOf(tree, scope).dropLast())
+            ZStack(alignment: .topLeading) {
+                // A tap anywhere else closes it without doing anything else.
+                Color.clear
+                    .contentShape(Rectangle())
+                    .ignoresSafeArea()
+                    .onTapGesture { pathShown = false }
+
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(Array(ancestors.enumerated()), id: \.element.id) { i, node in
+                        if i > 0 { Divider() }
+                        Button {
+                            pathShown = false
+                            setScope(node.id)
+                        } label: {
+                            Text(node.text.isEmpty ? "Untitled" : node.text)
+                                .lineLimit(1)
+                                .padding(.horizontal, Space.gutter)
+                                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                    }
                 }
-                .buttonStyle(.plain)
+                .frame(minWidth: 180, maxWidth: 280, alignment: .leading)
+                .fixedSize()
+                .background(Color(.secondarySystemGroupedBackground),
+                            in: RoundedRectangle(cornerRadius: 8))
+                .overlay(RoundedRectangle(cornerRadius: 8)
+                    .strokeBorder(Color(.separator), lineWidth: 0.5))
+                .shadow(color: .black.opacity(0.15), radius: 10, y: 4)
+                // Under the header band, its left edge on the gutter under
+                // the chevron.
+                .padding(.top, 44)
+                .padding(.leading, Space.row)
             }
+            .transition(.opacity)
         }
-        .frame(minWidth: 180, maxWidth: 280)
     }
 
     /// One screen's worth of outline, for a given scope.
