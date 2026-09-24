@@ -269,6 +269,11 @@ struct OutlineView: View {
                     // blank would sync — but a typed row should commit rather
                     // than be lost when the app leaves the foreground.
                     if edit.isEditing { stopAdding() }
+                    // Coming back to the app is opening it, and it opens on the
+                    // project, not the sidebar. Unanimated: the slide would
+                    // play in the snapshot iOS takes for the app switcher.
+                    sidebarOpen = false
+                    sidebarPull = 0
                     store.suspend()
                 default: break
                 }
