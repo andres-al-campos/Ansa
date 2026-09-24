@@ -985,7 +985,7 @@ struct OutlineView: View {
         // The directional lock the platform does not hand you. Every gesture
         // here is recognised simultaneously, so none of them takes the touch
         // away from the list — without this a swipe carrying any vertical drift
-        // slid the screen and scrolled the rows at once.
+        // slid the screen (or drew the sidebar in) and scrolled the rows at once.
         //
         // Also while a row is in the air: the drag reads the frames it
         // measured, so a list scrolling under it moves the answer out from
@@ -994,7 +994,7 @@ struct OutlineView: View {
         // `rowSwiping` is set once the pull clears 20pt, the point the gesture
         // has proved it is horizontal — before that a drifting scroll must
         // still be able to scroll.
-        .scrollDisabled(interactive && (backPull > 0 || drag.isActive || rowSwiping))
+        .scrollDisabled(interactive && (backPull > 0 || sidebarPull > 0 || drag.isActive || rowSwiping))
         // Put the list back where it was when this scope was last left.
         //
         // Unanimated, so the position is already right on the first frame
