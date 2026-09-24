@@ -3499,14 +3499,12 @@ private struct OutlineRow: View {
     /// `listRowInsets` is zeroed so a guide segment can fill its row, which
     /// takes the leading margin with it. This puts it back.
     ///
-    /// The value is the row's own internal rhythm applied to its outside edge:
-    /// the gap from the bullet's disk to the checkbox is 13pt of empty bullet
-    /// frame, the 10pt stack spacing, and 6.5pt of empty checkbox frame — about
-    /// 30pt. Matching it here means the first mark is as far from the edge as it
-    /// is from its neighbour, so nothing in the row is more crowded than the
-    /// rest of it. The disk sits 13pt into its own frame, so the padding is the
-    /// remainder.
-    static let railInset: CGFloat = 17
+    /// Set by the sidebar button below the list, not by the row: the guides
+    /// run down behind that button, and at an arbitrary inset they crossed it
+    /// at arbitrary points. This puts the second-level guide through its
+    /// centre, and since the button is 52 wide and the guides are 20 apart,
+    /// the first and third fall 6pt inside its two edges.
+    static let railInset: CGFloat = Space.corner + 52 / 2 - 16 - indent
 
     /// A single-line row's content height, without the row's own vertical
     /// padding. Only a fallback for a row `List` has not measured yet — the
