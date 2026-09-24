@@ -451,6 +451,22 @@ struct OutlineView: View {
                     }
                 }
 
+                // Only below a project's top level; a project is already one.
+                // The task leaves its parent with everything under it, lands
+                // at the bottom of the project list the way a new project
+                // does, and you stay on it — now at a project's top level, so
+                // Back greys out. Things 3's name for the same move.
+                if node.parentId != nil {
+                    Button("Convert to Project", systemImage: "folder") {
+                        apply(.moveNode(
+                            id: id, parentId: nil,
+                            index: TreeOps.roots(tree).count))
+                        // Nothing above it any more, so no trail back into
+                        // the project it came from.
+                        backTrail.removeAll()
+                    }
+                }
+
                 // No divider. Red says which one this is, and the alert is
                 // what actually guards it.
                 Button("Delete", systemImage: "trash", role: .destructive) {
