@@ -428,7 +428,7 @@ struct OutlineView: View {
         if let op { apply(op) }
     }
 
-    /// Move, rename, pin and delete, aimed at the scope itself.
+    /// Rename, pin, move and delete, aimed at the scope itself.
     ///
     /// Ellipsis rather than a named glyph: the actions have nothing in
     /// common to name, and iOS spells "more, on this thing" this way
@@ -436,13 +436,6 @@ struct OutlineView: View {
     @ViewBuilder private var scopeMenu: some View {
         if let id = scope, let node = TreeOps.byId(tree, id) {
             Menu {
-                // Its own box rather than a submenu: the menu closes and the
-                // places come up in the middle of the screen. Hidden when
-                // there is nowhere to go — a lone project.
-                if !moveTargets(for: node).isEmpty || node.parentId != nil {
-                    Button("Move to…", systemImage: "folder") { showMove(id) }
-                }
-
                 Button("Rename", systemImage: "pencil") {
                     renameText = node.text
                     renamingScope = id
@@ -465,6 +458,13 @@ struct OutlineView: View {
                     } icon: {
                         Image(uiImage: PinIcon.image(over: node.pinned == true))
                     }
+                }
+
+                // Its own box rather than a submenu: the menu closes and the
+                // places come up in the middle of the screen. Hidden when
+                // there is nowhere to go — a lone project.
+                if !moveTargets(for: node).isEmpty || node.parentId != nil {
+                    Button("Move to…", systemImage: "folder") { showMove(id) }
                 }
 
                 // No divider. Red says which one this is, and the alert is
