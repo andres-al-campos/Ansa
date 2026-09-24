@@ -72,6 +72,9 @@ struct OutlineView: View {
     /// How far an edge swipe at a project's top level has drawn the sidebar in,
     /// in points. 0 when no such swipe is running.
     @State private var sidebarPull: CGFloat = 0
+    /// How far a leftward swipe on the open sidebar has pushed it back, in
+    /// points, 0 or negative. The closing counterpart of `sidebarPull`.
+    @State private var sidebarPush: CGFloat = 0
 
     /// Whether Back's long-press has the path up.
     @State private var pathShown = false
@@ -280,6 +283,7 @@ struct OutlineView: View {
                     // play in the snapshot iOS takes for the app switcher.
                     sidebarOpen = false
                     sidebarPull = 0
+                    sidebarPush = 0
                     store.suspend()
                 default: break
                 }
@@ -1061,7 +1065,9 @@ struct OutlineView: View {
     /// can draw it in under the finger rather than waiting for it to be built.
     @ViewBuilder private var sidebar: some View {
         let shown = sidebarShown
-        let progress = shown ? 1 : sidebarPull / max(sidebarWidth, 1)
+        let progress = shown
+            ? 1 + sidebarPush / max(sidebarWidth, 1)
+            : sidebarPull / max(sidebarWidth, 1)
         ZStack(alignment: .leading) {
             // Dims what is behind and closes on a tap. Not with no scope, where
             // there is nothing behind to go back to — `closeSidebar` leaves it
@@ -1082,10 +1088,32 @@ struct OutlineView: View {
                 .shadow(color: .black.opacity(0.18 * progress), radius: 8, x: 3)
                 // Clear of the edge by the shadow's reach, or its glow shows at
                 // the screen's left edge while closed.
-                .offset(x: shown ? 0 : sidebarPull - sidebarWidth - 16)
+                .offset(x: shown ? sidebarPush : sidebarPull - sidebarWidth - 16)
                 .allowsHitTesting(shown)
                 .accessibilityHidden(!shown)
         }
+        // Swipe left anywhere on it to put it away, under the finger the way
+        // the edge swipe brings it in. Simultaneous so the list still scrolls;
+        // a mostly vertical drag never starts it. Only when opened by hand —
+        // with no scope there is nothing behind it to reveal.
+        .simultaneousGesture(
+            DragGesture(minimumDistance: 20)
+                .onChanged { g in
+                    guard sidebarOpen else { return }
+                    let t = g.translation
+                    if sidebarPush == 0, abs(t.width) < abs(t.height) * 1.5 { return }
+                    sidebarPush = min(0, t.width)
+                }
+                .onEnded { g in
+                    guard sidebarPush < 0 else { return }
+                    if g.translation.width < -backThreshold
+                        || g.predictedEndTranslation.width < -sidebarWidth / 2
+                    {
+                        closeSidebar()
+                    } else {
+                        withAnimation(.easeOut(duration: 0.22)) { sidebarPush = 0 }
+                    }
+                })
         // No implicit animation keyed on `shown`: at launch the view is built
         // before the last project is restored, so `shown` flips true → false
         // on the way up and the sidebar would slide away over the opening
@@ -1124,7 +1152,6 @@ struct OutlineView: View {
                 // project" — a run of projects is not a thing people do, so
                 // this is a plain commit either way.
                 onSubmit: submitProjectName,
-                onDelete: confirmDeleteProject,
                 onMoveProject: moveProject,
                 onMovePin: movePin,
                 onOpenTrash: { openTrash() })
@@ -2021,7 +2048,10 @@ struct OutlineView: View {
     /// Does nothing visible with no scope, where `sidebarShown` holds it open.
     private func closeSidebar() {
         if sidebarShown, edit.isEditing { commitEdit() }
-        withAnimation(.easeOut(duration: 0.25)) { sidebarOpen = false }
+        withAnimation(.easeOut(duration: 0.25)) {
+            sidebarOpen = false
+            sidebarPush = 0
+        }
     }
 
     /// Open a project: zoom in, and record that it was opened.
@@ -2498,10 +2528,6 @@ struct OutlineView: View {
         // otherwise.
         edit.endEdit(rememberAnchor: TreeOps.byId(tree, id) == nil ? nil : id)
         if releasingFocus { focusedRow = nil }
-    }
-
-    private func confirmDeleteProject(_ id: NodeId) {
-        pendingDelete = TreeOps.byId(tree, id)
     }
 
     /// Edge-swipe right to leave the current scope.
@@ -3644,7 +3670,6 @@ private struct ProjectGrid: View {
     let onOpen: (NodeId) -> Void
     let onBeginEdit: (Node) -> Void
     let onSubmit: () -> Void
-    let onDelete: (NodeId) -> Void
     /// A project dragged to a new place in the list. Indices are into the
     /// unpinned projects — what this view draws — not into every root.
     let onMoveProject: (IndexSet, Int) -> Void
@@ -3916,8 +3941,7 @@ private struct ProjectGrid: View {
             onSubmit: onSubmit)
             // No context menu. Long-press is the reorder drag here, and a
             // menu on the same press wins it outright — the drag never starts.
-            // Rename lives in the project's own `...`; delete is the swipe
-            // below, which it already was.
+            // Rename and delete live in the project's own `...`.
             // The same insets as a pinned row. Without this the card took
             // the sidebar's defaults while the pinned row declared 16, so the
             // two sections started at different x — the most visible unearned
@@ -3927,18 +3951,9 @@ private struct ProjectGrid: View {
                 EdgeInsets(
                     top: Space.inner, leading: Space.gutter,
                     bottom: Space.inner, trailing: Space.gutter))
-            // Deleting a project takes everything under it, so this
-            // is not the same weight of action as deleting a task.
-            // `role: .destructive` alone would fire on a full swipe
-            // — the confirmation is what stops a project vanishing
-            // from a gesture aimed at the row below.
-            .swipeActions(edge: .trailing) {
-                Button(role: .destructive) {
-                    onDelete(project.id)
-                } label: {
-                    Label("Delete", systemImage: "trash")
-                }
-            }
+            // No swipe to delete. A leftward swipe here closes the sidebar,
+            // and the two on one row put a project a short thumb away from
+            // the trash. Delete is in the project's own `...`.
     }
 }
 
