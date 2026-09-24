@@ -3576,8 +3576,11 @@ private struct OutlineRow: View {
             // columns plus the gap) and 16.5 to the text (6.5 + 10). The
             // leading pull still leaves 0.5 between this tap column and the
             // bullet's.
+            //
+            // The trailing is 1 short of the 20: a letter carries ~1pt of its
+            // own space before the ink, so the visible gap lands on 20.
             .padding(.leading, -9.5)
-            .padding(.trailing, 3.5)
+            .padding(.trailing, 2.5)
 
             // Tap the label to rename in place. The field replaces the text
             // rather than sitting beside it, so the row does not reflow when
