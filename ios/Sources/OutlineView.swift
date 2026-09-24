@@ -613,11 +613,7 @@ struct OutlineView: View {
                 }
                 .frame(minWidth: 180, maxWidth: 280, alignment: .leading)
                 .fixedSize()
-                .background(Color(.secondarySystemGroupedBackground),
-                            in: RoundedRectangle(cornerRadius: 8))
-                .overlay(RoundedRectangle(cornerRadius: 8)
-                    .strokeBorder(Color(.separator), lineWidth: 0.5))
-                .shadow(color: .black.opacity(0.15), radius: 10, y: 4)
+                .modifier(PathBoxSurface())
                 // Under the header band, its left edge on the gutter under
                 // the chevron.
                 .padding(.top, 44)
@@ -2793,6 +2789,23 @@ private struct CaptureButtonSurface: ViewModifier {
             content
                 .background(Circle().fill(.regularMaterial))
                 .shadow(color: .black.opacity(0.12), radius: 6, y: 2)
+        }
+    }
+}
+
+/// Back's path box: Liquid Glass where the OS has it, a plain card elsewhere.
+/// The same availability fork as `CaptureButtonSurface`, at the box's 8pt
+/// corner rather than the glass popover's own.
+private struct PathBoxSurface: ViewModifier {
+    func body(content: Content) -> some View {
+        let shape = RoundedRectangle(cornerRadius: 8)
+        if #available(iOS 26, *) {
+            content.glassEffect(.regular, in: shape)
+        } else {
+            content
+                .background(Color(.secondarySystemGroupedBackground), in: shape)
+                .overlay(shape.strokeBorder(Color(.separator), lineWidth: 0.5))
+                .shadow(color: .black.opacity(0.15), radius: 10, y: 4)
         }
     }
 }
