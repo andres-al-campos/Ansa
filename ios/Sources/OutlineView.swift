@@ -573,7 +573,7 @@ struct OutlineView: View {
             LongPressGesture(minimumDuration: 0.4).onEnded { _ in
                 guard interactive, !ancestors.isEmpty else { return }
                 backHeld = true
-                pathShown = true
+                showPath()
             })
         .disabled(!enabled)
         .accessibilityLabel("Back")
@@ -586,26 +586,30 @@ struct OutlineView: View {
     /// with its own large corner radius, and `presentationCornerRadius` does
     /// not reach them.
     @ViewBuilder private var pathOverlay: some View {
-        if pathShown, !inTrash, let scope {
-            let ancestors = Array(TreeOps.lineageOf(tree, scope).dropLast())
-            ZStack(alignment: .topLeading) {
+        // The ZStack stays and its children come and go, so each one gets its
+        // own transition. Behind a single `if` around the whole thing, only
+        // the outer view's transition would run.
+        ZStack(alignment: .topLeading) {
+            if pathShown, !inTrash, let scope {
+                let ancestors = Array(TreeOps.lineageOf(tree, scope).dropLast())
                 // A tap anywhere else closes it without doing anything else.
                 Color.clear
                     .contentShape(Rectangle())
                     .ignoresSafeArea()
-                    .onTapGesture { pathShown = false }
+                    .onTapGesture { hidePath() }
 
                 VStack(alignment: .leading, spacing: 0) {
                     ForEach(Array(ancestors.enumerated()), id: \.element.id) { i, node in
                         if i > 0 { Divider() }
                         Button {
-                            pathShown = false
+                            hidePath()
                             setScope(node.id)
                         } label: {
                             Text(node.text.isEmpty ? "Untitled" : node.text)
                                 .lineLimit(1)
                                 .padding(.horizontal, Space.gutter)
-                                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                                .frame(maxWidth: .infinity, minHeight: Space.tap,
+                                       alignment: .leading)
                                 .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
@@ -614,13 +618,23 @@ struct OutlineView: View {
                 .frame(minWidth: 180, maxWidth: 280, alignment: .leading)
                 .fixedSize()
                 .modifier(PathBoxSurface())
+                // Grows out of the chevron above it and shrinks back into it.
+                .transition(.scale(scale: 0.4, anchor: .topLeading)
+                    .combined(with: .opacity))
                 // Under the header band, its left edge on the gutter under
                 // the chevron.
                 .padding(.top, 44)
                 .padding(.leading, Space.row)
             }
-            .transition(.opacity)
         }
+    }
+
+    private func showPath() {
+        withAnimation(.spring(duration: 0.3, bounce: 0.2)) { pathShown = true }
+    }
+
+    private func hidePath() {
+        withAnimation(.easeOut(duration: 0.18)) { pathShown = false }
     }
 
     /// One screen's worth of outline, for a given scope.
