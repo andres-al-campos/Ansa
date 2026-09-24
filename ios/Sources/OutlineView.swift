@@ -73,6 +73,12 @@ struct OutlineView: View {
     /// in points. 0 when no such swipe is running.
     @State private var sidebarPull: CGFloat = 0
 
+    /// Whether Back's long-press has the path up.
+    @State private var pathShown = false
+    /// Set when a long-press on Back opens the path, so the Button's own action
+    /// on the release that follows does not also go back.
+    @State private var backHeld = false
+
     @State private var renamingScope: NodeId?
     @State private var renameText = ""
     @FocusState private var renamingFocus: Bool
@@ -455,9 +461,10 @@ struct OutlineView: View {
                     // sizes the band, not what sits in it. `contentShape` is the
                     // half that matters: the frame alone lays out the space but
                     // still only the glyph takes the tap. Matches the back
-                    // button opposite. Ink pinned 8pt from the screen edge, the
-                    // rest of the 44pt target reaching inward.
-                    .padding(.trailing, Space.row)
+                    // button opposite. Ink on the page's gutter, in line with
+                    // the progress bar, the rest of the 44pt target reaching
+                    // inward.
+                    .padding(.trailing, Space.gutter)
                     .frame(width: 44, height: 44, alignment: .trailing)
                     .contentShape(Rectangle())
             }
@@ -548,26 +555,55 @@ struct OutlineView: View {
         let enabled = interactive && (trash || !ancestors.isEmpty)
         let glyph = Image(systemName: "chevron.left")
             // Same 44pt target as the `...` opposite, for the same reason: a
-            // bare glyph is only as tappable as its ink. Ink 8pt from the edge;
-            // the target extends inward.
-            .padding(.leading, Space.row)
+            // bare glyph is only as tappable as its ink. Ink on the gutter; the
+            // target extends inward.
+            .padding(.leading, Space.gutter)
             .frame(width: 44, height: 44, alignment: .leading)
             .contentShape(Rectangle())
         Button {
+            if backHeld { backHeld = false; return }
             if interactive { zoomOut() }
         } label: { glyph }
-        // A context menu rather than `Menu(primaryAction:)`, which showed the
-        // path on a long-press but dropped the tap — Back did nothing.
-        .contextMenu {
-            // Outermost first — the path read the way it is written.
-            ForEach(ancestors) { node in
-                Button(node.text.isEmpty ? "Untitled" : node.text) {
-                    setScope(node.id)
-                }
-            }
+        // A popover on a long-press, not `.contextMenu`, which lifts and
+        // enlarges the button over the progress bar while the menu is up and
+        // gives no say over row height. `Menu(primaryAction:)` avoided the lift
+        // but dropped the tap.
+        .simultaneousGesture(
+            LongPressGesture(minimumDuration: 0.4).onEnded { _ in
+                guard interactive, !ancestors.isEmpty else { return }
+                backHeld = true
+                pathShown = true
+            })
+        .popover(
+            isPresented: interactive ? $pathShown : .constant(false),
+            attachmentAnchor: .rect(.bounds), arrowEdge: .top
+        ) {
+            pathList(ancestors)
+                .presentationCompactAdaptation(.popover)
         }
         .disabled(!enabled)
         .accessibilityLabel("Back")
+    }
+
+    /// The path above this scope, outermost first, as 44pt rows.
+    private func pathList(_ ancestors: [Node]) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(Array(ancestors.enumerated()), id: \.element.id) { i, node in
+                if i > 0 { Divider() }
+                Button {
+                    pathShown = false
+                    setScope(node.id)
+                } label: {
+                    Text(node.text.isEmpty ? "Untitled" : node.text)
+                        .lineLimit(1)
+                        .padding(.horizontal, Space.gutter)
+                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .frame(minWidth: 180, maxWidth: 280)
     }
 
     /// One screen's worth of outline, for a given scope.
