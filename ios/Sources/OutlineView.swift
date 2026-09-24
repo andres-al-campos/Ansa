@@ -432,6 +432,26 @@ struct OutlineView: View {
     @ViewBuilder private var scopeMenu: some View {
         if let id = scope, let node = TreeOps.byId(tree, id) {
             Menu {
+                // Only below a project's top level; a project is already one.
+                // The task leaves its parent with everything under it, lands
+                // at the bottom of the project list the way a new project
+                // does, and you stay on it — now at a project's top level, so
+                // Back greys out. Things 3's name for the same move.
+                //
+                // First, set apart from the one-word edits below it: in the
+                // middle its longer label broke up the list.
+                if node.parentId != nil {
+                    Button("Convert to Project", systemImage: "folder") {
+                        apply(.moveNode(
+                            id: id, parentId: nil,
+                            index: TreeOps.roots(tree).count))
+                        // Nothing above it any more, so no trail back into
+                        // the project it came from.
+                        backTrail.removeAll()
+                    }
+                    Divider()
+                }
+
                 Button("Rename", systemImage: "pencil") {
                     renameText = node.text
                     renamingScope = id
@@ -453,22 +473,6 @@ struct OutlineView: View {
                         Text(node.pinned == true ? "Unpin" : "Pin")
                     } icon: {
                         Image(uiImage: PinIcon.image(over: node.pinned == true))
-                    }
-                }
-
-                // Only below a project's top level; a project is already one.
-                // The task leaves its parent with everything under it, lands
-                // at the bottom of the project list the way a new project
-                // does, and you stay on it — now at a project's top level, so
-                // Back greys out. Things 3's name for the same move.
-                if node.parentId != nil {
-                    Button("Convert to Project", systemImage: "folder") {
-                        apply(.moveNode(
-                            id: id, parentId: nil,
-                            index: TreeOps.roots(tree).count))
-                        // Nothing above it any more, so no trail back into
-                        // the project it came from.
-                        backTrail.removeAll()
                     }
                 }
 
