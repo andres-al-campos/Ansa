@@ -81,6 +81,9 @@ struct OutlineView: View {
     /// through never starts closing it.
     @State private var sidebarSideways: Bool?
 
+    /// The node the Move to box is choosing a place for, or nil when it is
+    /// down.
+    @State private var moving: NodeId?
     /// Whether Back's long-press has the path up.
     @State private var pathShown = false
     /// Set when a long-press on Back opens the path, so the Button's own action
@@ -382,6 +385,7 @@ struct OutlineView: View {
             // that draws it in is attached to the same view it moves.
             sidebar
             pathOverlay
+            moveOverlay
             }
             // Simultaneous, not exclusive. Attached plainly this broke the row
             // drag on a real phone: an ancestor `DragGesture` recognises at 20pt
@@ -424,7 +428,7 @@ struct OutlineView: View {
         if let op { apply(op) }
     }
 
-    /// Rename, pin, convert and delete, aimed at the scope itself.
+    /// Move, rename, pin and delete, aimed at the scope itself.
     ///
     /// Ellipsis rather than a named glyph: the actions have nothing in
     /// common to name, and iOS spells "more, on this thing" this way
@@ -432,24 +436,11 @@ struct OutlineView: View {
     @ViewBuilder private var scopeMenu: some View {
         if let id = scope, let node = TreeOps.byId(tree, id) {
             Menu {
-                // Only below a project's top level; a project is already one.
-                // The task leaves its parent with everything under it, lands
-                // at the bottom of the project list the way a new project
-                // does, and you stay on it — now at a project's top level, so
-                // Back greys out. Things 3's name for the same move.
-                //
-                // First, set apart from the one-word edits below it: in the
-                // middle its longer label broke up the list.
-                if node.parentId != nil {
-                    Button("Convert to Project", systemImage: "folder") {
-                        apply(.moveNode(
-                            id: id, parentId: nil,
-                            index: TreeOps.roots(tree).count))
-                        // Nothing above it any more, so no trail back into
-                        // the project it came from.
-                        backTrail.removeAll()
-                    }
-                    Divider()
+                // Its own box rather than a submenu: the menu closes and the
+                // places come up in the middle of the screen. Hidden when
+                // there is nowhere to go — a lone project.
+                if !moveTargets(for: node).isEmpty || node.parentId != nil {
+                    Button("Move to…", systemImage: "folder") { showMove(id) }
                 }
 
                 Button("Rename", systemImage: "pencil") {
@@ -664,6 +655,102 @@ struct OutlineView: View {
 
     private func hidePath() {
         withAnimation(.easeOut(duration: 0.18)) { pathShown = false }
+    }
+
+    /// The projects a node can move into, in the sidebar's order: pinned
+    /// projects first, then the rest. Leaves out the node itself, and the
+    /// project it already sits at the top of, where the move would change
+    /// nothing.
+    private func moveTargets(for node: Node) -> [Node] {
+        let pinned = TreeOps.pinnedItems(tree).filter { $0.trail.isEmpty }.map(\.node)
+        let rest = TreeOps.projectSections(tree).unpinned
+        return (pinned + rest).filter { $0.id != node.id && $0.id != node.parentId }
+    }
+
+    /// Where the ⋯ menu's Move to lands: New Project, then every project it
+    /// could go into. Either one drops it at the bottom of that level, and you
+    /// stay on whatever you were looking at.
+    ///
+    /// New Project is the old Convert to Project, and only for a task — a
+    /// project already is one. Picking a project for a project makes it a task
+    /// there, the way back from New Project.
+    @ViewBuilder private var moveOverlay: some View {
+        GeometryReader { geo in
+            ZStack {
+                if let id = moving, let node = TreeOps.byId(tree, id) {
+                    let targets = moveTargets(for: node)
+                    let canConvert = node.parentId != nil
+                    Color.black.opacity(0.15)
+                        .contentShape(Rectangle())
+                        .ignoresSafeArea()
+                        .onTapGesture { hideMove() }
+                        .transition(.opacity)
+
+                    VStack(spacing: 0) {
+                        if canConvert {
+                            moveRow("New Project", systemImage: "plus") {
+                                move(id, into: nil)
+                            }
+                            if !targets.isEmpty { Divider() }
+                        }
+                        // Sized to its rows up to 60% of the screen, then
+                        // scrolls. A ScrollView takes all the height it is
+                        // offered, so the cap is set by hand.
+                        ScrollView {
+                            VStack(spacing: 0) {
+                                ForEach(Array(targets.enumerated()), id: \.element.id) { i, project in
+                                    if i > 0 { Divider() }
+                                    moveRow(project.text.isEmpty ? "Untitled" : project.text) {
+                                        move(id, into: project.id)
+                                    }
+                                }
+                            }
+                        }
+                        .scrollBounceBehavior(.basedOnSize)
+                        .frame(height: min(CGFloat(targets.count) * (Space.tap + 1),
+                                           geo.size.height * 0.6))
+                    }
+                    .frame(width: min(280, geo.size.width - 2 * Space.gutter))
+                    .modifier(PathBoxSurface())
+                    .transition(.scale(scale: 0.85).combined(with: .opacity))
+                }
+            }
+            .frame(width: geo.size.width, height: geo.size.height)
+        }
+    }
+
+    private func moveRow(
+        _ title: String, systemImage: String? = nil, action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            HStack(spacing: Space.block) {
+                if let systemImage { Image(systemName: systemImage) }
+                Text(title).lineLimit(1)
+            }
+            .padding(.horizontal, Space.gutter)
+            .frame(maxWidth: .infinity, minHeight: Space.tap, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func showMove(_ id: NodeId) {
+        withAnimation(.spring(duration: 0.3, bounce: 0.2)) { moving = id }
+    }
+
+    private func hideMove() {
+        withAnimation(.easeOut(duration: 0.18)) { moving = nil }
+    }
+
+    /// To the bottom of `parent`'s top level, or of the project list for nil.
+    private func move(_ id: NodeId, into parent: NodeId?) {
+        hideMove()
+        apply(.moveNode(
+            id: id, parentId: parent,
+            index: TreeOps.childrenOf(tree, parent).count))
+        // The path above it changed, so the trail back no longer leads
+        // anywhere it came from.
+        backTrail.removeAll()
     }
 
     /// One screen's worth of outline, for a given scope.
