@@ -75,6 +75,11 @@ struct OutlineView: View {
     /// How far a leftward swipe on the open sidebar has pushed it back, in
     /// points, 0 or negative. The closing counterpart of `sidebarPull`.
     @State private var sidebarPush: CGFloat = 0
+    /// Which way the running drag on the sidebar was judged to go, decided
+    /// once at 20pt and held until the finger lifts: true sideways, false a
+    /// scroll, nil no drag. Held so a scroll that drifts sideways partway
+    /// through never starts closing it.
+    @State private var sidebarSideways: Bool?
 
     /// Whether Back's long-press has the path up.
     @State private var pathShown = false
@@ -419,9 +424,9 @@ struct OutlineView: View {
         if let op { apply(op) }
     }
 
-    /// Rename, pin and delete, aimed at the scope itself.
+    /// Rename, pin, convert and delete, aimed at the scope itself.
     ///
-    /// Ellipsis rather than a named glyph: the three actions have nothing in
+    /// Ellipsis rather than a named glyph: the actions have nothing in
     /// common to name, and iOS spells "more, on this thing" this way
     /// everywhere else.
     @ViewBuilder private var scopeMenu: some View {
@@ -1110,17 +1115,21 @@ struct OutlineView: View {
         }
         // Swipe left anywhere on it to put it away, under the finger the way
         // the edge swipe brings it in. Simultaneous so the list still scrolls;
-        // a mostly vertical drag never starts it. Only when opened by hand —
+        // the direction is locked at 20pt either way. Only when opened by hand —
         // with no scope there is nothing behind it to reveal.
         .simultaneousGesture(
             DragGesture(minimumDistance: 20)
                 .onChanged { g in
                     guard sidebarOpen else { return }
                     let t = g.translation
-                    if sidebarPush == 0, abs(t.width) < abs(t.height) * 1.5 { return }
+                    if sidebarSideways == nil {
+                        sidebarSideways = abs(t.width) >= abs(t.height) * 1.5
+                    }
+                    guard sidebarSideways == true else { return }
                     sidebarPush = min(0, t.width)
                 }
                 .onEnded { g in
+                    sidebarSideways = nil
                     guard sidebarPush < 0 else { return }
                     if g.translation.width < -backThreshold
                         || g.predictedEndTranslation.width < -sidebarWidth / 2
@@ -1171,6 +1180,9 @@ struct OutlineView: View {
                 onMoveProject: moveProject,
                 onMovePin: movePin,
                 onOpenTrash: { openTrash() })
+                // The other half of the lock: a drag judged sideways holds the
+                // list still, the way the outline's own swipes do.
+                .scrollDisabled(sidebarSideways == true)
         }
     }
 
