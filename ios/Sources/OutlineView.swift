@@ -1019,10 +1019,10 @@ struct OutlineView: View {
                 .allowsHitTesting(shown)
                 .accessibilityHidden(!shown)
         }
-        // Keyed on `shown` alone, so the pull under a finger is not animated
-        // and opening or closing is, whichever path changed it — a tap, a
-        // released swipe, or a project opened from the list.
-        .animation(.easeOut(duration: 0.25), value: shown)
+        // No implicit animation keyed on `shown`: at launch the view is built
+        // before the last project is restored, so `shown` flips true → false
+        // on the way up and the sidebar would slide away over the opening
+        // app. Opening and closing animate in `openSidebar`/`closeSidebar`.
     }
 
     private var sidebarPanel: some View {
@@ -1306,8 +1306,11 @@ struct OutlineView: View {
 
     /// Whether the sidebar is on screen. Held open with no scope, since there
     /// is nothing under it to go back to: a launch with no projects, or the
-    /// project you were in deleted.
-    private var sidebarShown: Bool { sidebarOpen || (scope == nil && !inTrash) }
+    /// project you were in deleted. Only once there is a tree, though: before
+    /// the first one arrives, no scope means "not restored yet".
+    private var sidebarShown: Bool {
+        sidebarOpen || (scope == nil && !inTrash && (store.loaded || !tree.isEmpty))
+    }
 
     /// Whether an edge swipe here draws the sidebar in rather than going back.
     private var swipeOpensSidebar: Bool { !canGoBack && !sidebarShown }
