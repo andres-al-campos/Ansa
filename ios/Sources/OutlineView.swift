@@ -2751,8 +2751,15 @@ struct OutlineView: View {
                 // underneath. The reset is unanimated and rides with the scope
                 // change, so the incoming view is in place the frame it
                 // appears.
-                withAnimation(.easeOut(duration: 0.18)) { backPull = slideOut }
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.18) {
+                //
+                // On the animation's completion, not a timer of the same
+                // length. The timer fired a frame or two early, and an
+                // animation still in flight keeps playing out its remainder on
+                // top of the new value: the incoming view drew ~60pt left of
+                // its place and slid back.
+                withAnimation(.easeOut(duration: 0.18)) {
+                    backPull = slideOut
+                } completion: {
                     var t = Transaction()
                     t.disablesAnimations = true
                     withTransaction(t) {
