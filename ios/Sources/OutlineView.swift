@@ -80,6 +80,10 @@ struct OutlineView: View {
     /// scroll, nil no drag. Held so a scroll that drifts sideways partway
     /// through never starts closing it.
     @State private var sidebarSideways: Bool?
+    /// When the last sideways drag on the sidebar lifted. A row under the
+    /// finger takes that lift as a tap too, and SwiftUI does not say which of
+    /// the two it handles first — so a tap this close after one is dropped.
+    @State private var sidebarSwipeEnded = Date.distantPast
 
     /// The node the Move to box is choosing a place for, or nil when it is
     /// down.
@@ -1220,6 +1224,7 @@ struct OutlineView: View {
                     sidebarPush = min(0, t.width)
                 }
                 .onEnded { g in
+                    if sidebarSideways == true { sidebarSwipeEnded = .now }
                     sidebarSideways = nil
                     guard sidebarPush < 0 else { return }
                     if g.translation.width < -backThreshold
@@ -1234,6 +1239,11 @@ struct OutlineView: View {
         // before the last project is restored, so `shown` flips true → false
         // on the way up and the sidebar would slide away over the opening
         // app. Opening and closing animate in `openSidebar`/`closeSidebar`.
+    }
+
+    /// A drag on the sidebar is under way sideways, or has just lifted.
+    private var sidebarSwiped: Bool {
+        sidebarSideways == true || Date.now.timeIntervalSince(sidebarSwipeEnded) < 0.3
     }
 
     private var sidebarPanel: some View {
@@ -1262,7 +1272,9 @@ struct OutlineView: View {
                 tree: tree, loaded: store.loaded,
                 editing: edit.editing, editText: $edit.text,
                 focused: $focusedRow,
-                onOpen: openProject,
+                // Deaf to the lift that ends a swipe, which a row counts as a
+                // tap whether the swipe closed the sidebar or not.
+                onOpen: { if !sidebarSwiped { openProject($0) } },
                 onBeginEdit: beginEdit,
                 // Return on a project name means "done naming", not "next
                 // project" — a run of projects is not a thing people do, so
@@ -1270,7 +1282,7 @@ struct OutlineView: View {
                 onSubmit: submitProjectName,
                 onMoveProject: moveProject,
                 onMovePin: movePin,
-                onOpenTrash: { openTrash() })
+                onOpenTrash: { if !sidebarSwiped { openTrash() } })
                 // The other half of the lock: a drag judged sideways holds the
                 // list still, the way the outline's own swipes do.
                 .scrollDisabled(sidebarSideways == true)
