@@ -251,18 +251,22 @@ struct OutlineView: View {
             // overwrite its geometry. Nothing about the swipe is committed
             // yet, and a screen you might still slide away from should not be
             // able to act.
-            if backPull > 0 {
-                // `inTrash` is read by `slab` itself, so the copy behind a
-                // trash pull has to be drawn with it already false — otherwise
-                // the screen revealed is a second trash. Back from the trash
-                // lands on the scope it was opened over, which is still `scope`.
-                slab(for: inTrash ? scope : peekBack.scope,
-                     interactive: false, trash: false,
-                     restoring: inTrash ? nil : peekBack.at)
-                // Over the revealed screen, under the one being lifted off it.
-                backdrop
+            //
+            // Identified by the screen they show, not by their place in the
+            // stack. When a back swipe lands, the copy behind is already the
+            // screen being landed on, fully drawn — keyed this way it *becomes*
+            // the live slab rather than being thrown away while the live one
+            // rebuilds the same rows from nothing, which drew a frame of
+            // half-filled list: a flicker with nothing moving.
+            ZStack {
+                ForEach(slabLayers, id: \.key) { layer in
+                    slab(for: layer.scope, interactive: layer.live,
+                         trash: layer.trash, restoring: layer.restoring)
+                    // Over the revealed screen, under the one being lifted
+                    // off it.
+                    if !layer.live { backdrop }
+                }
             }
-            slab(for: scope, interactive: true, trash: inTrash, restoring: restore)
             .background {
                 GeometryReader { geo in
                     Color.clear
@@ -2925,6 +2929,22 @@ struct OutlineView: View {
     /// Deleted scopes are skipped rather than landed on: a trail outlives the
     /// nodes in it, and stepping back into something that is gone shows an
     /// empty screen that reads as the app failing.
+    /// Bottom to top. The layer behind exists only while a back swipe is
+    /// pulled; the two keys never match, since back always changes the scope
+    /// or leaves the trash.
+    private var slabLayers: [SlabLayer] {
+        let live = SlabLayer(scope: scope, trash: inTrash, live: true, restoring: restore)
+        guard backPull > 0 else { return [live] }
+        // `inTrash` is read by `slab` itself, so the copy behind a trash pull
+        // has to be drawn with it already false — otherwise the screen
+        // revealed is a second trash. Back from the trash lands on the scope
+        // it was opened over, which is still `scope`.
+        let behind = SlabLayer(
+            scope: inTrash ? scope : peekBack.scope, trash: false, live: false,
+            restoring: inTrash ? nil : peekBack.at)
+        return [behind, live]
+    }
+
     private var peekBack: BackStep {
         for step in backTrail.reversed() {
             // Nor the empty scope. There is no screen there any more, only the
@@ -2998,6 +3018,17 @@ private struct PathBoxSurface: ViewModifier {
 struct ScrollAnchor: Equatable {
     let row: NodeId
     let fraction: CGFloat
+}
+
+/// One of the screens stacked in the body: the live one, and during a back
+/// swipe the one behind it that the swipe will land on.
+struct SlabLayer {
+    let scope: NodeId?
+    let trash: Bool
+    let live: Bool
+    let restoring: ScrollAnchor?
+    /// What the screen shows, which is what carries it across the swap.
+    var key: String { "\(scope ?? "")|\(trash)" }
 }
 
 /// One step of the back trail: the scope, and where the list was looking.
