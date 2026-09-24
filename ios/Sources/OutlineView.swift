@@ -2808,11 +2808,11 @@ private struct CaptureButtonSurface: ViewModifier {
 }
 
 /// Back's path box: Liquid Glass where the OS has it, a plain card elsewhere.
-/// The same availability fork as `CaptureButtonSurface`, at the box's 8pt
+/// The same availability fork as `CaptureButtonSurface`, at the box's 16pt
 /// corner rather than the glass popover's own.
 private struct PathBoxSurface: ViewModifier {
     func body(content: Content) -> some View {
-        let shape = RoundedRectangle(cornerRadius: 8)
+        let shape = RoundedRectangle(cornerRadius: 16)
         if #available(iOS 26, *) {
             content.glassEffect(.regular, in: shape)
         } else {
