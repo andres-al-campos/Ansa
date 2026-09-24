@@ -1133,17 +1133,18 @@ struct OutlineView: View {
         }
         .contentShape(Circle())
         .highPriorityGesture(TapGesture().onEnded { capture() }, including: interactive ? .all : .none)
-        // 36 from both edges, stated once. This rides a `safeAreaInset`, so
+        // `Space.corner` from both edges, stated once. This rides a `safeAreaInset`, so
         // the bottom padding stacks on whatever the system reserves for the
         // home indicator: the same number on both sides sat it ~50 from the
         // bottom and 16 from the right. Subtracting the strip on one side and
         // adding it on the other is what makes the two distances equal on a
         // phone that has one and on a phone that does not.
         //
-        // Clamped at 0 because 36 is less than the ~34pt strip by only 2 — a
-        // deeper inset on some future device would otherwise push the button
-        // down into the swipe-up area rather than stopping at its edge.
-        .padding(.bottom, max(0, Space.corner - homeIndicator))
+        // Not clamped at 0: the corner is less than the ~34pt strip, so the
+        // padding goes negative and the disc dips into the strip. That is
+        // the point — clamping held it at 34 from the bottom and 24 from the
+        // side, which is the unequal pair this exists to prevent.
+        .padding(.bottom, Space.corner - homeIndicator)
         .padding(.trailing, Space.corner)
         .accessibilityLabel("Add a task")
     }
@@ -1169,7 +1170,7 @@ struct OutlineView: View {
             .highPriorityGesture(
                 TapGesture().onEnded { openSidebar() },
                 including: interactive ? .all : .none)
-            .padding(.bottom, max(0, Space.corner - homeIndicator))
+            .padding(.bottom, Space.corner - homeIndicator)
             .padding(.leading, Space.corner)
             .accessibilityLabel("Show projects")
             .accessibilityAddTraits(.isButton)
@@ -3354,7 +3355,11 @@ enum Space {
     /// left edge measures from here.
     static let gutter: CGFloat = 16
     /// How far a corner control sits from the two screen edges it floats over.
-    static let corner: CGFloat = 36
+    ///
+    /// 24 lines the sidebar button's disc up with the outer edge of a
+    /// bullet's ring above it (17 inset + 7 to the ring inside its 32pt
+    /// column). 36 left the pair standing out in the open.
+    static let corner: CGFloat = 24
 }
 
 private struct OutlineRow: View {
