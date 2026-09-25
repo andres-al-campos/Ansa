@@ -1465,10 +1465,11 @@ struct OutlineView: View {
         }
         .disabled(!interactive)
         .accessibilityLabel("Done")
-        // As far from the side as from the keyboard. Not `Space.corner`:
-        // these ride above the keyboard, clear of the screen's rounded
-        // corners, so there is nothing to hold them that far in.
-        .padding(.trailing, Space.row)
+        // 12 from the side, a little more than the 8 above the keyboard:
+        // matching the two at 8 put them tight against the edge. Not
+        // `Space.corner`: these ride above the keyboard, clear of the
+        // screen's rounded corners, so nothing holds them that far in.
+        .padding(.trailing, 12)
         .padding(.bottom, Space.row)
     }
 
@@ -1508,7 +1509,7 @@ struct OutlineView: View {
         // floating over the list rather than glyphs loose on the page.
         .background(.thinMaterial, in: Capsule())
         // The Done button's spacing, mirrored — see there.
-        .padding(.leading, Space.row)
+        .padding(.leading, 12)
         .padding(.bottom, Space.row)
     }
 
