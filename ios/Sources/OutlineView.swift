@@ -2205,7 +2205,17 @@ struct OutlineView: View {
             backTrail.append(BackStep(scope: scope, at: topRowAnchor()))
             if backTrail.count > 200 { backTrail.removeFirst() }
         }
+        // Going *into* a place stamps it as just-visited, which is what
+        // Recently visited and resume read. Going up (home, a breadcrumb to an
+        // ancestor, the fallback when a scope is deleted) stamps nothing, so
+        // passing back through a parent doesn't count as visiting it. The same
+        // rule as the web's `setScope`.
+        let goingUp = id == nil
+            || (scope.map { here in TreeOps.lineageOf(tree, here).contains { $0.id == id } } ?? false)
         scope = id
+        if let id, !goingUp {
+            apply(.markOpened(id: id, at: Date().timeIntervalSince1970 * 1000))
+        }
     }
 
     /// Go to the trash.
@@ -2249,14 +2259,12 @@ struct OutlineView: View {
     /// the instant this device opened it rather than whenever the write landed.
     /// Matches `openProject` in `src/Outliner.tsx`.
     private func openProject(_ id: NodeId) {
-        // The run and the anchor are cleared by `setScope`, which every
-        // navigation goes through.
+        // The run, the anchor and the visit stamp are all handled by
+        // `setScope`, which every navigation goes through.
         // Out of the trash too: a project opened from the sidebar is where you
         // are going, and the trash sitting over it would hide it.
         inTrash = false
         setScope(id)
-        let root = TreeOps.lineageOf(tree, id).first?.id ?? id
-        apply(.markOpened(id: root, at: Date().timeIntervalSince1970 * 1000))
         closeSidebar()
     }
 

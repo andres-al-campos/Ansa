@@ -903,3 +903,26 @@ test('a frame from a server that predates fingerprints is still a tree', async (
   expect(container.querySelectorAll('button.proj').length).toBeGreaterThan(0)
   expect(fetchTree).not.toHaveBeenCalled()
 })
+
+test('going into a place stamps it; going back up stamps nothing', async () => {
+  const { default: Outliner } = await import('./Outliner')
+  const seed = seedTree()
+  const byText = (t: RegExp) => seed.find((n) => t.test(n.text))!.id
+  const { container } = render(<Outliner initial={seed} />)
+  const stream = await streamOpen()
+  await act(async () => {
+    stream.emit(seed)
+  })
+
+  const proj = [...container.querySelectorAll('button.proj')].find((b) => /tax return/i.test(b.textContent ?? ''))!
+  await act(async () => (proj as HTMLElement).click())
+  const zoom = container.querySelector('[aria-label="Zoom into Gather the documents"]') as HTMLElement
+  await act(async () => zoom.click())
+  // Up to the project by its breadcrumb, then home: neither is a visit.
+  const crumbs = () => [...container.querySelectorAll('nav.crumbs button')] as HTMLElement[]
+  await act(async () => crumbs().find((b) => /tax return/i.test(b.textContent ?? ''))!.click())
+  await act(async () => crumbs().find((b) => b.textContent === 'Projects')!.click())
+
+  const stamped = sendOp.mock.calls.map(([op]) => op).filter((op) => op.op === 'markOpened')
+  expect(stamped.map((op) => 'id' in op && op.id)).toEqual([byText(/tax return/), byText(/Gather the documents/)])
+})

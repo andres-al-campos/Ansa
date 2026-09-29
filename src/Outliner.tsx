@@ -413,10 +413,23 @@ export default function Outliner({ initial }: { initial: Tree }) {
     })
   }, [applyLoc])
 
-  const setScope = useCallback(
-    (id: NodeId | null) => navigate({ scope: id, trash: false }),
-    [navigate],
-  )
+  // Every user navigation goes through here. Going *into* a place stamps it as
+  // just-visited, which is what Recently visited and resume read. Going up
+  // (home, a breadcrumb to an ancestor, the fallback when a scope is deleted)
+  // stamps nothing, so passing back through a parent doesn't count as visiting
+  // it. Written without a history checkpoint, since a visit isn't an edit you'd
+  // want to undo, and off the latest tree so a project created in the same
+  // handler is stamped too.
+  function setScope(id: NodeId | null) {
+    const goingUp = id === null || (scope !== null && lineageOf(tree, scope).some((n) => n.id === id))
+    navigate({ scope: id, trash: false })
+    if (goingUp) return
+    // The timestamp travels with the op so the server stores the same instant
+    // this tab did, rather than whenever the write happened to arrive.
+    const at = Date.now()
+    setHistory((h) => ({ ...h, present: markOpened(h.present, id, at) }))
+    sendOps({ op: 'markOpened', id, at })
+  }
 
   // Dormant view filters. Their sidebar toggles were removed — zoom-to-scope,
   // collapse, and Trash cover what they did — but the render still threads them
@@ -426,16 +439,9 @@ export default function Outliner({ initial }: { initial: Tree }) {
   const leafOnly = false
   const hideDone = false
 
-  // Enter a project: scope into it and stamp it as just-opened so it rises in
-  // Recents. Only roots carry the stamp, and it's written without a history
-  // checkpoint — visiting a project isn't an edit you'd want to undo.
+  // Enter a project or a pinned task from the sidebar. setScope stamps it.
   function openProject(id: NodeId) {
     setScope(id)
-    const root = lineageOf(tree, id)[0]?.id ?? id
-    // The timestamp travels with the op so the server stores the same instant
-    // this tab did, rather than whenever the write happened to arrive.
-    const at = Date.now()
-    setPresent(markOpened(tree, root, at), { op: 'markOpened', id: root, at })
   }
   // Sidebar shown or collapsed, toggled from the desktop toolbar. Persisted so
   // the choice survives a reload; desktop-only, so a plain web tab never reads
