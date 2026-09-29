@@ -3823,17 +3823,21 @@ private struct Checkbox: View {
     /// neither. Everything that is not a done state still follows the accent.
     private var fill: Color { groupDone ? DonePalette.group : DonePalette.task }
 
+    @ScaledMetric(relativeTo: .body) private var growth: CGFloat = 1
+    private var k: CGFloat { min(growth, Bullet.maxGrowth) }
+
     var body: some View {
-        RoundedRectangle(cornerRadius: 5)
-            .strokeBorder(done ? AnyShapeStyle(.clear) : AnyShapeStyle(.secondary), lineWidth: 2)
+        RoundedRectangle(cornerRadius: 5 * k)
+            .strokeBorder(
+                done ? AnyShapeStyle(.clear) : AnyShapeStyle(.secondary), lineWidth: 2 * k)
             .background(
-                RoundedRectangle(cornerRadius: 5)
+                RoundedRectangle(cornerRadius: 5 * k)
                     .fill(done ? AnyShapeStyle(fill) : AnyShapeStyle(.clear)))
-            .frame(width: 19, height: 19)
+            .frame(width: 19 * k, height: 19 * k)
             .overlay {
                 if done {
                     Image(systemName: "checkmark")
-                        .font(.system(size: 11, weight: .bold))
+                        .font(.system(size: 11 * k, weight: .bold))
                         .foregroundStyle(.background)
                 }
             }
@@ -3856,6 +3860,15 @@ private struct Bullet: View {
     /// True while a drop would land inside this row, which lights the mark.
     var lit: Bool = false
 
+    /// How far the marks grow with the text, at most. Both sit in 32pt columns
+    /// that stay put — the depth guides and the drag's indent steps are
+    /// measured in them — so a ring can reach 25pt and still leave a gap to
+    /// the checkbox beside it. The checkbox shares the cap.
+    static let maxGrowth: CGFloat = 1.4
+
+    @ScaledMetric(relativeTo: .body) private var growth: CGFloat = 1
+    private var k: CGFloat { min(growth, Self.maxGrowth) }
+
     var body: some View {
         ZStack {
             if hasChildren {
@@ -3865,29 +3878,29 @@ private struct Bullet: View {
                     Circle()
                         .fill(lit ? AnyShapeStyle(DropPalette.nest)
                                   : AnyShapeStyle(.secondary))
-                        .frame(width: 18, height: 18)
+                        .frame(width: 18 * k, height: 18 * k)
                 } else {
                     Circle()
                         .strokeBorder(lit ? AnyShapeStyle(DropPalette.nest)
                                           : AnyShapeStyle(.secondary),
-                                      lineWidth: 2)
-                        .frame(width: 18, height: 18)
+                                      lineWidth: 2 * k)
+                        .frame(width: 18 * k, height: 18 * k)
                 }
             } else if lit {
                 // A leaf has no surround to light, so it grows the ring the
                 // expanded state already has. Same shape, so the row about to
                 // become a parent previews what it is about to look like.
                 Circle()
-                    .strokeBorder(DropPalette.nest, lineWidth: 2)
-                    .frame(width: 18, height: 18)
+                    .strokeBorder(DropPalette.nest, lineWidth: 2 * k)
+                    .frame(width: 18 * k, height: 18 * k)
             }
             // Never lit. The dot is the one part that means the same thing in
             // every state, and a brass dot on a brass disc would erase it.
             Circle()
                 .fill(.primary)
-                .frame(width: 6, height: 6)
+                .frame(width: 6 * k, height: 6 * k)
         }
-        .frame(width: 18, height: 18)
+        .frame(width: 18 * k, height: 18 * k)
         .animation(.easeOut(duration: 0.12), value: lit)
     }
 }
