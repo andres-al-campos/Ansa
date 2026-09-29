@@ -662,6 +662,9 @@ struct OutlineView: View {
     }
 
     private func hidePath() {
+        // The release after the long-press doesn't always reach the Button, and
+        // a `backHeld` left set swallows the next real tap on Back.
+        backHeld = false
         withAnimation(.easeOut(duration: 0.18)) { pathShown = false }
     }
 
