@@ -4233,6 +4233,16 @@ private struct SectionHeader: View {
         .foregroundStyle(.secondary)
         .textCase(nil)
         .font(.subheadline.weight(.semibold))
+        // The page's own grey, out past the insets to the header's full span.
+        // A `.plain` list pins its headers over a translucent ground, so a row
+        // scrolling under read through the title. `.listRowBackground` does not
+        // reach a header.
+        .background(
+            Color(.systemGroupedBackground)
+                .padding(
+                    EdgeInsets(
+                        top: -Space.sectionBreak, leading: -Space.gutter,
+                        bottom: -Space.row, trailing: -Space.gutter)))
         .listRowInsets(
             EdgeInsets(
                 top: Space.sectionBreak, leading: Space.gutter,
