@@ -4391,6 +4391,9 @@ private struct PinnedTaskRow: View {
     let progress: TreeOps.Progress
     let onOpen: () -> Void
 
+    /// For the name's line limit, which follows `ProjectRow`'s.
+    @Environment(\.dynamicTypeSize) private var typeSize
+
     var body: some View {
         Button(action: onOpen) {
             HStack(spacing: 6) {
@@ -4402,7 +4405,7 @@ private struct PinnedTaskRow: View {
                     Text(node.text.isEmpty ? "Untitled" : node.text)
                         .font(.body.weight(.medium))
                         .foregroundStyle(.primary)
-                        .lineLimit(1)
+                        .lineLimit(typeSize.isAccessibilitySize ? 2 : 1)
 
                     // The project, not the whole trail. The name needs
                     // somewhere to live — "Total the receipts" says nothing
@@ -4462,6 +4465,13 @@ private struct ProjectRow: View {
 
     private var complete: Bool { progress.pct == 100 }
 
+    @Environment(\.dynamicTypeSize) private var typeSize
+
+    /// Two lines at the accessibility sizes, where one held "Project…" and the
+    /// sidebar's width can fit no more. One everywhere else, so a long name
+    /// does not make its row taller than the rest.
+    private var nameLines: Int { typeSize.isAccessibilitySize ? 2 : 1 }
+
     @ViewBuilder var body: some View {
         // Only a Button when it is not being renamed. A TextField inside a
         // Button never sees the tap that would place the caret — the Button
@@ -4501,25 +4511,22 @@ private struct ProjectRow: View {
                         Text(project.text.isEmpty ? "Untitled" : project.text)
                             .font(.body.weight(.medium))
                             .foregroundStyle(.primary)
-                            .lineLimit(1)
+                            .lineLimit(nameLines)
                     }
-                    Spacer(minLength: 8)
-                    Text(complete ? "All done" : "\(progress.done)/\(progress.total)")
-                        .font(.caption.monospacedDigit())
-                        .foregroundStyle(
-                            complete ? AnyShapeStyle(Color.done) : AnyShapeStyle(.secondary))
+                    if !stacked {
+                        Spacer(minLength: 8)
+                        count
+                    }
                 }
 
-                Capsule()
-                    .fill(.quaternary)
-                    .frame(height: 4)
-                    .overlay(alignment: .leading) {
-                        GeometryReader { geo in
-                            Capsule()
-                                .fill(complete ? Color.done : Color.accentColor)
-                                .frame(width: geo.size.width * CGFloat(progress.pct) / 100)
-                        }
+                if stacked {
+                    HStack(spacing: 8) {
+                        bar
+                        count
                     }
+                } else {
+                    bar
+                }
             }
         // The three row kinds hold different things and so come out different
         // heights on content alone. A shared minimum levels them and gives each
@@ -4527,6 +4534,32 @@ private struct ProjectRow: View {
         // more still take it.
         .frame(minHeight: Space.tap, alignment: .leading)
         .contentShape(Rectangle())
+    }
+
+    /// The count moves down beside the bar at the accessibility sizes. Beside
+    /// the name it took a third of the row there, and the name got what was
+    /// left.
+    private var stacked: Bool { typeSize.isAccessibilitySize }
+
+    private var count: some View {
+        Text(complete ? "All done" : "\(progress.done)/\(progress.total)")
+            .font(.caption.monospacedDigit())
+            .foregroundStyle(
+                complete ? AnyShapeStyle(Color.done) : AnyShapeStyle(.secondary))
+            .fixedSize()
+    }
+
+    private var bar: some View {
+        Capsule()
+            .fill(.quaternary)
+            .frame(height: 4)
+            .overlay(alignment: .leading) {
+                GeometryReader { geo in
+                    Capsule()
+                        .fill(complete ? Color.done : Color.accentColor)
+                        .frame(width: geo.size.width * CGFloat(progress.pct) / 100)
+                }
+            }
     }
 }
 
