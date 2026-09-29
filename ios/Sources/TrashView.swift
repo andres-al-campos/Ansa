@@ -91,13 +91,17 @@ struct TrashView: View {
                                 // the row is too short for both, so "Restore"
                                 // appeared as a bare undo arrow — which means
                                 // "undo the last thing", not "put this back".
-                                .swipeActions(edge: .leading) {
+                                //
+                                // Both on the trailing edge. On the leading
+                                // edge, Restore's full swipe was the same
+                                // motion as the back swipe, so going back from
+                                // over a row also restored it.
+                                .swipeActions(edge: .trailing) {
+                                    // First, so a full swipe restores.
                                     Button("Restore") {
                                         Task { await restore(entry) }
                                     }
                                     .tint(.blue)
-                                }
-                                .swipeActions(edge: .trailing) {
                                     // No `role: .destructive`: that styles the
                                     // button red *and* makes a full swipe fire
                                     // it. `tint` keeps the red without the
