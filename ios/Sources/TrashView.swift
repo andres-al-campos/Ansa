@@ -185,10 +185,17 @@ private struct TrashRow: View {
         VStack(alignment: .leading, spacing: 2) {
             Text(entry.text.isEmpty ? "Untitled" : entry.text)
                 .lineLimit(1)
-            Text(meta)
+            (project + Text(meta).foregroundStyle(.secondary))
                 .font(.caption)
-                .foregroundStyle(.secondary)
         }
+    }
+
+    /// The project leads, a step darker than the rest, as on the web: where a
+    /// row came from places it faster than anything else on the line. Nothing
+    /// for a deleted project, which has no origin to name.
+    private var project: Text {
+        guard let name = entry.projectText, !name.isEmpty else { return Text("") }
+        return Text(name).foregroundStyle(.primary) + Text(" · ").foregroundStyle(.secondary)
     }
 
     private var meta: String {

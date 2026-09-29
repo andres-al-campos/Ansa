@@ -282,6 +282,9 @@ public struct TrashEntry: Decodable, Identifiable, Sendable {
     public let deletedAt: Int
     /// Includes the deleted node itself, so a subtree of one is a plain task.
     public let count: Int
+    /// The project it was deleted from, resolved when the page is read. Nil
+    /// for a deleted project, and for an entry whose project has since gone.
+    public let projectText: String?
 }
 
 /// A page of the trash. `nextCursor` is the `deletedAt` of the last entry
