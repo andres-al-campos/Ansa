@@ -8,6 +8,8 @@ struct AnsaApp: App {
     @State private var clerk: Clerk?
 
     init() {
+        EmptyBackspace.install()
+
         // Configure before anything reads Clerk.shared — reading it first is a
         // hard crash inside ClerkKit, not a nil.
         //

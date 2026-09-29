@@ -908,6 +908,7 @@ struct OutlineView: View {
                     // just opened puts the keyboard down, without Return itself
                     // having to check anything.
                     onSubmit: { submitAdding() },
+                    onBackspaceEmpty: { removeEmptied(row.node.id) },
                     // No-ops behind the swipe. A gesture there could pick
                     // up a row on a screen the user may be about to slide away
                     // from, and its coordinates would be measured against a
@@ -2065,14 +2066,17 @@ struct OutlineView: View {
     /// saving one can only mean you are done. It also spares the user a second
     /// blank row they would then have to get out of.
     ///
-    /// The empty case creates nothing, so there is no blank to clean up.
+    /// The empty case creates nothing, so there is no blank to clean up. A real
+    /// task whose text was cleared goes to the trash, as Enter on an empty row
+    /// does on the web; ending the edit instead would commit the empty text,
+    /// which deletes it for good.
     ///
     /// The `sentinels.count > 1` fallback below is what makes Return work on a
     /// *tapped* row: `beginEdit` mounts no sentinels, so there is no waiting
     /// row to hop to and this commits and opens one the ordinary way.
     private func submitAdding() {
         guard !edit.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            stopAdding()
+            if let id = edit.editing { removeEmptied(id) } else { stopAdding() }
             return
         }
         // The active sentinel becomes a real task, keeping its id. The waiting
@@ -2107,6 +2111,30 @@ struct OutlineView: View {
         focusedRow = next.id
         scrollInto(next.id)
         mintSentinel(after: next.id, depth: depth, anchor: created)
+    }
+
+    /// Backspace or Return on an empty row. Matches `deleteRow` in
+    /// `src/Outliner.tsx`: the row goes to the trash, and the keyboard comes
+    /// down rather than the cursor stepping into the row above, so repeated
+    /// presses cannot work their way up the project.
+    ///
+    /// The trash keeps the name the row had before it was cleared, since the
+    /// clearing was never committed.
+    ///
+    /// A sentinel is not in the tree, so there is nothing to delete and this
+    /// just ends the run.
+    private func removeEmptied(_ id: NodeId) {
+        guard edit.editing == id else { return }
+        if isSentinel(id) {
+            stopAdding()
+            return
+        }
+        // The edit ends before focus is cleared, so the blur that follows
+        // finds nothing to commit. Committing an empty row deletes it for good,
+        // not to the trash.
+        edit.endEdit(rememberAnchor: nil)
+        focusedRow = nil
+        delete(id)
     }
 
     /// A deliberate delete, so the subtree is kept and can be restored.
@@ -3388,6 +3416,8 @@ private struct OutlineRow: View {
     let onBeginEdit: () -> Void
     let onBlur: (NodeId) -> Void
     let onSubmit: () -> Void
+    /// Backspace on this row while it is empty. See `EmptyBackspace`.
+    let onBackspaceEmpty: () -> Void
     /// Drag, reported in global coordinates. The row does not know where the
     /// list starts, so the view that owns the hit-test rebases these.
     let onDragBegan: () -> Void
@@ -3646,6 +3676,13 @@ private struct OutlineRow: View {
                         .onChange(of: focusedRow) { was, now in
                             guard was == node.id, now != node.id else { return }
                             onBlur(node.id)
+                        }
+                        // The notification names no row, so only the focused
+                        // one answers it. The text is checked again because
+                        // the field and the binding can be a frame apart.
+                        .onReceive(NotificationCenter.default.publisher(for: .emptyBackspace)) { _ in
+                            guard focusedRow == node.id, editText.isEmpty else { return }
+                            onBackspaceEmpty()
                         }
                 } else {
                     // A Button, not `.onTapGesture` — inside a List row the
