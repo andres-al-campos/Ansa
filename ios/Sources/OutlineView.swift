@@ -861,6 +861,11 @@ struct OutlineView: View {
                     captureButton(interactive: interactive)
                 }
             }
+            // Room above the buttons while a field is open. The keyboard
+            // scrolls a tapped row only until it clears this inset, which left
+            // a low row's text touching the depth buttons. Empty space, so it
+            // takes no taps from the rows under it.
+            .padding(.top, edit.isEditing ? Space.gutter : 0)
         }
         // Opaque, so the rows behind cannot show through the slab as it
         // moves. A `VStack` paints only what its children paint, and the
