@@ -27,7 +27,7 @@ export interface Node {
   /** manual position on the Pinned shelf. Absent until the pin is dragged, and
    * absent sorts last — see `pinnedItems`. */
   pinOrder?: number
-  /** when this project was last opened, so Recents can sort by it. Root-only. */
+  /** when you last navigated into this node, at any depth. Read by resume and Recently visited. */
   lastOpenedAt?: number
   createdAt: number
 }
@@ -567,7 +567,10 @@ export function setPinOrder(tree: Tree, id: NodeId, order: number): Tree {
   return tree.map((n) => (n.id === id ? { ...n, pinOrder: order } : n))
 }
 
-/** Stamp a project as just-opened, so Recents can sort by last visit. */
+/**
+ * Stamp a place as just-visited. Clients call it whenever you navigate into a
+ * scope, at any depth; Recently visited and `resumeScope` both read it.
+ */
 export function markOpened(tree: Tree, id: NodeId, at: number = Date.now()): Tree {
   return tree.map((n) => (n.id === id ? { ...n, lastOpenedAt: at } : n))
 }
@@ -634,18 +637,19 @@ export function projectList(tree: Tree): Node[] {
  * the desk and it opens the same project. It also needs no new state to keep in
  * step — `markOpened` already stamps this on every visit.
  *
- * Root-level on purpose. It restores the project, not a deep sub-scope, because
- * the project is the unit you navigate by and a stale deep scope is more
+ * The newest stamp can sit at any depth, since every zoom stamps the place it
+ * enters. Resume still lands on that stamp's project, not the deep scope itself,
+ * because the project is the unit you navigate by and a stale deep scope is more
  * disorienting than helpful. Deliberately the whole rule for now: change this
  * one function to change where every client lands, and nothing else moves.
  */
 export function resumeScope(tree: Tree): NodeId | null {
   let best: Node | null = null
-  for (const r of roots(tree)) {
-    if (r.lastOpenedAt === undefined) continue
-    if (best === null || r.lastOpenedAt > best.lastOpenedAt!) best = r
+  for (const n of tree) {
+    if (n.lastOpenedAt === undefined) continue
+    if (best === null || n.lastOpenedAt > best.lastOpenedAt!) best = n
   }
-  return best?.id ?? null
+  return best === null ? null : lineageOf(tree, best.id)[0].id
 }
 
 /** True when `maybeAncestor` is at or above `id` — used to block cyclic moves. */

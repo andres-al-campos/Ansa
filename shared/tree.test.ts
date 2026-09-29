@@ -707,11 +707,14 @@ describe('resumeScope — where to land on open', () => {
     expect(resumeScope([])).toBeNull()
   })
 
-  it('ignores a stamp on a non-root, so a stale deep scope cannot strand you', () => {
-    // markOpened only ever stamps roots, but a hand-edited or migrated tree
-    // could carry one lower down. Resuming into a subtask would drop you
-    // somewhere with no visible context.
-    expect(resumeScope(withOpened({ gather: 900 }))).toBeNull()
+  it('lands on the project of a deep stamp, not the deep scope itself', () => {
+    // Resuming into a subtask would drop you somewhere with no visible context.
+    expect(resumeScope(withOpened({ p2b1: 900 }))).toBe('taxes')
+  })
+
+  it('lets a newer deep stamp beat an older project stamp', () => {
+    expect(resumeScope(withOpened({ flat: 200, gather: 300 }))).toBe('taxes')
+    expect(resumeScope(withOpened({ flat: 400, gather: 300 }))).toBe('flat')
   })
 
   it('ignores projects that have never been opened', () => {

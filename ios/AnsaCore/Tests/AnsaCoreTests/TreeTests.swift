@@ -398,9 +398,15 @@ struct ResumeScopeTests {
         #expect(TreeOps.resumeScope([]) == nil)
     }
 
-    @Test("ignores a stamp on a non-root, so a stale deep scope cannot strand you")
-    func ignoresNonRoot() {
-        #expect(TreeOps.resumeScope(withOpened(["gather": 900])) == nil)
+    @Test("lands on the project of a deep stamp, not the deep scope itself")
+    func deepStampLandsOnProject() {
+        #expect(TreeOps.resumeScope(withOpened(["p2b1": 900])) == "taxes")
+    }
+
+    @Test("lets a newer deep stamp beat an older project stamp")
+    func deepStampBeatsOlderProject() {
+        #expect(TreeOps.resumeScope(withOpened(["flat": 200, "gather": 300])) == "taxes")
+        #expect(TreeOps.resumeScope(withOpened(["flat": 400, "gather": 300])) == "flat")
     }
 
     @Test("ignores projects that have never been opened")

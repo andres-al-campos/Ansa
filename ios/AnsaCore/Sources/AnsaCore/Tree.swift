@@ -30,7 +30,8 @@ public struct Node: Codable, Equatable, Sendable, Identifiable {
     /// manual position on the Pinned shelf. Absent until the pin is dragged,
     /// and absent sorts last — see `pinnedItems`.
     public var pinOrder: Int?
-    /// when this project was last opened, so Recents can sort by it. Root-only.
+    /// when you last navigated into this node, at any depth. Read by resume
+    /// and Recently visited.
     public var lastOpenedAt: Double?
     public var createdAt: Double
 
@@ -517,7 +518,8 @@ public enum TreeOps {
         }
     }
 
-    /// Stamp a project as just-opened, so Recents can sort by last visit.
+    /// Stamp a place as just-visited. Clients call it whenever you navigate
+    /// into a scope, at any depth; Recently visited and `resumeScope` read it.
     public static func markOpened(_ tree: Tree, _ id: NodeId, at: Double) -> Tree {
         tree.map { node in
             guard node.id == id else { return node }
@@ -561,13 +563,15 @@ public enum TreeOps {
 
     /// Where to land on open: the project last worked in, or nil for the home
     /// list. The port of `resumeScope` — see the TypeScript for why it is
-    /// derived from `lastOpenedAt` rather than stored per device.
+    /// derived from `lastOpenedAt` rather than stored per device, and why a
+    /// deep stamp lands on its project rather than on itself.
     public static func resumeScope(_ tree: Tree) -> NodeId? {
         var best: Node?
-        for root in roots(tree) {
-            guard let stamp = root.lastOpenedAt else { continue }
-            if best == nil || stamp > (best?.lastOpenedAt ?? 0) { best = root }
+        for node in tree {
+            guard let stamp = node.lastOpenedAt else { continue }
+            if best == nil || stamp > (best?.lastOpenedAt ?? 0) { best = node }
         }
-        return best?.id
+        guard let best else { return nil }
+        return lineageOf(tree, best.id).first?.id
     }
 }
