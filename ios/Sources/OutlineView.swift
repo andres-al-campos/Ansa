@@ -3565,7 +3565,9 @@ private struct OutlineRow: View {
                 // in there — see `bulletGesture`.
                 .highPriorityGesture(bulletGesture)
 
-            Button(action: onToggleDone) {
+            // Guarded like the text's Button below: a swipe that starts on the
+            // box delivers its tail as a tap, which ticked the task.
+            Button(action: { if !justSwiped { onToggleDone() } }) {
                 Checkbox(done: node.done, groupDone: groupDone)
                     .frame(width: 32, height: 40)
                     .contentShape(Rectangle())
