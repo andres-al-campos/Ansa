@@ -217,6 +217,7 @@ struct OutlineView: View {
         isSentinel(id) && id != activeSentinel
     }
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.colorScheme) private var colorScheme
 
     /// Prepared once rather than per tick: a generator built at the moment of
     /// the tap fires late enough to feel unrelated to the move that caused it.
@@ -1207,6 +1208,17 @@ struct OutlineView: View {
                 .frame(width: sidebarWidth)
                 .frame(maxHeight: .infinity)
                 .background(Color(.systemGroupedBackground).ignoresSafeArea())
+                // Dark mode only. There the panel, the scrim and the shadow are
+                // all black, so nothing marked where the panel ended; in light
+                // mode the grey against the dimmed page already does.
+                .overlay(alignment: .trailing) {
+                    if colorScheme == .dark {
+                        Rectangle()
+                            .fill(Color(.separator))
+                            .frame(width: 0.5)
+                            .ignoresSafeArea()
+                    }
+                }
                 // One shadow for the panel. Without flattening first, every
                 // card and the top row cast their own onto what is under them.
                 .compositingGroup()
