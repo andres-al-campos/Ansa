@@ -574,4 +574,49 @@ public enum TreeOps {
         guard let best else { return nil }
         return lineageOf(tree, best.id).first?.id
     }
+
+    /// The places Search lists under "Recently visited", most recent first.
+    ///
+    /// A place is hidden while something inside it was visited more recently:
+    /// after going taxes → forms → Page 2, only Page 2 is listed, because it
+    /// already says where you were and its parents would be three rows for one
+    /// visit. Visiting taxes again brings it back.
+    ///
+    /// `excluding` is the place Search was opened from. It is dropped after
+    /// hiding is worked out, so its ancestors stay hidden too — you are
+    /// standing inside them.
+    ///
+    /// The list is the `limit` newest, then finished places move to the bottom
+    /// in the same order. Sinking reorders the list without changing which
+    /// places are on it, so finishing something never pulls an older place in.
+    /// Deleted places are gone from the tree and so drop off by themselves.
+    public static func recentlyVisited(
+        _ tree: Tree, excluding: NodeId? = nil, limit: Int = 7
+    ) -> [Node] {
+        let parents = Dictionary(uniqueKeysWithValues: tree.map { ($0.id, $0.parentId) })
+        // The newest stamp anywhere beneath each node, gathered by walking up
+        // from every stamped node once.
+        var newestInside: [NodeId: Double] = [:]
+        for node in tree {
+            guard let stamp = node.lastOpenedAt else { continue }
+            var cursor = node.parentId
+            var seen: Set<NodeId> = []
+            while let id = cursor, seen.insert(id).inserted {
+                newestInside[id] = max(newestInside[id] ?? stamp, stamp)
+                cursor = parents[id] ?? nil
+            }
+        }
+        let recent = tree
+            .filter { node in
+                guard let stamp = node.lastOpenedAt, node.id != excluding else { return false }
+                return (newestInside[node.id] ?? -.infinity) <= stamp
+            }
+            .sorted { $0.lastOpenedAt! > $1.lastOpenedAt! }
+            .prefix(limit)
+        let finished = { (node: Node) -> Bool in
+            let p = progressOf(tree, node.id)
+            return p.total > 0 && p.done == p.total
+        }
+        return recent.filter { !finished($0) } + recent.filter(finished)
+    }
 }

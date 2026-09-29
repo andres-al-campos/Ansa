@@ -426,6 +426,92 @@ struct ResumeScopeTests {
     }
 }
 
+@Suite("recentlyVisited — the list Search opens on")
+struct RecentlyVisitedTests {
+    func withOpened(_ stamps: [NodeId: Double]) -> Tree {
+        fixture().map { node in
+            guard let stamp = stamps[node.id] else { return node }
+            var n = node
+            n.lastOpenedAt = stamp
+            return n
+        }
+    }
+
+    func ids(_ tree: Tree, excluding: NodeId? = nil, limit: Int = 7) -> [NodeId] {
+        TreeOps.recentlyVisited(tree, excluding: excluding, limit: limit).map(\.id)
+    }
+
+    @Test("lists visited places newest first")
+    func newestFirst() {
+        #expect(ids(withOpened(["taxes": 100, "flat": 300, "p2a": 200])) == ["flat", "p2a"])
+        #expect(ids(withOpened(["flat": 300, "g2": 200])) == ["flat", "g2"])
+    }
+
+    @Test("is empty when nothing has been visited")
+    func empty() {
+        #expect(ids(fixture()).isEmpty)
+        #expect(ids([]).isEmpty)
+    }
+
+    @Test("hides a place while something inside it is newer")
+    func newerInsideHides() {
+        // taxes → forms → Page 2: only the deepest shows.
+        #expect(ids(withOpened(["taxes": 100, "forms": 200, "p2": 300])) == ["p2"])
+    }
+
+    @Test("shows a place again once it is visited after what is inside it")
+    func revisitShows() {
+        #expect(ids(withOpened(["taxes": 400, "forms": 200, "p2": 300])) == ["taxes", "p2"])
+    }
+
+    @Test("leaves a sibling's visit alone")
+    func siblingsIndependent() {
+        #expect(ids(withOpened(["gather": 100, "forms": 200])) == ["forms", "gather"])
+    }
+
+    @Test("drops the place Search was opened from")
+    func excludesOrigin() {
+        #expect(ids(withOpened(["taxes": 100, "flat": 200]), excluding: "flat") == ["taxes"])
+    }
+
+    @Test("keeps the origin's parents hidden, since you are inside them")
+    func excludedStillHidesAncestors() {
+        let t = withOpened(["taxes": 100, "forms": 200, "flat": 150])
+        #expect(ids(t, excluding: "forms") == ["flat"])
+    }
+
+    @Test("sinks finished places to the bottom, keeping their order")
+    func finishedSink() {
+        let t = withOpened(["g1": 500, "flat": 400, "p2a": 300, "taxes": 50]).map { node -> Node in
+            guard ["flat", "f1", "f2"].contains(node.id) else { return node }
+            var n = node
+            n.done = true
+            return n
+        }
+        // g1 is a done leaf; flat's leaves are all done.
+        #expect(ids(t) == ["p2a", "g1", "flat"])
+    }
+
+    @Test("takes the newest before sinking, so finishing never pulls an older place in")
+    func limitBeforeSink() {
+        let t = withOpened(["g1": 300, "f1": 200, "f2": 100])
+        #expect(ids(t, limit: 2) == ["f1", "g1"])
+    }
+
+    @Test("stops at seven")
+    func sevenByDefault() {
+        let leaves = ["g1", "g2", "g3", "p1a", "p1b", "p2a", "p2b1", "p2b2", "f1"]
+        let stamps = Dictionary(uniqueKeysWithValues: leaves.enumerated().map { ($1, Double(100 - $0)) })
+        let t = withOpened(stamps).map { node -> Node in
+            guard node.id == "g1" else { return node }
+            var n = node
+            n.done = false
+            return n
+        }
+        #expect(ids(t) == ["g1", "g2", "g3", "p1a", "p1b", "p2a", "p2b1"])
+    }
+}
+
 @Suite("reconcileDone re-derives a parent from its contents")
 struct ReconcileDoneTests {
     /// Ported from `shared/tree.test.ts`, case for case.
