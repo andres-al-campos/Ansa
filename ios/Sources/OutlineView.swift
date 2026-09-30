@@ -1198,7 +1198,7 @@ struct OutlineView: View {
     ///
     /// With the keyboard up it runs the full width just above the keys. With
     /// the keyboard down it drops to the pill's line and narrows from the left,
-    /// and a round Home grows in the space it gave up — so the way home is where
+    /// and a round Home fades in the space it gave up — so the way home is where
     /// the pill's Home was, and the field stays one tap from typing again.
     @ViewBuilder private func searchBar(query shown: String, interactive: Bool) -> some View {
         let up = interactive && searchFocused
@@ -1217,7 +1217,9 @@ struct OutlineView: View {
                         TapGesture().onEnded(goHome), including: interactive ? .all : .none)
                     .accessibilityLabel("Home")
                     .accessibilityAddTraits(.isButton)
-                    .transition(.scale(scale: 0.3).combined(with: .opacity))
+                    // Fades, never grows: it is the same button at every
+                    // moment it is on screen.
+                    .transition(.opacity)
             }
             searchField(query: shown, up: up, interactive: interactive)
         }
