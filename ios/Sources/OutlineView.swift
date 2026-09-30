@@ -74,7 +74,10 @@ struct OutlineView: View {
     /// What is typed in Search's field.
     @State private var query = ""
     @FocusState private var searchFocused: Bool
-    /// Where the list under Search was looking, put back when Search closes.
+    /// Where Search's field is. Separate from focus because the grow starts
+    /// before the field can take it, and the shrink runs after it has let go.
+    @State private var searchSpot: SearchSpot = .tucked
+    /// Where the list under Search was looking, for Back from a result.
     @State private var searchReturn: ScrollAnchor?
     /// The query, when the trash was opened from Search's trash line, so Back
     /// from the trash returns to Search rather than past it.
@@ -288,6 +291,13 @@ struct OutlineView: View {
             // switcher and a passing notification banner, where tearing the
             // socket down and refetching on the way back would be churn for a
             // state the user is usually in for under a second.
+            // The keyboard going down drops the field to the pill's line, and
+            // coming back up lifts it. Not while tucked: that is the grow and
+            // the shrink, which move it themselves.
+            .onChange(of: searchFocused) { _, focused in
+                guard inSearch, searchSpot != .tucked else { return }
+                withAnimation(.easeOut(duration: 0.25)) { searchSpot = focused ? .up : .low }
+            }
             .onChange(of: scenePhase) { _, phase in
                 switch phase {
                 case .active: store.resume()
@@ -506,9 +516,12 @@ struct OutlineView: View {
     /// Parameterised on scope and trash for the same reason `slab` is: the two
     /// copies on screen during a swipe are different screens and must not share
     /// a title.
-    @ViewBuilder private func header(for scope: NodeId?, interactive: Bool, trash: Bool)
-        -> some View
-    {
+    ///
+    /// `veiled` is Search up over the page: the words go soft and pale, the
+    /// band stays, so the header still says where closing Search goes.
+    @ViewBuilder private func header(
+        for scope: NodeId?, interactive: Bool, trash: Bool, veiled: Bool = false
+    ) -> some View {
         // No band with no scope: that is Home, which draws its own top row.
         if trash || scope != nil {
             HStack(spacing: Space.row) {
@@ -543,6 +556,7 @@ struct OutlineView: View {
                     scopeMenu.disabled(!interactive)
                 }
             }
+            .veiled(veiled)
             // No fixed height. The buttons carry their own 44pt hit target, so
             // the band lands in the same place the system bar did without a
             // number that a larger Dynamic Type setting would then be squeezed
@@ -769,10 +783,33 @@ struct OutlineView: View {
         for scope: NodeId?, interactive: Bool, trash: Bool, search: String? = nil,
         restoring: ScrollAnchor? = nil, homeBack: Bool = false
     ) -> some View {
+            // Search is up and grown, not just tucked in the pill on its way
+            // in or out. What the header's veil and the frost follow.
+            let veiled = search != nil && (!interactive || searchSpot != .tucked)
             VStack(spacing: 0) {
-                // Search has no header: the field at the bottom is its title.
-                if search == nil {
-                    header(for: scope, interactive: interactive, trash: trash)
+                // Under Search the header stays, veiled, and is one target
+                // that closes it: it is the page you go back to.
+                Group {
+                    if home(scope, trash: trash) {
+                        homeTopRow(
+                            interactive: interactive && search == nil, back: homeBack,
+                            veiled: veiled)
+                    } else {
+                        header(
+                            for: scope, interactive: interactive && search == nil,
+                            trash: trash, veiled: veiled)
+                    }
+                }
+                .overlay {
+                    if search != nil {
+                        Color.clear
+                            .contentShape(Rectangle())
+                            .highPriorityGesture(
+                                TapGesture().onEnded { zoomOut() },
+                                including: interactive ? .all : .none)
+                            .accessibilityLabel("Close search")
+                            .accessibilityAddTraits(.isButton)
+                    }
                 }
 
                 if !store.live {
@@ -795,30 +832,34 @@ struct OutlineView: View {
                     )
                 }
 
-                if search != nil {
-                    SearchPage(
-                        tree: tree, store: store, query: search ?? "", from: trash ? nil : scope,
-                        onOpen: { if interactive { openFromSearch($0) } },
-                        onFind: { if interactive { openFromSearch($0, arriving: true) } },
-                        onOpenTrash: { if interactive { openTrashFromSearch() } },
-                        onTapAway: { if interactive { searchFocused = false } })
-                } else if trash {
-                    // `interactive` too: the copy drawn behind the swipe must
-                    // not take the gesture either, the same as an outline's.
-                    TrashView(
-                        store: store, backing: interactive && backPull > 0,
-                        query: trashOverSearch)
-                } else if scope == nil {
-                    homePage(interactive: interactive, back: homeBack)
-                } else {
-                    // Under the bar, above the list: the figure the title used
-                    // to carry as a caption. Only here — the grid and the trash
-                    // have no scope to be a fraction of.
-                    ScopeProgress(progress: TreeOps.scopeProgress(tree, scope))
-                    outline(for: scope, interactive: interactive,
-                            restoring: restoring)
+                // The page, inert under Search but still drawn where it was, so
+                // closing Search is the page coming back rather than rebuilt.
+                let pageLive = interactive && search == nil
+                VStack(spacing: 0) {
+                    if trash {
+                        // `interactive` too: the copy drawn behind the swipe must
+                        // not take the gesture either, the same as an outline's.
+                        TrashView(
+                            store: store, backing: interactive && backPull > 0,
+                            query: trashOverSearch)
+                    } else if scope == nil {
+                        homePage(interactive: pageLive)
+                    } else {
+                        // Under the bar, above the list: the figure the title used
+                        // to carry as a caption. Only here — the grid and the trash
+                        // have no scope to be a fraction of.
+                        ScopeProgress(progress: TreeOps.scopeProgress(tree, scope))
+                        outline(for: scope, interactive: pageLive,
+                                restoring: restoring)
+                    }
                 }
-
+                .overlay {
+                    if let search {
+                        searchLayer(
+                            query: search, scope: scope, trash: trash,
+                            interactive: interactive, shown: veiled)
+                    }
+                }
             }
         // Over the list rather than below it, so it costs no height — and as a
         // safe-area inset rather than an overlay, because the inset is what
@@ -871,15 +912,31 @@ struct OutlineView: View {
             .padding(.top, edit.isEditing ? Space.gutter : 0)
             }
         }
-        // Over the page, which is opaque. The field only crosses its corner
-        // while the keyboard carries it past, which the keys mostly cover.
+        // While Search is up the pill and the + stay where they were rather
+        // than riding the keys, so the keys slide over them. With the keyboard
+        // down, Search's own Home takes the pill's corner.
         //
         // On a layer the size of the page that ignores the keyboard: on the
         // button alone, `ignoresSafeArea` left it riding up with the keys.
         .overlay {
             if search != nil {
                 Color.clear
-                    .overlay(alignment: .bottomLeading) { searchHome(interactive: interactive) }
+                    .overlay(alignment: .bottom) {
+                        if interactive && searchSpot != .low {
+                            HStack(spacing: 0) {
+                                navPill(
+                                    onHome: home(scope, trash: trash), interactive: false,
+                                    searchHidden: true)
+                                Spacer(minLength: 0)
+                                if !trash { captureButton(interactive: false, home: scope == nil) }
+                            }
+                        } else {
+                            HStack(spacing: 0) {
+                                searchHome(interactive: interactive)
+                                Spacer(minLength: 0)
+                            }
+                        }
+                    }
                     .ignoresSafeArea(.keyboard)
             }
         }
@@ -1192,7 +1249,12 @@ struct OutlineView: View {
     ///
     /// Home is lit on Home. Neither half is lit on an outline page, which is
     /// somewhere you went from one of them rather than one of them.
-    @ViewBuilder private func navPill(onHome: Bool, interactive: Bool) -> some View {
+    ///
+    /// `searchHidden` is the pill under Search, whose Search half has grown
+    /// into the field and is drawn by it.
+    @ViewBuilder private func navPill(
+        onHome: Bool, interactive: Bool, searchHidden: Bool = false
+    ) -> some View {
         HStack(spacing: Space.tight) {
             pillTab(
                 onHome ? "house.fill" : "house", label: "Home", lit: onHome,
@@ -1201,6 +1263,7 @@ struct OutlineView: View {
             pillTab(
                 "magnifyingglass", label: "Search", lit: false,
                 interactive: interactive, action: openSearch)
+                .opacity(searchHidden ? 0 : 1)
         }
         .padding(Space.tight)
         .modifier(PillSurface())
@@ -1210,22 +1273,81 @@ struct OutlineView: View {
 
     /// Search's field, in the pill's place at the bottom.
     ///
-    /// With the keyboard up it runs the full width just above the keys. With
-    /// the keyboard down it drops to the pill's line and slots in beside
+    /// It opens as exactly the pill's Search half and grows from there to the
+    /// full width just above the keys; closing runs that backwards. With the
+    /// keyboard down it drops to the pill's line and slots in beside
     /// `searchHome`, which never moves — so the way home is where the pill's
     /// Home was, and the field stays one tap from typing again.
     @ViewBuilder private func searchBar(query shown: String, interactive: Bool) -> some View {
-        let up = interactive && searchFocused
-        searchField(query: shown, up: up, interactive: interactive)
-            // Keyboard up: the gutter, clear of the keys. Down: the corner the
-            // plus keeps on the right, and Home's width and a gap on the left.
-            .padding(.leading, up ? Space.gutter : Space.corner + searchHomeSize + 10)
-            .padding(.trailing, up ? Space.gutter : Space.corner)
-            .padding(.bottom, up ? Space.row : Space.corner - homeIndicator)
-            .animation(.easeOut(duration: 0.25), value: up)
+        let spot = interactive ? searchSpot : .low
+        // The pill's Search half: past the pill's rim, Home's half and the gap
+        // between them.
+        let tab = Space.corner + Space.tight + pillTabWidth + Space.tight
+        // Keyboard up: the gutter, clear of the keys. Down: the corner the
+        // plus keeps on the right, and Home's width and a gap on the left.
+        let leading: CGFloat = switch spot {
+            case .tucked: tab
+            case .up: Space.gutter
+            case .low: Space.corner + searchHomeSize + 10
+        }
+        let bottom: CGFloat = switch spot {
+            case .tucked: Space.corner - homeIndicator + Space.tight
+            case .up: Space.row
+            case .low: Space.corner - homeIndicator
+        }
+        searchField(query: shown, spot: spot, interactive: interactive)
+            .frame(maxWidth: spot == .tucked ? pillTabWidth : .infinity)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.leading, leading)
+            .padding(.trailing, spot == .up ? Space.gutter : Space.corner)
+            .padding(.bottom, bottom)
+            .onAppear {
+                // Drawn tucked first, so there is somewhere to grow from.
+                guard interactive, searchSpot == .tucked else { return }
+                withAnimation(searchMotion) { searchSpot = .up }
+            }
+    }
+
+    /// The grow and the shrink. A guess at the keyboard's own curve, to be
+    /// judged on the phone.
+    private let searchMotion = Animation.timingCurve(0.25, 0.9, 0.3, 1, duration: Self.searchGrow)
+    private static let searchGrow: TimeInterval = 0.3
+
+    /// Heavy frost over the page and Search's list on it, below the header.
+    ///
+    /// The frost is what makes the results read the same whatever is under
+    /// them. On Home its top edge fades, since the account row has no bar
+    /// for it to stop at.
+    private func searchLayer(
+        query: String, scope: NodeId?, trash: Bool, interactive: Bool, shown: Bool
+    ) -> some View {
+        let soft = home(scope, trash: trash)
+        return ZStack {
+            Rectangle()
+                .fill(.thickMaterial)
+                .mask {
+                    VStack(spacing: 0) {
+                        LinearGradient(colors: [.clear, .black], startPoint: .top, endPoint: .bottom)
+                            .frame(height: soft ? 28 : 0)
+                        Color.black
+                    }
+                }
+                .ignoresSafeArea(edges: .bottom)
+            SearchPage(
+                tree: tree, store: store, query: query, from: trash ? nil : scope,
+                onOpen: { if interactive { openFromSearch($0) } },
+                onFind: { if interactive { openFromSearch($0, arriving: true) } },
+                onOpenTrash: { if interactive { openTrashFromSearch() } },
+                onTapAway: { if interactive { searchFocused = false } },
+                onTapBare: { if interactive { zoomOut() } })
+        }
+        .opacity(shown ? 1 : 0)
+        .allowsHitTesting(shown)
     }
 
     private let searchHomeSize: CGFloat = 56
+    /// One half of the pill. Search's field starts and ends at this width.
+    private let pillTabWidth: CGFloat = 64
 
     /// Search's Home, in the pill's corner. Pinned to the page rather than
     /// riding the keyboard like the field: the keys cover it while they are
@@ -1251,54 +1373,76 @@ struct OutlineView: View {
     /// The ✕ clears the text, and on an empty field closes Search. With the
     /// keyboard down and nothing typed it has nothing to clear and Home is
     /// beside it, so it goes.
-    @ViewBuilder private func searchField(query shown: String, up: Bool, interactive: Bool)
+    ///
+    /// Tucked, it is drawn as the pill's Search half: the pill's glass, the
+    /// pill's magnifying glass, and no text. The words and the ✕ come in over
+    /// the second half of the grow and go over the first half of the shrink,
+    /// so they never squeeze through the narrow field.
+    @ViewBuilder private func searchField(query shown: String, spot: SearchSpot, interactive: Bool)
         -> some View
     {
-        let clearable = !shown.isEmpty || up
+        let tucked = spot == .tucked
+        let clearable = !shown.isEmpty || spot == .up
+        let half = Self.searchGrow / 2
+        let words = Animation.linear(duration: half).delay(tucked ? 0 : half)
+        let height: CGFloat = switch spot {
+            case .tucked: 52
+            case .up: 48
+            case .low: searchHomeSize
+        }
         HStack(spacing: 0) {
             HStack(spacing: Space.row) {
+                // The pill's glyph when tucked, the field's when grown.
                 Image(systemName: "magnifyingglass")
-                    .foregroundStyle(.secondary)
+                    .font(.system(size: 17, weight: .medium))
+                    .foregroundStyle(tucked ? Color(.label) : Color(.secondaryLabel))
+                    .scaleEffect(tucked ? 21 / 17 : 1)
                 // Only the live copy is a field. Two fields on one focus
                 // binding would each claim the keyboard; the copy behind a
                 // swipe just shows what was typed.
-                if interactive {
-                    TextField("Search", text: $query)
-                        .focused($searchFocused)
-                        .submitLabel(.search)
-                        .autocorrectionDisabled()
-                        .textInputAutocapitalization(.never)
-                } else {
-                    Text(shown.isEmpty ? "Search" : shown)
-                        .foregroundStyle(shown.isEmpty ? .secondary : .primary)
-                        .lineLimit(1)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                Group {
+                    if interactive {
+                        TextField("Search", text: $query)
+                            .focused($searchFocused)
+                            .submitLabel(.search)
+                            .autocorrectionDisabled()
+                            .textInputAutocapitalization(.never)
+                    } else {
+                        Text(shown.isEmpty ? "Search" : shown)
+                            .foregroundStyle(shown.isEmpty ? .secondary : .primary)
+                            .lineLimit(1)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
                 }
+                .animation(words) { $0.opacity(tucked ? 0 : 1) }
             }
-            .padding(.leading, 14)
+            // Tucked, the glyph sits centred in the pill's half, as the
+            // pill's own does.
+            .padding(.leading, tucked ? (pillTabWidth - 20) / 2 : 14)
             .frame(maxHeight: .infinity)
             // All of it opens the keyboard, not just the text's width. Not
             // the ✕, whose clear should leave the keyboard where it was.
             .contentShape(Rectangle())
             .simultaneousGesture(
                 TapGesture().onEnded { searchFocused = true },
-                including: interactive ? .all : .none)
+                including: interactive && !tucked ? .all : .none)
             Image(systemName: "xmark.circle.fill")
                 .foregroundStyle(.secondary)
-                .frame(width: 36, height: 44)
+                // No width tucked, or it would push the glyph off centre.
+                .frame(width: tucked ? 0 : 36, height: 44)
                 .contentShape(Rectangle())
                 .highPriorityGesture(
                     TapGesture().onEnded {
                         if query.isEmpty { zoomOut() } else { query = "" }
                     },
-                    including: interactive && clearable ? .all : .none)
-                .opacity(clearable ? 1 : 0)
+                    including: interactive && clearable && !tucked ? .all : .none)
+                .animation(words) { $0.opacity(clearable && !tucked ? 1 : 0) }
                 .accessibilityLabel(shown.isEmpty ? "Close search" : "Clear")
                 .accessibilityHidden(!clearable)
         }
-        .padding(.trailing, Space.inner)
-        .frame(height: up ? 48 : searchHomeSize)
-        .modifier(PillSurface())
+        .padding(.trailing, tucked ? 0 : Space.inner)
+        .frame(height: height)
+        .modifier(PillSurface(shown: !tucked))
     }
 
     /// One half of the pill. A high-priority tap rather than a `Button`, for
@@ -1312,7 +1456,7 @@ struct OutlineView: View {
             .font(.system(size: 21, weight: .medium))
             .foregroundStyle(lit ? Color.accentColor : Color.primary)
             // 52 tall so the pill, with its 2pt rim, is the + disc's 56.
-            .frame(width: 64, height: 52)
+            .frame(width: pillTabWidth, height: 52)
             .background(Capsule().fill(Color(.tertiarySystemFill)).opacity(lit ? 1 : 0))
             .contentShape(Capsule())
             .highPriorityGesture(
@@ -1324,58 +1468,63 @@ struct OutlineView: View {
     /// Whether this screen is Home: no scope, and not the trash.
     private func home(_ scope: NodeId?, trash: Bool) -> Bool { scope == nil && !trash }
 
-    /// The account, the gear, and the pinned and project lists at full width.
-    private func homePage(interactive: Bool, back: Bool) -> some View {
-        VStack(spacing: 0) {
-            HStack(spacing: Space.row) {
-                // Back to where you were, when you came from somewhere. A
-                // high-priority tap for the pill's reason.
-                if back {
-                    // The project header's chevron: body size, ink on the gutter.
-                    Image(systemName: "chevron.left")
-                        .foregroundStyle(.tint)
-                        .frame(width: 44, height: 44, alignment: .leading)
-                        .contentShape(Rectangle())
-                        .highPriorityGesture(
-                            TapGesture().onEnded { zoomOut() },
-                            including: interactive ? .all : .none)
-                        .accessibilityLabel("Back")
-                        .accessibilityAddTraits(.isButton)
-                }
-                // Only signed in: the keyless build has no Clerk to read, and
-                // reading one is a crash.
-                if signedIn { AccountRow() }
-                Spacer(minLength: 0)
-                Image(systemName: "gearshape")
-                    .font(.system(size: 20, weight: .medium))
+    /// Home's header: the account and the gear, and Back when you came from
+    /// somewhere. Apart from the lists so Search can draw below it, the same
+    /// as a project's header.
+    private func homeTopRow(interactive: Bool, back: Bool, veiled: Bool) -> some View {
+        HStack(spacing: Space.row) {
+            // Back to where you were, when you came from somewhere. A
+            // high-priority tap for the pill's reason.
+            if back {
+                // The project header's chevron: body size, ink on the gutter.
+                Image(systemName: "chevron.left")
                     .foregroundStyle(.tint)
-                    .frame(width: 44, height: 44)
+                    .frame(width: 44, height: 44, alignment: .leading)
                     .contentShape(Rectangle())
                     .highPriorityGesture(
-                        TapGesture().onEnded { settingsShown = true },
+                        TapGesture().onEnded { zoomOut() },
                         including: interactive ? .all : .none)
-                    .accessibilityLabel("Settings")
+                    .accessibilityLabel("Back")
                     .accessibilityAddTraits(.isButton)
             }
-            .padding(.leading, Space.gutter)
-            .padding(.trailing, Space.row)
-            .frame(minHeight: 52)
-
-            ProjectGrid(
-                tree: tree, loaded: store.loaded,
-                editing: interactive ? edit.editing : nil, editText: $edit.text,
-                focused: $focusedRow,
-                onOpen: { if interactive { openProject($0) } },
-                onBeginEdit: beginEdit,
-                // Return on a project name means "done naming", not "next
-                // project" — a run of projects is not a thing people do, so
-                // this is a plain commit either way.
-                onSubmit: submitProjectName,
-                onMoveProject: moveProject,
-                onMovePin: movePin,
-                onOpenTrash: { if interactive { openTrash() } })
+            // Only signed in: the keyless build has no Clerk to read, and
+            // reading one is a crash.
+            if signedIn { AccountRow() }
+            Spacer(minLength: 0)
+            Image(systemName: "gearshape")
+                .font(.system(size: 20, weight: .medium))
+                .foregroundStyle(.tint)
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
+                .highPriorityGesture(
+                    TapGesture().onEnded { settingsShown = true },
+                    including: interactive ? .all : .none)
+                .accessibilityLabel("Settings")
+                .accessibilityAddTraits(.isButton)
         }
-        .background(Color(.systemGroupedBackground).ignoresSafeArea())
+        .veiled(veiled)
+        .padding(.leading, Space.gutter)
+        .padding(.trailing, Space.row)
+        .frame(minHeight: 52)
+        .background(Color(.systemGroupedBackground).ignoresSafeArea(edges: .top))
+    }
+
+    /// The pinned and project lists at full width.
+    private func homePage(interactive: Bool) -> some View {
+        ProjectGrid(
+            tree: tree, loaded: store.loaded,
+            editing: interactive ? edit.editing : nil, editText: $edit.text,
+            focused: $focusedRow,
+            onOpen: { if interactive { openProject($0) } },
+            onBeginEdit: beginEdit,
+            // Return on a project name means "done naming", not "next
+            // project" — a run of projects is not a thing people do, so
+            // this is a plain commit either way.
+            onSubmit: submitProjectName,
+            onMoveProject: moveProject,
+            onMovePin: movePin,
+            onOpenTrash: { if interactive { openTrash() } })
+            .background(Color(.systemGroupedBackground).ignoresSafeArea())
     }
 
     /// Add a task, from any state. Shared by the Button and the high-priority
@@ -1623,8 +1772,13 @@ struct OutlineView: View {
     /// was opened over. Home has one only when you came to it from somewhere,
     /// so a stray tap on the pill's Home costs one tap to undo.
     private var canGoBack: Bool {
-        inSearch || inTrash || scope != nil || backFromHome(backTrail)
+        inTrash || scope != nil || backFromHome(backTrail)
     }
+
+    /// Whether the edge swipe can take a touch. Not while Search is up: the
+    /// swipe would pull the layer sideways while the field wants to shrink
+    /// down into the pill. The ✕, the header and bare frost close it.
+    private var canSwipeBack: Bool { canGoBack && !inSearch }
 
     /// The rows the outline draws, flattened depth-first with a folded subtree
     /// counting as the single line it shows.
@@ -2293,7 +2447,13 @@ struct OutlineView: View {
     /// Home, from the pill. Through `setScope`, so Back from the project you
     /// open next returns here.
     private func goHome() {
-        closeSearch()
+        // Search shrinks back into the pill first, the same as any other way
+        // out of it, and Home comes after. The page under Search is the one
+        // being left, so going while it shrinks would rebuild it mid-way.
+        if inSearch {
+            closeSearch(then: goHome)
+            return
+        }
         trashOverSearch = nil
         inTrash = false
         guard scope != nil else { return }
@@ -2307,18 +2467,33 @@ struct OutlineView: View {
         searchReturn = scope == nil || inTrash ? nil : topRowAnchor()
         trashOverSearch = nil
         query = ""
-        inSearch = true
+        if inSearch {
+            // Caught mid-shrink: grow back from wherever it got to.
+            withAnimation(searchMotion) { searchSpot = .up }
+        } else {
+            // The field arrives tucked and grows itself, on appearing.
+            searchSpot = .tucked
+            inSearch = true
+        }
         // A turn later: the field is built by this change, and focus aimed at
         // a field that does not exist yet is dropped.
         DispatchQueue.main.async { searchFocused = true }
     }
 
-    /// Back to the screen Search was opened over, where it was looking.
-    private func closeSearch() {
+    /// Back to the screen Search was opened over, which is still there under
+    /// it. The field shrinks back into the pill, then Search goes, then
+    /// `then` runs.
+    private func closeSearch(then: (() -> Void)? = nil) {
         guard inSearch else { return }
         searchFocused = false
-        inSearch = false
-        restore = scope == nil || inTrash ? nil : searchReturn
+        withAnimation(searchMotion) {
+            searchSpot = .tucked
+        } completion: {
+            // Unless it was opened again while shrinking.
+            guard searchSpot == .tucked, inSearch else { return }
+            inSearch = false
+            then?()
+        }
     }
 
     /// Go to a place picked in Search. Back from there returns to Search with
@@ -2891,7 +3066,7 @@ struct OutlineView: View {
                 // Released, so the row swipe is available again — a cancelled
                 // back swipe hands the row back rather than leaving it inert.
                 backHolding = false
-                guard canGoBack, armed(g), g.translation.width > backThreshold else {
+                guard canSwipeBack, armed(g), g.translation.width > backThreshold else {
                     // Short of the threshold: back where it came from, which is
                     // what tells you the gesture was seen and declined.
                     withAnimation(.easeOut(duration: 0.22)) { backPull = 0 }
@@ -2988,7 +3163,7 @@ struct OutlineView: View {
     /// habitually lands past 32, so a strip covering only where the pull *acts*
     /// leaves the row open across the band where it is attempted.
     private func claims(_ g: DragGesture.Value) -> Bool {
-        canGoBack && !drag.isActive && !rowSwiping && g.startLocation.x < backClaim
+        canSwipeBack && !drag.isActive && !rowSwiping && g.startLocation.x < backClaim
     }
 
     /// Whether this drag is a back swipe rather than a scroll or a row action.
@@ -3001,7 +3176,7 @@ struct OutlineView: View {
     /// see the attachment site. Everything here is deliberately cheap and
     /// side-effect free, because it runs on every drag anywhere on screen.
     private func armed(_ g: DragGesture.Value) -> Bool {
-        canGoBack
+        canSwipeBack
             // Not while a row is in the air. The two gestures are recognised
             // simultaneously, so without this a swipe can begin under a drag
             // that is already running and the row would follow a finger that
@@ -3046,6 +3221,7 @@ struct OutlineView: View {
             if let search = trashOverSearch {
                 trashOverSearch = nil
                 query = search
+                searchSpot = .low
                 inSearch = true
             }
             return
@@ -3066,8 +3242,10 @@ struct OutlineView: View {
             inTrash = step.trash
             query = search
             searchReturn = step.at
+            searchSpot = .low
             inSearch = true
-            restore = nil
+            // The page is under Search now, so put it back where it was.
+            restore = step.trash ? nil : step.at
         } else {
             restore = step.at
         }
@@ -3192,14 +3370,26 @@ private struct CaptureButtonSurface: ViewModifier {
 
 /// The Home and Search pill: `CaptureButtonSurface` in a capsule.
 private struct PillSurface: ViewModifier {
+    /// False for Search's field while it is tucked into the pill, which is
+    /// already glass around it.
+    var shown = true
+
     func body(content: Content) -> some View {
         if #available(iOS 26, *) {
-            content.glassEffect(.regular.interactive(), in: .capsule)
+            content.glassEffect(shown ? .regular.interactive() : .identity, in: .capsule)
         } else {
             content
-                .background(Capsule().fill(.regularMaterial))
-                .shadow(color: .black.opacity(0.12), radius: 6, y: 2)
+                .background(Capsule().fill(.regularMaterial).opacity(shown ? 1 : 0))
+                .shadow(color: .black.opacity(shown ? 0.12 : 0), radius: 6, y: 2)
         }
+    }
+}
+
+extension View {
+    /// A header under Search: soft and pale enough to read as behind the
+    /// results, sharp enough to still say where closing Search goes.
+    func veiled(_ on: Bool) -> some View {
+        blur(radius: on ? 1.5 : 0).opacity(on ? 0.6 : 1)
     }
 }
 
@@ -3244,8 +3434,21 @@ struct SlabLayer {
     /// Whether Home, if this is Home, draws Back.
     var homeBack = false
     /// What the screen shows, which is what carries it across the swap. Not
-    /// the query itself, or every keystroke would rebuild the screen.
-    var key: String { "\(scope ?? "")|\(trash)|\(search != nil)" }
+    /// the query, or every keystroke would rebuild the screen, and not whether
+    /// Search is up: Search is a layer over the page, which stays where it was
+    /// underneath.
+    var key: String { "\(scope ?? "")|\(trash)" }
+}
+
+/// Where Search's field sits.
+enum SearchSpot {
+    /// Exactly the pill's Search half, with no glass of its own: where it grows
+    /// from and shrinks back into.
+    case tucked
+    /// Full width on the keys.
+    case up
+    /// Keyboard down, on the pill's line beside Home.
+    case low
 }
 
 /// One step of the back trail: the scope, and where the list was looking.
@@ -4637,12 +4840,18 @@ private struct SearchPage: View {
     /// A match, opened where it sits.
     let onFind: (NodeId) -> Void
     let onOpenTrash: () -> Void
-    /// A tap anywhere on the page, which takes the keyboard down.
+    /// A tap on the list, which takes the keyboard down.
     let onTapAway: () -> Void
+    /// A tap on the bare frost below the list, which closes Search.
+    let onTapBare: () -> Void
 
     /// The trash, read once when Search opens. Deleted nodes are not in the
     /// tree, so this is the only way to know a match is in there.
     @State private var trash: [TrashEntry] = []
+    /// Where the list's last row ends, in the list's own space. Below it is
+    /// bare frost. Infinite while the end is scrolled out of sight, when
+    /// there is none.
+    @State private var end: CGFloat = .infinity
 
     var body: some View {
         List {
@@ -4651,14 +4860,30 @@ private struct SearchPage: View {
             } else {
                 results
             }
+            // Marks the end of the list, for telling a tap on a row from a
+            // tap on the frost below them.
+            Color.clear
+                .frame(height: 1)
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
+                .onGeometryChange(for: CGFloat.self) {
+                    $0.frame(in: .named(Self.space)).minY
+                } action: { end = $0 }
+                .onDisappear { end = .infinity }
         }
         .listStyle(.plain)
+        // Clear: the frost under it is the ground.
         .scrollContentBackground(.hidden)
-        .background(Color(.systemGroupedBackground))
         .scrollDismissesKeyboard(.immediately)
-        .simultaneousGesture(TapGesture().onEnded(onTapAway))
+        .coordinateSpace(.named(Self.space))
+        .simultaneousGesture(
+            SpatialTapGesture(coordinateSpace: .named(Self.space)).onEnded { tap in
+                if tap.location.y > end { onTapBare() } else { onTapAway() }
+            })
         .task { await loadTrash() }
     }
+
+    private static let space = "searchPage"
 
     @ViewBuilder private var recent: some View {
         let places = TreeOps.recentlyVisited(tree, excluding: from)
