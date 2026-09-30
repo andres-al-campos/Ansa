@@ -325,10 +325,14 @@ export class AnsaTree extends DurableObject {
    * A client went away.
    *
    * Nothing to tear down: the socket set is ctx.getWebSockets(), which the
-   * runtime maintains, so a closed connection leaves it without help. The
-   * close() call is belt-and-braces — from compatibility date 2026-04-07 the
-   * runtime auto-replies to Close frames, and this worker is pinned past that,
-   * so it is safe but not required.
+   * runtime maintains, so a closed connection leaves it without help.
+   *
+   * The close() call completes the handshake, and it is needed. Cloudflare's
+   * docs say that from compatibility date 2026-04-07 (web_socket_auto_reply_to_close)
+   * the runtime replies to Close frames itself and this call is optional, but
+   * under wrangler dev 4.144 it doesn't: with the call removed, a client that
+   * closes cleanly never gets a reply and sits in CLOSING until it times out.
+   * Production is untested either way, so keep the call.
    *
    * The code can't always be echoed back: close() accepts only 1000 and
    * 3000–4999, and throws on anything else. The runtime reports reserved codes
