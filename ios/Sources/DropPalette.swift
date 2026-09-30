@@ -19,6 +19,18 @@ enum DropPalette {
         dark: Color(red: 0.435, green: 0.624, blue: 0.847))
 }
 
+/// Found: the matched words in Search, and the flash on the row a result
+/// opens onto.
+///
+/// `DropPalette.nest`'s brass as a light fill, without the ring that makes a
+/// drop target read as "drop here". A drag and an arrival never share the
+/// screen, so the shared hue is not read as the same thing.
+enum FoundPalette {
+    static let mark = Color(
+        light: Color(red: 0.612, green: 0.435, blue: 0.157).opacity(0.17),
+        dark: Color(red: 0.827, green: 0.643, blue: 0.361).opacity(0.24))
+}
+
 /// The two colours a ticked box speaks in: green when the group is finished
 /// too, blue when the task is done but the group is not.
 ///

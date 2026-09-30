@@ -1,4 +1,5 @@
 import AnsaCore
+import AnsaSync
 import SwiftUI
 
 /// The outline, Workflowy-style: tap a bullet to zoom into that node, and the
@@ -75,6 +76,12 @@ struct OutlineView: View {
     @FocusState private var searchFocused: Bool
     /// Where the list under Search was looking, put back when Search closes.
     @State private var searchReturn: ScrollAnchor?
+    /// The query, when the trash was opened from Search's trash line, so Back
+    /// from the trash returns to Search rather than past it.
+    @State private var trashOverSearch: String?
+    /// The row a search result opened onto, lit brass for a moment so the
+    /// eye lands on it among its siblings.
+    @State private var arrival: NodeId?
 
     /// Whether Home's gear has Settings up.
     @State private var settingsShown = false
@@ -790,8 +797,10 @@ struct OutlineView: View {
 
                 if search != nil {
                     SearchPage(
-                        tree: tree, from: trash ? nil : scope,
+                        tree: tree, store: store, query: search ?? "", from: trash ? nil : scope,
                         onOpen: { if interactive { openFromSearch($0) } },
+                        onFind: { if interactive { openFromSearch($0, arriving: true) } },
+                        onOpenTrash: { if interactive { openTrashFromSearch() } },
                         onTapAway: { if interactive { searchFocused = false } })
                 } else if trash {
                     // `interactive` too: the copy drawn behind the swipe must
@@ -944,6 +953,12 @@ struct OutlineView: View {
                     // own height, so leaving it in keeps a gap where the hidden
                     // row sits even with its content zeroed.
                     .padding(.vertical, isWaitingSentinel(row.node.id) ? 0 : OutlineRow.rowPadding / 2)
+                    .background {
+                        RoundedRectangle(cornerRadius: 10)
+                            .fill(FoundPalette.mark)
+                            .padding(.horizontal, Space.row)
+                            .opacity(interactive && arrival == row.node.id ? 1 : 0)
+                    }
                     .listRowInsets(EdgeInsets())
                     // The waiting sentinel is present only so Return has a built
                     // field to land on. It shows nothing and takes no space: the
@@ -2236,6 +2251,7 @@ struct OutlineView: View {
     /// the grid it was opened from.
     private func openTrash() {
         endRun(releasingFocus: true)
+        trashOverSearch = nil
         inTrash = true
     }
 
@@ -2243,6 +2259,7 @@ struct OutlineView: View {
     /// open next returns here.
     private func goHome() {
         closeSearch()
+        trashOverSearch = nil
         inTrash = false
         guard scope != nil else { return }
         setScope(nil)
@@ -2253,6 +2270,7 @@ struct OutlineView: View {
         endRun(releasingFocus: true)
         autoScope = false
         searchReturn = scope == nil || inTrash ? nil : topRowAnchor()
+        trashOverSearch = nil
         query = ""
         inSearch = true
         // A turn later: the field is built by this change, and focus aimed at
@@ -2270,12 +2288,36 @@ struct OutlineView: View {
 
     /// Go to a place picked in Search. Back from there returns to Search with
     /// what was typed.
-    private func openFromSearch(_ id: NodeId) {
+    ///
+    /// `arriving` is a match rather than a place: it opens onto its parent,
+    /// scrolled to and lit, so it is seen among its siblings. A project has no
+    /// parent and opens as itself.
+    private func openFromSearch(_ id: NodeId, arriving: Bool = false) {
         let step = BackStep(scope: scope, at: searchReturn, search: query, trash: inTrash)
         searchFocused = false
         inSearch = false
         inTrash = false
-        setScope(id, leaving: step)
+        guard arriving, let parent = TreeOps.byId(tree, id)?.parentId else {
+            setScope(id, leaving: step)
+            return
+        }
+        setScope(parent, leaving: step)
+        restore = ScrollAnchor(row: id, fraction: 0.3)
+        arrival = id
+        // Held long enough to find, then faded. A later arrival owns the
+        // light, so this one leaves it alone.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.9) {
+            guard arrival == id else { return }
+            withAnimation(.easeOut(duration: 0.8)) { arrival = nil }
+        }
+    }
+
+    /// The trash, from Search's "in Trash" line. Back returns to Search.
+    private func openTrashFromSearch() {
+        trashOverSearch = query
+        searchFocused = false
+        inSearch = false
+        inTrash = true
     }
 
     /// Open a project: zoom in, and record that it was opened.
@@ -2966,6 +3008,11 @@ struct OutlineView: View {
         }
         if inTrash {
             inTrash = false
+            if let search = trashOverSearch {
+                trashOverSearch = nil
+                query = search
+                inSearch = true
+            }
             return
         }
         // Zooming out changes where a new task would land, so the run and its
@@ -3034,7 +3081,9 @@ struct OutlineView: View {
                 scope: scope, trash: inTrash, search: nil, live: false,
                 restoring: inTrash ? nil : searchReturn)
         } else if inTrash {
-            behind = SlabLayer(scope: scope, trash: false, search: nil, live: false, restoring: nil)
+            behind = SlabLayer(
+                scope: scope, trash: false, search: trashOverSearch, live: false,
+                restoring: nil)
         } else {
             let step = peekBack
             behind = SlabLayer(
@@ -4519,38 +4568,34 @@ private struct PinnedTaskRow: View {
     }
 }
 
-/// Search before anything is typed: the places you were in last, newest first,
-/// on Home's cards. The field is the slab's bottom inset rather than part of
-/// this, so it can ride the keyboard.
+/// Search. Before anything is typed, the places you were in last, newest
+/// first; after, what matches, on Home's cards either way. The field is the
+/// slab's bottom inset rather than part of this, so it can ride the keyboard.
 private struct SearchPage: View {
     let tree: Tree
-    /// The place Search was opened from, left off the list: you are in it.
+    let store: OutlineStore
+    let query: String
+    /// The place Search was opened from. Left off Recently visited, since you
+    /// are in it, and its project's matches are listed first.
     let from: NodeId?
+    /// A place in Recently visited, opened as itself.
     let onOpen: (NodeId) -> Void
+    /// A match, opened where it sits.
+    let onFind: (NodeId) -> Void
+    let onOpenTrash: () -> Void
     /// A tap anywhere on the page, which takes the keyboard down.
     let onTapAway: () -> Void
 
+    /// The trash, read once when Search opens. Deleted nodes are not in the
+    /// tree, so this is the only way to know a match is in there.
+    @State private var trash: [TrashEntry] = []
+
     var body: some View {
-        let places = TreeOps.recentlyVisited(tree, excluding: from)
         List {
-            // The heading alone when there is nothing yet: an empty state
-            // explaining visits would be longer than the list it stands for.
-            Section {
-                ForEach(Array(places.enumerated()), id: \.element.id) { i, node in
-                    VisitedRow(
-                        node: node, trail: trail(of: node), finished: finished(node),
-                        onOpen: { onOpen(node.id) })
-                        .listRowInsets(
-                            EdgeInsets(
-                                top: Space.inner, leading: Space.gutter,
-                                bottom: Space.inner, trailing: Space.gutter))
-                        .modifier(
-                            HomeCard(
-                                slot: CardSlot.at(i, of: places.count), lifted: false,
-                                separator: i < places.count - 1))
-                }
-            } header: {
-                SectionHeader(title: "Recently visited")
+            if query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                recent
+            } else {
+                results
             }
         }
         .listStyle(.plain)
@@ -4558,6 +4603,101 @@ private struct SearchPage: View {
         .background(Color(.systemGroupedBackground))
         .scrollDismissesKeyboard(.immediately)
         .simultaneousGesture(TapGesture().onEnded(onTapAway))
+        .task { await loadTrash() }
+    }
+
+    @ViewBuilder private var recent: some View {
+        let places = TreeOps.recentlyVisited(tree, excluding: from)
+        // The heading alone when there is nothing yet: an empty state
+        // explaining visits would be longer than the list it stands for.
+        Section {
+            ForEach(Array(places.enumerated()), id: \.element.id) { i, node in
+                PlaceRow(
+                    name: Text(node.text.isEmpty ? "Untitled" : node.text),
+                    trail: trail(of: node), finished: finished(node), struck: false,
+                    onOpen: { onOpen(node.id) })
+                    .modifier(SearchCard(i: i, of: places.count))
+            }
+        } header: {
+            SectionHeader(title: "Recently visited")
+        }
+    }
+
+    @ViewBuilder private var results: some View {
+        let found = TreeOps.search(tree, query, from: from)
+        let binned = trash.filter { !TreeOps.matchRanges($0.text, query).isEmpty }.count
+        if found.here.isEmpty && found.elsewhere.isEmpty {
+            Section {
+                Text("Nothing matches \u{201C}\(query.trimmingCharacters(in: .whitespaces))\u{201D}")
+                    .foregroundStyle(.secondary)
+                    .listRowInsets(EdgeInsets(top: Space.inner, leading: Space.gutter, bottom: Space.inner, trailing: Space.gutter))
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
+            }
+        }
+        if !found.here.isEmpty {
+            group(found.here, finished: found.finished, title: "In \(projectName)")
+        }
+        if !found.elsewhere.isEmpty {
+            // "Elsewhere" only means something after an "In" group. Opened
+            // from Home there is one list, and it is just the results.
+            group(
+                found.elsewhere, finished: found.finished,
+                title: from == nil ? "Results" : "Elsewhere")
+        }
+        if binned > 0 {
+            // One line rather than the deleted tasks themselves: they cannot
+            // be opened where they were, and mixed in with live ones they
+            // would read as still there.
+            Button(action: onOpenTrash) {
+                HStack(spacing: Space.row) {
+                    Image(systemName: "trash")
+                    Text("\(binned) in Trash")
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    Image(systemName: "chevron.right")
+                        .font(.footnote.weight(.semibold))
+                }
+                .foregroundStyle(.secondary)
+                .frame(minHeight: Space.tap)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .listRowInsets(EdgeInsets(top: 0, leading: Space.gutter + Space.inner, bottom: 0, trailing: Space.gutter + Space.inner))
+            .listRowBackground(Color.clear)
+            .listRowSeparator(.hidden)
+        }
+    }
+
+    private func group(_ nodes: [Node], finished: Set<NodeId>, title: String) -> some View {
+        Section {
+            ForEach(Array(nodes.enumerated()), id: \.element.id) { i, node in
+                let done = finished.contains(node.id)
+                PlaceRow(
+                    name: Text(marked(node.text.isEmpty ? "Untitled" : node.text, dim: done)),
+                    trail: trail(of: node), finished: false, struck: done, matched: true,
+                    onOpen: { onFind(node.id) })
+                    .modifier(SearchCard(i: i, of: nodes.count))
+            }
+        } header: {
+            SectionHeader(title: title)
+        }
+    }
+
+    /// The name with every match on brass, or on grey when the task is done
+    /// and the rest of the row is dimmed with it.
+    private func marked(_ text: String, dim: Bool) -> AttributedString {
+        var out = AttributedString(text)
+        for r in TreeOps.matchRanges(text, query) {
+            guard let lo = AttributedString.Index(r.lowerBound, within: out),
+                  let hi = AttributedString.Index(r.upperBound, within: out) else { continue }
+            out[lo..<hi].backgroundColor = dim ? Color(.systemFill) : FoundPalette.mark
+        }
+        return out
+    }
+
+    private var projectName: String {
+        guard let from, let root = TreeOps.lineageOf(tree, from).first else { return "" }
+        return root.text.isEmpty ? "Untitled" : root.text
     }
 
     /// Where the place is, above it: "Lisbon trip › Itinerary", or "Project"
@@ -4573,13 +4713,45 @@ private struct SearchPage: View {
         let p = TreeOps.progressOf(tree, node.id)
         return p.total > 0 && p.done == p.total
     }
+
+    /// Every page, up to a bound. Offline, or on any failure, the list simply
+    /// has no trash line: search still works on everything that is live.
+    private func loadTrash() async {
+        var entries: [TrashEntry] = []
+        var cursor: Int?
+        for _ in 0..<20 {
+            guard let page = try? await store.fetchTrash(cursor: cursor) else { break }
+            entries += page.entries
+            guard let next = page.nextCursor else { break }
+            cursor = next
+        }
+        trash = entries
+    }
 }
 
-/// A place in Recently visited: its name, and the trail above it.
-private struct VisitedRow: View {
-    let node: Node
+/// Home's card treatment for one row of a Search list.
+private struct SearchCard: ViewModifier {
+    let i: Int
+    let of: Int
+
+    func body(content: Content) -> some View {
+        content
+            .listRowInsets(
+                EdgeInsets(top: Space.inner, leading: Space.gutter, bottom: Space.inner, trailing: Space.gutter))
+            .modifier(HomeCard(slot: CardSlot.at(i, of: of), lifted: false, separator: i < of - 1))
+    }
+}
+
+/// A row in Search: a name, and the trail above it.
+private struct PlaceRow: View {
+    let name: Text
     let trail: String
+    /// Recently visited's check: this place has nothing left in it.
     let finished: Bool
+    /// A done match, dimmed and struck through at the end of its group.
+    let struck: Bool
+    /// A match rather than a place in Recently visited.
+    var matched = false
     let onOpen: () -> Void
 
     @Environment(\.dynamicTypeSize) private var typeSize
@@ -4590,10 +4762,13 @@ private struct VisitedRow: View {
         Button(action: onOpen) {
             HStack(spacing: 6) {
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(node.text.isEmpty ? "Untitled" : node.text)
+                    name
                         .font(.body.weight(.medium))
-                        .foregroundStyle(finished ? .secondary : .primary)
-                        .lineLimit(typeSize.isAccessibilitySize ? 2 : 1)
+                        .foregroundStyle(finished || struck ? .secondary : .primary)
+                        .strikethrough(struck)
+                        // Two lines for a match, so the matched word is not
+                        // cut off the end of a long task.
+                        .lineLimit(struck || matched || typeSize.isAccessibilitySize ? 2 : 1)
                     Text(trail)
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -4611,6 +4786,7 @@ private struct VisitedRow: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .accessibilityValue(struck ? "Done" : "")
     }
 }
 
