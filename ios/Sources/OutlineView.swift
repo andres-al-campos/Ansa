@@ -805,7 +805,9 @@ struct OutlineView: View {
                 } else if trash {
                     // `interactive` too: the copy drawn behind the swipe must
                     // not take the gesture either, the same as an outline's.
-                    TrashView(store: store, backing: interactive && backPull > 0)
+                    TrashView(
+                        store: store, backing: interactive && backPull > 0,
+                        query: trashOverSearch)
                 } else if scope == nil {
                     homePage(interactive: interactive)
                 } else {
@@ -867,6 +869,18 @@ struct OutlineView: View {
             // a low row's text touching the depth buttons. Empty space, so it
             // takes no taps from the rows under it.
             .padding(.top, edit.isEditing ? Space.gutter : 0)
+            }
+        }
+        // Over the page, which is opaque. The field only crosses its corner
+        // while the keyboard carries it past, which the keys mostly cover.
+        //
+        // On a layer the size of the page that ignores the keyboard: on the
+        // button alone, `ignoresSafeArea` left it riding up with the keys.
+        .overlay {
+            if search != nil {
+                Color.clear
+                    .overlay(alignment: .bottomLeading) { searchHome(interactive: interactive) }
+                    .ignoresSafeArea(.keyboard)
             }
         }
         // Opaque, so the rows behind cannot show through the slab as it
@@ -1197,37 +1211,39 @@ struct OutlineView: View {
     /// Search's field, in the pill's place at the bottom.
     ///
     /// With the keyboard up it runs the full width just above the keys. With
-    /// the keyboard down it drops to the pill's line and narrows from the left,
-    /// and a round Home fades in the space it gave up — so the way home is where
-    /// the pill's Home was, and the field stays one tap from typing again.
+    /// the keyboard down it drops to the pill's line and slots in beside
+    /// `searchHome`, which never moves — so the way home is where the pill's
+    /// Home was, and the field stays one tap from typing again.
     @ViewBuilder private func searchBar(query shown: String, interactive: Bool) -> some View {
         let up = interactive && searchFocused
-        HStack(spacing: 10) {
-            if !up {
-                Image(systemName: "house")
-                    .font(.system(size: 20, weight: .medium))
-                    .foregroundStyle(Color.primary)
-                    // Flattened before the glass, for `captureButton`'s reason:
-                    // this rides the inset down with the keyboard.
-                    .drawingGroup()
-                    .frame(width: 52, height: 52)
-                    .modifier(CaptureButtonSurface())
-                    .contentShape(Circle())
-                    .highPriorityGesture(
-                        TapGesture().onEnded(goHome), including: interactive ? .all : .none)
-                    .accessibilityLabel("Home")
-                    .accessibilityAddTraits(.isButton)
-                    // Fades, never grows: it is the same button at every
-                    // moment it is on screen.
-                    .transition(.opacity)
-            }
-            searchField(query: shown, up: up, interactive: interactive)
-        }
-        // Keyboard up: the gutter, clear of the keys. Down: the corners the
-        // pill and the plus keep.
-        .padding(.horizontal, up ? Space.gutter : Space.corner)
-        .padding(.bottom, up ? Space.row : Space.corner - homeIndicator)
-        .animation(.easeOut(duration: 0.25), value: up)
+        searchField(query: shown, up: up, interactive: interactive)
+            // Keyboard up: the gutter, clear of the keys. Down: the corner the
+            // plus keeps on the right, and Home's width and a gap on the left.
+            .padding(.leading, up ? Space.gutter : Space.corner + searchHomeSize + 10)
+            .padding(.trailing, up ? Space.gutter : Space.corner)
+            .padding(.bottom, up ? Space.row : Space.corner - homeIndicator)
+            .animation(.easeOut(duration: 0.25), value: up)
+    }
+
+    private let searchHomeSize: CGFloat = 52
+
+    /// Search's Home, in the pill's corner. Pinned to the page rather than
+    /// riding the keyboard like the field: the keys cover it while they are
+    /// up, and going down they uncover it where it always was. Nothing about
+    /// it moves, fades or grows.
+    private func searchHome(interactive: Bool) -> some View {
+        Image(systemName: "house")
+            .font(.system(size: 20, weight: .medium))
+            .foregroundStyle(Color.primary)
+            .frame(width: searchHomeSize, height: searchHomeSize)
+            .modifier(CaptureButtonSurface())
+            .contentShape(Circle())
+            .highPriorityGesture(
+                TapGesture().onEnded(goHome), including: interactive ? .all : .none)
+            .accessibilityLabel("Home")
+            .accessibilityAddTraits(.isButton)
+            .padding(.leading, Space.corner)
+            .padding(.bottom, Space.corner - homeIndicator)
     }
 
     /// The field itself: a glass capsule with the one ✕.
@@ -4675,7 +4691,7 @@ private struct SearchPage: View {
             ForEach(Array(nodes.enumerated()), id: \.element.id) { i, node in
                 let done = finished.contains(node.id)
                 PlaceRow(
-                    name: Text(marked(node.text.isEmpty ? "Untitled" : node.text, dim: done)),
+                    name: Text(FoundPalette.marked(node.text.isEmpty ? "Untitled" : node.text, query, dim: done)),
                     trail: trail(of: node), finished: false, struck: done, matched: true,
                     onOpen: { onFind(node.id) })
                     .modifier(SearchCard(i: i, of: nodes.count))
@@ -4683,18 +4699,6 @@ private struct SearchPage: View {
         } header: {
             SectionHeader(title: title)
         }
-    }
-
-    /// The name with every match on brass, or on grey when the task is done
-    /// and the rest of the row is dimmed with it.
-    private func marked(_ text: String, dim: Bool) -> AttributedString {
-        var out = AttributedString(text)
-        for r in TreeOps.matchRanges(text, query) {
-            guard let lo = AttributedString.Index(r.lowerBound, within: out),
-                  let hi = AttributedString.Index(r.upperBound, within: out) else { continue }
-            out[lo..<hi].backgroundColor = dim ? Color(.systemFill) : FoundPalette.mark
-        }
-        return out
     }
 
     private var projectName: String {

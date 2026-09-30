@@ -1,3 +1,4 @@
+import AnsaCore
 import AnsaSync
 import SwiftUI
 
@@ -18,6 +19,10 @@ struct TrashView: View {
     /// itself belongs to the view that draws this one, which is also where the
     /// pull it reads is measured.
     let backing: Bool
+
+    /// What Search was asking when its trash line opened this, so the list
+    /// shows only what matches it. Nil when opened from Home.
+    var query: String? = nil
 
     /// Nil until the first page lands, which is what tells "still asking" apart
     /// from "nothing deleted" — the same distinction the project grid draws.
@@ -67,11 +72,19 @@ struct TrashView: View {
         return "This deletes it\(size) permanently. There is nothing behind the trash."
     }
 
+    /// The entries to draw: every one, or with a query only those whose name
+    /// matches it — the same test Search counted them with.
+    private var shown: [TrashEntry]? {
+        guard let query else { return entries }
+        return entries?.filter { !TreeOps.matchRanges($0.text, query).isEmpty }
+    }
+
     @ViewBuilder private var list: some View {
-        if let entries {
+        if let entries = shown {
             if entries.isEmpty {
                 ContentUnavailableView(
-                    error == nil ? "Nothing deleted" : "Could not load the trash",
+                    error != nil ? "Could not load the trash"
+                        : query.map { "Nothing in the Trash matches “\($0)”" } ?? "Nothing deleted",
                     systemImage: "trash",
                     description: Text(
                         error ?? "Deleted tasks stay here for 30 days."))
@@ -85,7 +98,7 @@ struct TrashView: View {
 
                     Section {
                         ForEach(entries) { entry in
-                            TrashRow(entry: entry)
+                            TrashRow(entry: entry, query: query)
                                 // Words, no glyphs. A swipe button given a
                                 // title *and* an image shows only the image when
                                 // the row is too short for both, so "Restore"
@@ -113,7 +126,9 @@ struct TrashView: View {
                                 }
                         }
                     } header: {
-                        Text("Deleted tasks stay here for 30 days, then go on their own.")
+                        Text(
+                            (query.map { "Matching “\($0)”. " } ?? "")
+                                + "Deleted tasks stay here for 30 days, then go on their own.")
                             .textCase(nil)
                             .font(.footnote)
                             .foregroundStyle(.secondary)
@@ -143,8 +158,18 @@ struct TrashView: View {
         busy = true
         error = nil
         do {
-            let page = try await store.fetchTrash(cursor: after)
-            entries = after == nil ? page.entries : (entries ?? []) + page.entries
+            var page = try await store.fetchTrash(cursor: after)
+            var got = page.entries
+            // Filtered, a page can hold no matches while later ones do, so
+            // take them all — to the bound Search counted with.
+            if query != nil {
+                for _ in 1..<20 {
+                    guard let next = page.nextCursor else { break }
+                    page = try await store.fetchTrash(cursor: next)
+                    got += page.entries
+                }
+            }
+            entries = after == nil ? got : (entries ?? []) + got
             cursor = page.nextCursor
         } catch {
             self.error = error.localizedDescription
@@ -180,10 +205,11 @@ struct TrashView: View {
 /// One deleted subtree: what it was, how big, and how long it has left.
 private struct TrashRow: View {
     let entry: TrashEntry
+    var query: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text(entry.text.isEmpty ? "Untitled" : entry.text)
+            Text(FoundPalette.marked(entry.text.isEmpty ? "Untitled" : entry.text, query ?? ""))
                 .lineLimit(1)
             (project + Text(meta).foregroundStyle(.secondary))
                 .font(.caption)

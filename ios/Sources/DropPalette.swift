@@ -4,6 +4,7 @@
 /// The web's `--brass` and `--bar` (`src/index.css`) rather than the system
 /// accent, so the same drop reads the same on both screens.
 
+import AnsaCore
 import SwiftUI
 
 enum DropPalette {
@@ -29,6 +30,18 @@ enum FoundPalette {
     static let mark = Color(
         light: Color(red: 0.612, green: 0.435, blue: 0.157).opacity(0.17),
         dark: Color(red: 0.827, green: 0.643, blue: 0.361).opacity(0.24))
+
+    /// The name with every match on brass, or on grey when the task is done
+    /// and the rest of the row is dimmed with it.
+    static func marked(_ text: String, _ query: String, dim: Bool = false) -> AttributedString {
+        var out = AttributedString(text)
+        for r in TreeOps.matchRanges(text, query) {
+            guard let lo = AttributedString.Index(r.lowerBound, within: out),
+                  let hi = AttributedString.Index(r.upperBound, within: out) else { continue }
+            out[lo..<hi].backgroundColor = dim ? Color(.systemFill) : mark
+        }
+        return out
+    }
 }
 
 /// The two colours a ticked box speaks in: green when the group is finished
