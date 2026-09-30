@@ -77,6 +77,9 @@ struct OutlineView: View {
     /// Where Search's field is. Separate from focus because the grow starts
     /// before the field can take it, and the shrink runs after it has let go.
     @State private var searchSpot: SearchSpot = .tucked
+    /// Search is closing onto a page that has just replaced the one under it:
+    /// the new page's field shrinks when it appears.
+    @State private var searchLeaving = false
     /// Where the list under Search was looking, for Back from a result.
     @State private var searchReturn: ScrollAnchor?
     /// The query, when the trash was opened from Search's trash line, so Back
@@ -295,7 +298,7 @@ struct OutlineView: View {
             // coming back up lifts it. Not while tucked: that is the grow and
             // the shrink, which move it themselves.
             .onChange(of: searchFocused) { _, focused in
-                guard inSearch, searchSpot != .tucked else { return }
+                guard inSearch, !searchLeaving, searchSpot != .tucked else { return }
                 withAnimation(.easeOut(duration: 0.25)) { searchSpot = focused ? .up : .low }
             }
             .onChange(of: scenePhase) { _, phase in
@@ -1302,8 +1305,16 @@ struct OutlineView: View {
             .padding(.trailing, spot == .up ? Space.gutter : Space.corner)
             .padding(.bottom, bottom)
             .onAppear {
+                guard interactive else { return }
+                // Going Home from Search: drawn grown over the new page first,
+                // so there is somewhere to shrink from.
+                if searchLeaving {
+                    searchLeaving = false
+                    closeSearch()
+                    return
+                }
                 // Drawn tucked first, so there is somewhere to grow from.
-                guard interactive, searchSpot == .tucked else { return }
+                guard searchSpot == .tucked else { return }
                 withAnimation(searchMotion) { searchSpot = .up }
             }
     }
@@ -2447,12 +2458,17 @@ struct OutlineView: View {
     /// Home, from the pill. Through `setScope`, so Back from the project you
     /// open next returns here.
     private func goHome() {
-        // Search shrinks back into the pill first, the same as any other way
-        // out of it, and Home comes after. The page under Search is the one
-        // being left, so going while it shrinks would rebuild it mid-way.
+        // Home arrives under the frost at once, and Search shrinks back into
+        // the pill over it, so the page being left is never seen swapping.
+        // From Home itself there is no new page, so it just closes.
         if inSearch {
-            closeSearch(then: goHome)
-            return
+            guard scope != nil || inTrash else {
+                closeSearch()
+                return
+            }
+            // The new page's field picks this up on appearing and shrinks.
+            searchLeaving = true
+            searchFocused = false
         }
         trashOverSearch = nil
         inTrash = false
@@ -2481,9 +2497,8 @@ struct OutlineView: View {
     }
 
     /// Back to the screen Search was opened over, which is still there under
-    /// it. The field shrinks back into the pill, then Search goes, then
-    /// `then` runs.
-    private func closeSearch(then: (() -> Void)? = nil) {
+    /// it. The field shrinks back into the pill, then Search goes.
+    private func closeSearch() {
         guard inSearch else { return }
         searchFocused = false
         withAnimation(searchMotion) {
@@ -2492,7 +2507,6 @@ struct OutlineView: View {
             // Unless it was opened again while shrinking.
             guard searchSpot == .tucked, inSearch else { return }
             inSearch = false
-            then?()
         }
     }
 
