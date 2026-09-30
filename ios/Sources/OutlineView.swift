@@ -4657,11 +4657,11 @@ private struct SearchPage: View {
             group(found.here, finished: found.finished, title: "In \(projectName)")
         }
         if !found.elsewhere.isEmpty {
-            // "Elsewhere" only means something after an "In" group. Opened
+            // "Other projects" only means something after an "In" group. Opened
             // from Home there is one list, and it is just the results.
             group(
                 found.elsewhere, finished: found.finished,
-                title: from == nil ? "Results" : "Elsewhere")
+                title: from == nil ? "Results" : "Other projects")
         }
         if binned > 0 {
             // One line rather than the deleted tasks themselves: they cannot
