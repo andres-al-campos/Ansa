@@ -84,8 +84,14 @@ public actor AnsaAPI {
         return h
     }
 
-    private func request(_ path: String, method: String, body: Data? = nil) async -> URLRequest {
-        var req = URLRequest(url: base.appending(path: path))
+    private func request(
+        _ path: String, method: String, body: Data? = nil, query: [URLQueryItem] = []
+    ) async -> URLRequest {
+        // The query apart from the path: `appending(path:)` escapes a `?`
+        // written into it, and the server 404s the path that makes.
+        var url = base.appending(path: path)
+        if !query.isEmpty { url.append(queryItems: query) }
+        var req = URLRequest(url: url)
         req.httpMethod = method
         req.httpBody = body
         // Never answer a tree request from the URL cache. Every call here asks
@@ -176,8 +182,9 @@ public actor AnsaAPI {
     /// opened, so it has somewhere to put an error — unlike the writes above,
     /// which are queued and retried out of sight.
     public func fetchTrash(cursor: Int? = nil) async throws -> TrashPage {
-        let query = cursor.map { "?cursor=\($0)" } ?? ""
-        let req = await request("/api/trash" + query, method: "GET")
+        let req = await request(
+            "/api/trash", method: "GET",
+            query: cursor.map { [URLQueryItem(name: "cursor", value: String($0))] } ?? [])
         let (data, response) = try await session.data(for: req)
         guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
             throw TrashError.message("Could not load the trash.")
