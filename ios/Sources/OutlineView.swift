@@ -66,24 +66,8 @@ struct OutlineView: View {
     /// back from the trash returns to the screen it was opened over.
     @State private var inTrash = false
 
-    /// Whether the sidebar was opened by hand. It also shows whenever there is
-    /// no scope to draw — see `sidebarShown`.
-    @State private var sidebarOpen = false
-    /// How far an edge swipe at a project's top level has drawn the sidebar in,
-    /// in points. 0 when no such swipe is running.
-    @State private var sidebarPull: CGFloat = 0
-    /// How far a leftward swipe on the open sidebar has pushed it back, in
-    /// points, 0 or negative. The closing counterpart of `sidebarPull`.
-    @State private var sidebarPush: CGFloat = 0
-    /// Which way the running drag on the sidebar was judged to go, decided
-    /// once at 20pt and held until the finger lifts: true sideways, false a
-    /// scroll, nil no drag. Held so a scroll that drifts sideways partway
-    /// through never starts closing it.
-    @State private var sidebarSideways: Bool?
-    /// When the last sideways drag on the sidebar lifted. A row under the
-    /// finger takes that lift as a tap too, and SwiftUI does not say which of
-    /// the two it handles first — so a tap this close after one is dropped.
-    @State private var sidebarSwipeEnded = Date.distantPast
+    /// Whether Home's gear has Settings up.
+    @State private var settingsShown = false
 
     /// The node the Move to box is choosing a place for, or nil when it is
     /// down.
@@ -295,12 +279,6 @@ struct OutlineView: View {
                     // blank would sync — but a typed row should commit rather
                     // than be lost when the app leaves the foreground.
                     if edit.isEditing { stopAdding() }
-                    // Coming back to the app is opening it, and it opens on the
-                    // project, not the sidebar. Unanimated: the slide would
-                    // play in the snapshot iOS takes for the app switcher.
-                    sidebarOpen = false
-                    sidebarPull = 0
-                    sidebarPush = 0
                     store.suspend()
                 default: break
                 }
@@ -389,10 +367,6 @@ struct OutlineView: View {
                     : "This deletes \(count) task\(count == 1 ? "" : "s") under it. They stay in the trash for 30 days.")
             }
 
-            // Above both slabs, so it covers whichever screen is showing. Inside
-            // the ZStack rather than an overlay on the stack so the edge swipe
-            // that draws it in is attached to the same view it moves.
-            sidebar
             pathOverlay
             moveOverlay
             }
@@ -417,6 +391,7 @@ struct OutlineView: View {
             // wanted: Obsidian's bar appears with the keyboard and leaves with
             // it, rather than sitting on screen permanently.
             .navigationBarHidden(true)
+            .sheet(isPresented: $settingsShown) { SettingsView() }
         }
     }
 
@@ -516,8 +491,7 @@ struct OutlineView: View {
     @ViewBuilder private func header(for scope: NodeId?, interactive: Bool, trash: Bool)
         -> some View
     {
-        // No band with no scope. That state is only ever seen under the
-        // sidebar, which carries the account and the project list itself.
+        // No band with no scope: that is Home, which draws its own top row.
         if trash || scope != nil {
             HStack(spacing: Space.row) {
                 backButton(for: scope, interactive: interactive, trash: trash)
@@ -568,9 +542,7 @@ struct OutlineView: View {
 
     /// Back, with the path above this scope on a long-press.
     ///
-    /// Greyed rather than hidden at a project's top level, where there is no
-    /// level above to go to: a chevron that comes and goes would move the title
-    /// with it. The sidebar is the way out of a project from there.
+    /// Always live: at a project's top level it goes to Home.
     ///
     /// The path used to hang off the title as a menu. It moved here because it
     /// is a list of places back could go, and because a title that is a button
@@ -582,7 +554,7 @@ struct OutlineView: View {
         // are. Empty in the trash: its path is the scope underneath, and one
         // tap of Back already goes there.
         let ancestors = trash ? [] : scope.map { Array(TreeOps.lineageOf(tree, $0).dropLast()) } ?? []
-        let enabled = interactive && (trash || !ancestors.isEmpty)
+        let enabled = interactive && (trash || scope != nil)
         let glyph = Image(systemName: "chevron.left")
             // Same 44pt target as the `...` opposite, for the same reason: a
             // bare glyph is only as tappable as its ink. Ink on the gutter; the
@@ -669,7 +641,7 @@ struct OutlineView: View {
         withAnimation(.easeOut(duration: 0.18)) { pathShown = false }
     }
 
-    /// The projects a node can move into, in the sidebar's order: pinned
+    /// The projects a node can move into, in Home's order: pinned
     /// projects first, then the rest. Leaves out the node itself, and the
     /// project it already sits at the top of, where the move would change
     /// nothing.
@@ -806,11 +778,7 @@ struct OutlineView: View {
                     // not take the gesture either, the same as an outline's.
                     TrashView(store: store, backing: interactive && backPull > 0)
                 } else if scope == nil {
-                    // Nothing to draw. This is only ever seen under the
-                    // sidebar, which `sidebarShown` holds open whenever there
-                    // is no scope — a launch with no projects, or the project
-                    // you were in deleted.
-                    Color(.systemGroupedBackground)
+                    homePage(interactive: interactive)
                 } else {
                     // Under the bar, above the list: the figure the title used
                     // to carry as a caption. Only here — the grid and the trash
@@ -827,8 +795,7 @@ struct OutlineView: View {
         // would put the button under it at exactly the moment it becomes the
         // way out.
         //
-        // Projects are made from the sidebar's own plus, so this one only ever
-        // makes a task.
+        // On Home the plus makes a project; everywhere else, a task.
         .safeAreaInset(edge: .bottom, spacing: 0) {
             // Both riders in one strip: the depth buttons on the left, the
             // capture button on the right, sharing the inset that rises with
@@ -843,9 +810,11 @@ struct OutlineView: View {
             HStack(spacing: 0) {
                 if edit.isEditing || focusedRow != nil { keyboardHolder }
                 if edit.isEditing {
-                    depthButtons(interactive: interactive)
-                } else if trash || scope != nil {
-                    sidebarButton(interactive: interactive)
+                    // Not for a project's name on Home: indenting would file
+                    // one project inside the one above it.
+                    if !home(scope, trash: trash) { depthButtons(interactive: interactive) }
+                } else {
+                    navPill(onHome: home(scope, trash: trash), interactive: interactive)
                 }
                 Spacer(minLength: 0)
                 // One slot, two occupants, never both: Done while a field is
@@ -857,8 +826,8 @@ struct OutlineView: View {
                 // Not in the trash, where there is nothing to add to.
                 if edit.isEditing {
                     doneButton(interactive: interactive)
-                } else if !trash && scope != nil {
-                    captureButton(interactive: interactive)
+                } else if !trash {
+                    captureButton(interactive: interactive, home: scope == nil)
                 }
             }
             // Room above the buttons while a field is open. The keyboard
@@ -1003,7 +972,7 @@ struct OutlineView: View {
         // The directional lock the platform does not hand you. Every gesture
         // here is recognised simultaneously, so none of them takes the touch
         // away from the list — without this a swipe carrying any vertical drift
-        // slid the screen (or drew the sidebar in) and scrolled the rows at once.
+        // slid the screen and scrolled the rows at once.
         //
         // Also while a row is in the air: the drag reads the frames it
         // measured, so a list scrolling under it moves the answer out from
@@ -1012,7 +981,7 @@ struct OutlineView: View {
         // `rowSwiping` is set once the pull clears 20pt, the point the gesture
         // has proved it is horizontal — before that a drifting scroll must
         // still be able to scroll.
-        .scrollDisabled(interactive && (backPull > 0 || sidebarPull > 0 || drag.isActive || rowSwiping))
+        .scrollDisabled(interactive && (backPull > 0 || drag.isActive || rowSwiping))
         // Put the list back where it was when this scope was last left.
         //
         // Unanimated, so the position is already right on the first frame
@@ -1097,7 +1066,9 @@ struct OutlineView: View {
     ///
     /// Inert behind a swipe for the same reason as a row's field — the copy
     /// underneath must not act on a screen that is sliding away.
-    @ViewBuilder private func captureButton(interactive: Bool) -> some View {
+    ///
+    /// On Home it makes a project instead of a task.
+    @ViewBuilder private func captureButton(interactive: Bool, home: Bool) -> some View {
         // Not a `Button`. A Button installs its own tap recogniser, and the
         // zoom-out back swipe — a `minimumDistance: 0` drag on the whole
         // navigation stack — is recognised simultaneously with it and could win
@@ -1142,7 +1113,9 @@ struct OutlineView: View {
                 // buttons on screen at once.
         }
         .contentShape(Circle())
-        .highPriorityGesture(TapGesture().onEnded { capture() }, including: interactive ? .all : .none)
+        .highPriorityGesture(
+            TapGesture().onEnded { home ? addProject() : capture() },
+            including: interactive ? .all : .none)
         // `Space.corner` from both edges, stated once. This rides a `safeAreaInset`, so
         // the bottom padding stacks on whatever the system reserves for the
         // home indicator: the same number on both sides sat it ~50 from the
@@ -1156,139 +1129,73 @@ struct OutlineView: View {
         // side, which is the unequal pair this exists to prevent.
         .padding(.bottom, Space.corner - homeIndicator)
         .padding(.trailing, Space.corner)
-        .accessibilityLabel("Add a task")
+        .accessibilityLabel(home ? "New project" : "Add a task")
     }
 
 
-    /// Opens the sidebar. The capture button's twin in the opposite corner:
-    /// the same disc and the same distance from the edges, so the two read as
-    /// a pair rather than one control and one stray.
+    /// Home and Search, in one glass capsule in the capture button's opposite
+    /// corner: the same height and the same distance from the edges, so the
+    /// two read as a pair.
     ///
-    /// `sidebar.left` rather than a hamburger, matching the web's toggle, which
-    /// draws the same panel-with-a-rule.
-    @ViewBuilder private func sidebarButton(interactive: Bool) -> some View {
-        // A high-priority tap rather than a `Button`, for the capture button's
-        // reason: the back swipe's `minimumDistance: 0` drag can win a
-        // Button's tap on a device.
-        Image(systemName: "sidebar.left")
+    /// Home is lit on Home. Neither half is lit on an outline page, which is
+    /// somewhere you went from one of them rather than one of them.
+    @ViewBuilder private func navPill(onHome: Bool, interactive: Bool) -> some View {
+        HStack(spacing: Space.inner) {
+            pillTab(
+                onHome ? "house.fill" : "house", label: "Home", lit: onHome,
+                interactive: interactive, action: goHome)
+            // Search arrives in the next stage; the button is here so the
+            // pill has its final shape.
+            pillTab(
+                "magnifyingglass", label: "Search", lit: false,
+                interactive: interactive, action: {})
+        }
+        .padding(Space.inner)
+        .modifier(PillSurface())
+        .padding(.bottom, Space.corner - homeIndicator)
+        .padding(.leading, Space.corner)
+    }
+
+    /// One half of the pill. A high-priority tap rather than a `Button`, for
+    /// the capture button's reason: the back swipe's `minimumDistance: 0` drag
+    /// can win a Button's tap on a device.
+    private func pillTab(
+        _ systemImage: String, label: String, lit: Bool, interactive: Bool,
+        action: @escaping () -> Void
+    ) -> some View {
+        Image(systemName: systemImage)
             .font(.system(size: 19, weight: .medium))
-            .foregroundStyle(Color.primary)
-            .drawingGroup()
-            .frame(width: 52, height: 52)
-            .modifier(CaptureButtonSurface())
+            .foregroundStyle(lit ? Color.accentColor : Color.primary)
+            .frame(width: 44, height: 44)
+            .background(Circle().fill(Color(.tertiarySystemFill)).opacity(lit ? 1 : 0))
             .contentShape(Circle())
             .highPriorityGesture(
-                TapGesture().onEnded { openSidebar() },
-                including: interactive ? .all : .none)
-            .padding(.bottom, Space.corner - homeIndicator)
-            .padding(.leading, Space.corner)
-            .accessibilityLabel("Show projects")
-            .accessibilityAddTraits(.isButton)
+                TapGesture().onEnded(action), including: interactive ? .all : .none)
+            .accessibilityLabel(label)
+            .accessibilityAddTraits(lit ? [.isButton, .isSelected] : .isButton)
     }
 
-    /// How wide the sidebar is: most of the screen, so a sliver of the scope
-    /// under it stays in view and says where closing it goes back to.
-    private var sidebarWidth: CGFloat { min(slabWidth * 0.85, 360) }
+    /// Whether this screen is Home: no scope, and not the trash.
+    private func home(_ scope: NodeId?, trash: Bool) -> Bool { scope == nil && !trash }
 
-    /// The projects, pins and trash, sliding over the screen from the left.
-    ///
-    /// Always in the tree and moved off screen when closed, so an edge swipe
-    /// can draw it in under the finger rather than waiting for it to be built.
-    @ViewBuilder private var sidebar: some View {
-        let shown = sidebarShown
-        let progress = shown
-            ? 1 + sidebarPush / max(sidebarWidth, 1)
-            : sidebarPull / max(sidebarWidth, 1)
-        ZStack(alignment: .leading) {
-            // Dims what is behind and closes on a tap. Not with no scope, where
-            // there is nothing behind to go back to — `closeSidebar` leaves it
-            // up then.
-            Color.black.opacity(0.3 * progress)
-                .ignoresSafeArea()
-                .contentShape(Rectangle())
-                .onTapGesture { closeSidebar() }
-                .allowsHitTesting(shown)
-
-            sidebarPanel
-                .frame(width: sidebarWidth)
-                .frame(maxHeight: .infinity)
-                .background(Color(.systemGroupedBackground).ignoresSafeArea())
-                // Dark mode only. There the panel, the scrim and the shadow are
-                // all black, so nothing marked where the panel ended; in light
-                // mode the grey against the dimmed page already does.
-                .overlay(alignment: .trailing) {
-                    if colorScheme == .dark {
-                        Rectangle()
-                            .fill(Color(.separator))
-                            .frame(width: 0.5)
-                            .ignoresSafeArea()
-                    }
-                }
-                // One shadow for the panel. Without flattening first, every
-                // card and the top row cast their own onto what is under them.
-                .compositingGroup()
-                .shadow(color: .black.opacity(0.18 * progress), radius: 8, x: 3)
-                // Clear of the edge by the shadow's reach, or its glow shows at
-                // the screen's left edge while closed.
-                .offset(x: shown ? sidebarPush : sidebarPull - sidebarWidth - 16)
-                .allowsHitTesting(shown)
-                .accessibilityHidden(!shown)
-        }
-        // Swipe left anywhere on it to put it away, under the finger the way
-        // the edge swipe brings it in. Simultaneous so the list still scrolls;
-        // the direction is locked at 20pt either way. Only when opened by hand —
-        // with no scope there is nothing behind it to reveal.
-        .simultaneousGesture(
-            DragGesture(minimumDistance: 20)
-                .onChanged { g in
-                    guard sidebarOpen else { return }
-                    let t = g.translation
-                    if sidebarSideways == nil {
-                        sidebarSideways = abs(t.width) >= abs(t.height) * 1.5
-                    }
-                    guard sidebarSideways == true else { return }
-                    sidebarPush = min(0, t.width)
-                }
-                .onEnded { g in
-                    if sidebarSideways == true { sidebarSwipeEnded = .now }
-                    sidebarSideways = nil
-                    guard sidebarPush < 0 else { return }
-                    if g.translation.width < -backThreshold
-                        || g.predictedEndTranslation.width < -sidebarWidth / 2
-                    {
-                        closeSidebar()
-                    } else {
-                        withAnimation(.easeOut(duration: 0.22)) { sidebarPush = 0 }
-                    }
-                })
-        // No implicit animation keyed on `shown`: at launch the view is built
-        // before the last project is restored, so `shown` flips true → false
-        // on the way up and the sidebar would slide away over the opening
-        // app. Opening and closing animate in `openSidebar`/`closeSidebar`.
-    }
-
-    /// A drag on the sidebar is under way sideways, or has just lifted.
-    private var sidebarSwiped: Bool {
-        sidebarSideways == true || Date.now.timeIntervalSince(sidebarSwipeEnded) < 0.3
-    }
-
-    private var sidebarPanel: some View {
+    /// The account, the gear, and the pinned and project lists at full width.
+    private func homePage(interactive: Bool) -> some View {
         VStack(spacing: 0) {
             HStack(spacing: Space.row) {
-                // The account, at the top where the home screen had it. Only
-                // signed in: the keyless build has no Clerk to read, and
+                // Only signed in: the keyless build has no Clerk to read, and
                 // reading one is a crash.
                 if signedIn { AccountRow() }
                 Spacer(minLength: 0)
-                Button {
-                    addProject()
-                } label: {
-                    Image(systemName: "plus")
-                        .font(.system(size: 20, weight: .medium))
-                        .frame(width: 44, height: 44)
-                        .contentShape(Rectangle())
-                }
-                .accessibilityLabel("New project")
+                Image(systemName: "gearshape")
+                    .font(.system(size: 20, weight: .medium))
+                    .foregroundStyle(.tint)
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
+                    .highPriorityGesture(
+                        TapGesture().onEnded { settingsShown = true },
+                        including: interactive ? .all : .none)
+                    .accessibilityLabel("Settings")
+                    .accessibilityAddTraits(.isButton)
             }
             .padding(.leading, Space.gutter)
             .padding(.trailing, Space.row)
@@ -1296,11 +1203,9 @@ struct OutlineView: View {
 
             ProjectGrid(
                 tree: tree, loaded: store.loaded,
-                editing: edit.editing, editText: $edit.text,
+                editing: interactive ? edit.editing : nil, editText: $edit.text,
                 focused: $focusedRow,
-                // Deaf to the lift that ends a swipe, which a row counts as a
-                // tap whether the swipe closed the sidebar or not.
-                onOpen: { if !sidebarSwiped { openProject($0) } },
+                onOpen: { if interactive { openProject($0) } },
                 onBeginEdit: beginEdit,
                 // Return on a project name means "done naming", not "next
                 // project" — a run of projects is not a thing people do, so
@@ -1308,11 +1213,9 @@ struct OutlineView: View {
                 onSubmit: submitProjectName,
                 onMoveProject: moveProject,
                 onMovePin: movePin,
-                onOpenTrash: { if !sidebarSwiped { openTrash() } })
-                // The other half of the lock: a drag judged sideways holds the
-                // list still, the way the outline's own swipes do.
-                .scrollDisabled(sidebarSideways == true)
+                onOpenTrash: { if interactive { openTrash() } })
         }
+        .background(Color(.systemGroupedBackground).ignoresSafeArea())
     }
 
     /// Add a task, from any state. Shared by the Button and the high-priority
@@ -1555,21 +1458,10 @@ struct OutlineView: View {
         scope.flatMap { TreeOps.byId(tree, $0)?.parentId }
     }
 
-    /// Whether there is a screen behind this one. A project's top level is the
-    /// floor — the sidebar is the way to another project from there — and the
-    /// trash sits one step above whatever it was opened over.
-    private var canGoBack: Bool { inTrash || parentScope != nil }
-
-    /// Whether the sidebar is on screen. Held open with no scope, since there
-    /// is nothing under it to go back to: a launch with no projects, or the
-    /// project you were in deleted. Only once there is a tree, though: before
-    /// the first one arrives, no scope means "not restored yet".
-    private var sidebarShown: Bool {
-        sidebarOpen || (scope == nil && !inTrash && (store.loaded || !tree.isEmpty))
-    }
-
-    /// Whether an edge swipe here draws the sidebar in rather than going back.
-    private var swipeOpensSidebar: Bool { !canGoBack && !sidebarShown }
+    /// Whether there is a screen behind this one. Everything but Home has one:
+    /// a project's top level goes back to Home, and the trash to whatever it
+    /// was opened over.
+    private var canGoBack: Bool { inTrash || scope != nil }
 
     /// The rows the outline draws, flattened depth-first with a folded subtree
     /// counting as the single line it shows.
@@ -1784,7 +1676,7 @@ struct OutlineView: View {
         addRow()
     }
 
-    /// Make a project and open its name for typing, in the sidebar.
+    /// Make a project and open its name for typing, on Home.
     ///
     /// It used to name the project "New project" and jump straight inside,
     /// because the grid had no field to type into. That left every project
@@ -2227,30 +2119,14 @@ struct OutlineView: View {
     private func openTrash() {
         endRun(releasingFocus: true)
         inTrash = true
-        closeSidebar()
     }
 
-    /// Slide the sidebar in. Any open field is committed first, the same as a
-    /// navigation: the sidebar covers it, and a keyboard typing into a row you
-    /// cannot see is worse than the edit ending.
-    private func openSidebar() {
-        endRun(releasingFocus: true)
-        withAnimation(.easeOut(duration: 0.25)) {
-            sidebarOpen = true
-            sidebarPull = 0
-        }
-    }
-
-    /// Slide it out. A project name being typed in it is committed, the same
-    /// as tapping away from any other field.
-    ///
-    /// Does nothing visible with no scope, where `sidebarShown` holds it open.
-    private func closeSidebar() {
-        if sidebarShown, edit.isEditing { commitEdit() }
-        withAnimation(.easeOut(duration: 0.25)) {
-            sidebarOpen = false
-            sidebarPush = 0
-        }
+    /// Home, from the pill. Through `setScope`, so Back from the project you
+    /// open next returns here.
+    private func goHome() {
+        inTrash = false
+        guard scope != nil else { return }
+        setScope(nil)
     }
 
     /// Open a project: zoom in, and record that it was opened.
@@ -2261,11 +2137,10 @@ struct OutlineView: View {
     private func openProject(_ id: NodeId) {
         // The run, the anchor and the visit stamp are all handled by
         // `setScope`, which every navigation goes through.
-        // Out of the trash too: a project opened from the sidebar is where you
-        // are going, and the trash sitting over it would hide it.
+        // Out of the trash too: a project opened from Home is where you are
+        // going, and the trash sitting over it would hide it.
         inTrash = false
         setScope(id)
-        closeSidebar()
     }
 
     // MARK: - Dragging
@@ -2766,12 +2641,6 @@ struct OutlineView: View {
                 // which cannot be known yet and so cannot gate the claim.
                 if claims(g) { backHolding = true }
                 guard armed(g) else { return }
-                // At a project's top level the same pull draws the sidebar in,
-                // one-to-one and stopping at its full width.
-                if swipeOpensSidebar {
-                    sidebarPull = min(max(0, g.translation.width), sidebarWidth)
-                    return
-                }
                 // One-to-one all the way to the threshold, damped only past
                 // it. The damping used to start at 60pt, well short of where
                 // the gesture commits, so for most of the pull the edge you
@@ -2796,16 +2665,6 @@ struct OutlineView: View {
                 // Released, so the row swipe is available again — a cancelled
                 // back swipe hands the row back rather than leaving it inert.
                 backHolding = false
-                if sidebarPull > 0 {
-                    // The same threshold as back, so the two uses of one
-                    // gesture commit at the same distance.
-                    if g.translation.width > backThreshold {
-                        openSidebar()
-                    } else {
-                        withAnimation(.easeOut(duration: 0.22)) { sidebarPull = 0 }
-                    }
-                    return
-                }
                 guard canGoBack, armed(g), g.translation.width > backThreshold else {
                     // Short of the threshold: back where it came from, which is
                     // what tells you the gesture was seen and declined.
@@ -2903,7 +2762,7 @@ struct OutlineView: View {
     /// habitually lands past 32, so a strip covering only where the pull *acts*
     /// leaves the row open across the band where it is attempted.
     private func claims(_ g: DragGesture.Value) -> Bool {
-        (canGoBack || swipeOpensSidebar) && !drag.isActive && !rowSwiping && g.startLocation.x < backClaim
+        canGoBack && !drag.isActive && !rowSwiping && g.startLocation.x < backClaim
     }
 
     /// Whether this drag is a back swipe rather than a scroll or a row action.
@@ -2916,7 +2775,7 @@ struct OutlineView: View {
     /// see the attachment site. Everything here is deliberately cheap and
     /// side-effect free, because it runs on every drag anywhere on screen.
     private func armed(_ g: DragGesture.Value) -> Bool {
-        (canGoBack || swipeOpensSidebar || sidebarPull > 0)
+        canGoBack
             // Not while a row is in the air. The two gestures are recognised
             // simultaneously, so without this a swipe can begin under a drag
             // that is already running and the row would follow a finger that
@@ -2941,7 +2800,7 @@ struct OutlineView: View {
     /// pull is running it stays running, since a gesture that has visibly begun
     /// should not be revoked by a wobble halfway through.
     private func goingSideways(_ g: DragGesture.Value) -> Bool {
-        if backPull > 0 || sidebarPull > 0 { return true }
+        if backPull > 0 { return true }
         return g.translation.width > 0
             && abs(g.translation.height) < abs(g.translation.width) * 1.5
     }
@@ -3009,9 +2868,8 @@ struct OutlineView: View {
 
     private var peekBack: BackStep {
         for step in backTrail.reversed() {
-            // Nor the empty scope. There is no screen there any more, only the
-            // sidebar, and back is not the way to open it.
-            guard let id = step.scope else { continue }
+            // No scope is Home, which is always there.
+            guard let id = step.scope else { return step }
             if TreeOps.byId(tree, id) != nil { return step }
         }
         // Off the end of the trail: the tree parent, with nowhere remembered.
@@ -3048,6 +2906,19 @@ private struct CaptureButtonSurface: ViewModifier {
         } else {
             content
                 .background(Circle().fill(.regularMaterial))
+                .shadow(color: .black.opacity(0.12), radius: 6, y: 2)
+        }
+    }
+}
+
+/// The Home and Search pill: `CaptureButtonSurface` in a capsule.
+private struct PillSurface: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(iOS 26, *) {
+            content.glassEffect(.regular.interactive(), in: .capsule)
+        } else {
+            content
+                .background(Capsule().fill(.regularMaterial))
                 .shadow(color: .black.opacity(0.12), radius: 6, y: 2)
         }
     }
@@ -3417,7 +3288,7 @@ enum Space {
     static let gutter: CGFloat = 16
     /// How far a corner control sits from the two screen edges it floats over.
     ///
-    /// 24 lines the sidebar button's disc up with the outer edge of a
+    /// 24 lines the pill's Home button up with the outer edge of a
     /// bullet's ring above it (17 inset + 7 to the ring inside its 32pt
     /// column). 36 left the pair standing out in the open.
     static let corner: CGFloat = 24
@@ -3562,12 +3433,12 @@ private struct OutlineRow: View {
     /// `listRowInsets` is zeroed so a guide segment can fill its row, which
     /// takes the leading margin with it. This puts it back.
     ///
-    /// Set by the sidebar button below the list, not by the row: the guides
-    /// run down behind that button, and at an arbitrary inset they crossed it
-    /// at arbitrary points. This puts the second-level guide through its
-    /// centre, and since the button is 52 wide and the guides are 20 apart,
-    /// the first and third fall 6pt inside its two edges.
-    static let railInset: CGFloat = Space.corner + 52 / 2 - 16 - indent
+    /// Set by the pill's Home button below the list, not by the row: the
+    /// guides run down behind that button, and at an arbitrary inset they
+    /// crossed it at arbitrary points. This puts the second-level guide
+    /// through its centre, and since the button is 44 wide and the guides are
+    /// 20 apart, the first and third fall 2pt inside its two edges.
+    static let railInset: CGFloat = Space.corner + Space.inner + 44 / 2 - 16 - indent
 
     /// A single-line row's content height, without the row's own vertical
     /// padding. Only a fallback for a row `List` has not measured yet — the
@@ -4221,9 +4092,8 @@ private struct ProjectGrid: View {
                 EdgeInsets(
                     top: Space.inner, leading: Space.gutter,
                     bottom: Space.inner, trailing: Space.gutter))
-            // No swipe to delete. A leftward swipe here closes the sidebar,
-            // and the two on one row put a project a short thumb away from
-            // the trash. Delete is in the project's own `...`.
+            // No swipe to delete: it would put a project a short thumb away
+            // from the trash. Delete is in the project's own `...`.
     }
 }
 
@@ -4476,7 +4346,7 @@ private struct ProjectRow: View {
     @Environment(\.dynamicTypeSize) private var typeSize
 
     /// Two lines at the accessibility sizes, where one held "Project…" and the
-    /// sidebar's width can fit no more. One everywhere else, so a long name
+    /// row's width can fit no more. One everywhere else, so a long name
     /// does not make its row taller than the rest.
     private var nameLines: Int { typeSize.isAccessibilitySize ? 2 : 1 }
 
