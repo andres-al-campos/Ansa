@@ -1158,7 +1158,7 @@ struct OutlineView: View {
                 // against the *final* safe area from the first frame — two
                 // images in two coordinate spaces inside one view.
                 .drawingGroup()
-                .frame(width: 52, height: 52)
+                .frame(width: 56, height: 56)
                 .modifier(CaptureButtonSurface())
                 // Deliberately no `.id(...)` and no transition. Either one
                 // would make a changed glyph a separate view, so SwiftUI would
@@ -1225,7 +1225,7 @@ struct OutlineView: View {
             .animation(.easeOut(duration: 0.25), value: up)
     }
 
-    private let searchHomeSize: CGFloat = 52
+    private let searchHomeSize: CGFloat = 56
 
     /// Search's Home, in the pill's corner. Pinned to the page rather than
     /// riding the keyboard like the field: the keys cover it while they are
@@ -1297,7 +1297,7 @@ struct OutlineView: View {
                 .accessibilityHidden(!clearable)
         }
         .padding(.trailing, Space.inner)
-        .frame(height: up ? 48 : 52)
+        .frame(height: up ? 48 : searchHomeSize)
         .modifier(PillSurface())
     }
 
@@ -1311,8 +1311,8 @@ struct OutlineView: View {
         Image(systemName: systemImage)
             .font(.system(size: 21, weight: .medium))
             .foregroundStyle(lit ? Color.accentColor : Color.primary)
-            // 48 tall so the pill, with its 2pt rim, is the + disc's 52.
-            .frame(width: 60, height: 48)
+            // 52 tall so the pill, with its 2pt rim, is the + disc's 56.
+            .frame(width: 64, height: 52)
             .background(Capsule().fill(Color(.tertiarySystemFill)).opacity(lit ? 1 : 0))
             .contentShape(Capsule())
             .highPriorityGesture(
