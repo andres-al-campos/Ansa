@@ -619,4 +619,72 @@ public enum TreeOps {
         }
         return recent.filter { !finished($0) } + recent.filter(finished)
     }
+
+    // MARK: - Search
+
+    /// Where `query` occurs in `text`, ignoring case and accents, so "cafe"
+    /// finds "Café". Every occurrence, left to right. Empty for a blank query.
+    public static func matchRanges(_ text: String, _ query: String) -> [Range<String.Index>] {
+        let needle = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !needle.isEmpty else { return [] }
+        var out: [Range<String.Index>] = []
+        var from = text.startIndex
+        while from < text.endIndex,
+              let r = text.range(
+                of: needle, options: [.caseInsensitive, .diacriticInsensitive],
+                range: from..<text.endIndex) {
+            out.append(r)
+            from = r.upperBound
+        }
+        return out
+    }
+
+    /// Search results, split by where they are.
+    public struct SearchResults: Equatable, Sendable {
+        /// Matches in the project Search was opened from. Always empty when it
+        /// was opened from Home, where there is no project to favour.
+        public let here: [Node]
+        /// Everything else, in project order.
+        public let elsewhere: [Node]
+        /// The ids of the matches that are finished, which the list dims.
+        public let finished: Set<NodeId>
+    }
+
+    /// Every node whose text contains `query`, in outline order, grouped by
+    /// whether it is in the project of `from`. Finished nodes move to the end
+    /// of their group, in the same order.
+    ///
+    /// Finished is `progressOf`'s sense — a done leaf, or a parent whose leaves
+    /// are all done — worked out in one pass. This runs on every keystroke, and
+    /// calling `progressOf` per match walks the tree once per match.
+    public static func search(_ tree: Tree, _ query: String, from: NodeId?) -> SearchResults {
+        var children: [NodeId?: [Node]] = [:]
+        for node in tree { children[node.parentId, default: []].append(node) }
+        for key in children.keys { children[key]!.sort { $0.order < $1.order } }
+        let project = from.flatMap { lineageOf(tree, $0).first?.id }
+
+        var finished: Set<NodeId> = []
+        var here: [Node] = [], elsewhere: [Node] = []
+        var seen: Set<NodeId> = []
+        // Returns whether `node` is finished. A cycle is cut by `seen` rather
+        // than trusted away, the same as `lineageOf`.
+        func walk(_ node: Node, inHere: Bool) -> Bool {
+            guard seen.insert(node.id).inserted else { return true }
+            let matched = !matchRanges(node.text, query).isEmpty
+            if matched {
+                if inHere { here.append(node) } else { elsewhere.append(node) }
+            }
+            let kids = children[node.id] ?? []
+            var done = kids.isEmpty ? node.done : true
+            for kid in kids where !walk(kid, inHere: inHere) { done = false }
+            if matched && done { finished.insert(node.id) }
+            return done
+        }
+        for root in children[nil] ?? [] { _ = walk(root, inHere: root.id == project) }
+
+        let sink = { (nodes: [Node]) in
+            nodes.filter { !finished.contains($0.id) } + nodes.filter { finished.contains($0.id) }
+        }
+        return SearchResults(here: sink(here), elsewhere: sink(elsewhere), finished: finished)
+    }
 }

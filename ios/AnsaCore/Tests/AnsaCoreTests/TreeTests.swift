@@ -512,6 +512,72 @@ struct RecentlyVisitedTests {
     }
 }
 
+@Suite("search — matching and grouping")
+struct SearchTests {
+    func matched(_ text: String, _ query: String) -> [String] {
+        TreeOps.matchRanges(text, query).map { String(text[$0]) }
+    }
+
+    func ids(_ tree: Tree, _ query: String, from: NodeId? = nil) -> ([NodeId], [NodeId]) {
+        let r = TreeOps.search(tree, query, from: from)
+        return (r.here.map(\.id), r.elsewhere.map(\.id))
+    }
+
+    @Test("matches anywhere, ignoring case and accents")
+    func folding() {
+        #expect(matched("Book a carpet clean", "CARPET") == ["carpet"])
+        #expect(matched("Café run", "cafe") == ["Café"])
+        #expect(matched("Paint, then paint again", "paint") == ["Paint", "paint"])
+        #expect(matched("repainting", "paint") == ["paint"])
+    }
+
+    @Test("a blank query matches nothing")
+    func blank() {
+        #expect(matched("anything", "").isEmpty)
+        #expect(matched("anything", "   ").isEmpty)
+        #expect(ids(fixture(), " ") == ([], []))
+    }
+
+    @Test("groups the project Search was opened from first, at any depth in it")
+    func grouping() {
+        // "the" is in six of taxes' nodes ("Gather" among them) and two of flat's.
+        #expect(ids(fixture(), "the", from: "p2") == (["taxes", "gather", "g3", "forms", "p2b1", "p2b2"], ["flat", "f1"]))
+        #expect(ids(fixture(), "the", from: "flat") == (["flat", "f1"], ["taxes", "gather", "g3", "forms", "p2b1", "p2b2"]))
+    }
+
+    @Test("is one list when opened from Home")
+    func fromHome() {
+        #expect(ids(fixture(), "the") == ([], ["taxes", "gather", "g3", "forms", "p2b1", "p2b2", "flat", "f1"]))
+    }
+
+    @Test("sinks finished matches to the end of their group")
+    func finishedSink() {
+        // g1 is done; "last" matches g1 only, so add one more match beside it.
+        let t = fixture().map { node -> Node in
+            guard node.id == "g2" else { return node }
+            var n = node
+            n.text = "Download last bank CSV"
+            return n
+        }
+        let r = TreeOps.search(t, "last", from: nil)
+        #expect(r.elsewhere.map(\.id) == ["g2", "g1"])
+        #expect(r.finished == ["g1"])
+    }
+
+    @Test("counts a parent finished when every leaf under it is done")
+    func parentFinished() {
+        let t = fixture().map { node -> Node in
+            guard ["f1", "f2"].contains(node.id) else { return node }
+            var n = node
+            n.done = true
+            return n
+        }
+        let r = TreeOps.search(t, "the", from: nil)
+        #expect(r.elsewhere.map(\.id) == ["taxes", "gather", "g3", "forms", "p2b1", "p2b2", "flat", "f1"])
+        #expect(r.finished == ["flat", "f1"])
+    }
+}
+
 @Suite("reconcileDone re-derives a parent from its contents")
 struct ReconcileDoneTests {
     /// Ported from `shared/tree.test.ts`, case for case.
