@@ -264,7 +264,7 @@ struct OutlineView: View {
                 ForEach(slabLayers, id: \.key) { layer in
                     slab(for: layer.scope, interactive: layer.live,
                          trash: layer.trash, search: layer.search,
-                         restoring: layer.restoring)
+                         restoring: layer.restoring, homeBack: layer.homeBack)
                     // Over the revealed screen, under the one being lifted
                     // off it.
                     if !layer.live { backdrop }
@@ -767,7 +767,7 @@ struct OutlineView: View {
     /// - Parameter search: the query, when this screen is Search.
     @ViewBuilder private func slab(
         for scope: NodeId?, interactive: Bool, trash: Bool, search: String? = nil,
-        restoring: ScrollAnchor? = nil
+        restoring: ScrollAnchor? = nil, homeBack: Bool = false
     ) -> some View {
             VStack(spacing: 0) {
                 // Search has no header: the field at the bottom is its title.
@@ -809,7 +809,7 @@ struct OutlineView: View {
                         store: store, backing: interactive && backPull > 0,
                         query: trashOverSearch)
                 } else if scope == nil {
-                    homePage(interactive: interactive)
+                    homePage(interactive: interactive, back: homeBack)
                 } else {
                     // Under the bar, above the list: the figure the title used
                     // to carry as a caption. Only here — the grid and the trash
@@ -1325,9 +1325,23 @@ struct OutlineView: View {
     private func home(_ scope: NodeId?, trash: Bool) -> Bool { scope == nil && !trash }
 
     /// The account, the gear, and the pinned and project lists at full width.
-    private func homePage(interactive: Bool) -> some View {
+    private func homePage(interactive: Bool, back: Bool) -> some View {
         VStack(spacing: 0) {
             HStack(spacing: Space.row) {
+                // Back to where you were, when you came from somewhere. A
+                // high-priority tap for the pill's reason.
+                if back {
+                    // The project header's chevron: body size, ink on the gutter.
+                    Image(systemName: "chevron.left")
+                        .foregroundStyle(.tint)
+                        .frame(width: 44, height: 44, alignment: .leading)
+                        .contentShape(Rectangle())
+                        .highPriorityGesture(
+                            TapGesture().onEnded { zoomOut() },
+                            including: interactive ? .all : .none)
+                        .accessibilityLabel("Back")
+                        .accessibilityAddTraits(.isButton)
+                }
                 // Only signed in: the keyless build has no Clerk to read, and
                 // reading one is a crash.
                 if signedIn { AccountRow() }
@@ -1606,8 +1620,11 @@ struct OutlineView: View {
 
     /// Whether there is a screen behind this one. Everything but Home has one:
     /// a project's top level goes back to Home, and the trash to whatever it
-    /// was opened over.
-    private var canGoBack: Bool { inSearch || inTrash || scope != nil }
+    /// was opened over. Home has one only when you came to it from somewhere,
+    /// so a stray tap on the pill's Home costs one tap to undo.
+    private var canGoBack: Bool {
+        inSearch || inTrash || scope != nil || backFromHome(backTrail)
+    }
 
     /// The rows the outline draws, flattened depth-first with a folded subtree
     /// counting as the single line it shows.
@@ -3060,14 +3077,51 @@ struct OutlineView: View {
     /// clears the trail down to it.
     private func popBack() -> BackStep {
         let step = peekBack
-        // Drop everything down to and including what the peek settled on, so
-        // the skipped-over dead scopes do not sit waiting for the next back.
-        if let i = backTrail.lastIndex(where: { $0.scope == step.scope }) {
-            backTrail.removeSubrange(i...)
-        } else {
-            backTrail.removeAll()
-        }
+        backTrail = trail(afterBack: step)
         return step
+    }
+
+    /// The trail once back has landed on `step`: everything down to and
+    /// including it dropped, so the skipped-over dead scopes do not sit waiting
+    /// for the next back.
+    private func trail(afterBack step: BackStep) -> [BackStep] {
+        guard let i = backTrail.lastIndex(where: { $0.scope == step.scope }) else { return [] }
+        return Array(backTrail[..<i])
+    }
+
+    /// Bottom to top. The layer behind exists only while a back swipe is
+    /// pulled; the two keys never match, since back always changes the scope
+    /// or leaves the trash.
+    private var slabLayers: [SlabLayer] {
+        let live = SlabLayer(
+            scope: scope, trash: inTrash, search: inSearch ? query : nil,
+            live: true, restoring: restore, homeBack: backFromHome(backTrail))
+        guard backPull > 0 else { return [live] }
+        // `inTrash` is read by `slab` itself, so the copy behind a trash pull
+        // has to be drawn with it already false — otherwise the screen
+        // revealed is a second trash. Back from the trash lands on the scope
+        // it was opened over, which is still `scope`. Search the same, one
+        // layer up: it lands on the trash if that is what it covered.
+        let behind: SlabLayer
+        if inSearch {
+            behind = SlabLayer(
+                scope: scope, trash: inTrash, search: nil, live: false,
+                restoring: inTrash ? nil : searchReturn,
+                homeBack: backFromHome(backTrail))
+        } else if inTrash {
+            behind = SlabLayer(
+                scope: scope, trash: false, search: trashOverSearch, live: false,
+                restoring: nil)
+        } else {
+            // Drawn with the trail it will have once it lands, so Home's Back
+            // is already what it will be rather than appearing on arrival.
+            let step = peekBack
+            behind = SlabLayer(
+                scope: step.scope, trash: step.trash, search: step.search, live: false,
+                restoring: step.search == nil ? step.at : nil,
+                homeBack: backFromHome(trail(afterBack: step)))
+        }
+        return [behind, live]
     }
 
     /// Where back would land, without spending the step.
@@ -3080,37 +3134,6 @@ struct OutlineView: View {
     /// Deleted scopes are skipped rather than landed on: a trail outlives the
     /// nodes in it, and stepping back into something that is gone shows an
     /// empty screen that reads as the app failing.
-    /// Bottom to top. The layer behind exists only while a back swipe is
-    /// pulled; the two keys never match, since back always changes the scope
-    /// or leaves the trash.
-    private var slabLayers: [SlabLayer] {
-        let live = SlabLayer(
-            scope: scope, trash: inTrash, search: inSearch ? query : nil,
-            live: true, restoring: restore)
-        guard backPull > 0 else { return [live] }
-        // `inTrash` is read by `slab` itself, so the copy behind a trash pull
-        // has to be drawn with it already false — otherwise the screen
-        // revealed is a second trash. Back from the trash lands on the scope
-        // it was opened over, which is still `scope`. Search the same, one
-        // layer up: it lands on the trash if that is what it covered.
-        let behind: SlabLayer
-        if inSearch {
-            behind = SlabLayer(
-                scope: scope, trash: inTrash, search: nil, live: false,
-                restoring: inTrash ? nil : searchReturn)
-        } else if inTrash {
-            behind = SlabLayer(
-                scope: scope, trash: false, search: trashOverSearch, live: false,
-                restoring: nil)
-        } else {
-            let step = peekBack
-            behind = SlabLayer(
-                scope: step.scope, trash: step.trash, search: step.search, live: false,
-                restoring: step.search == nil ? step.at : nil)
-        }
-        return [behind, live]
-    }
-
     private var peekBack: BackStep {
         for step in backTrail.reversed() {
             // No scope is Home, which is always there.
@@ -3119,6 +3142,17 @@ struct OutlineView: View {
         }
         // Off the end of the trail: the tree parent, with nowhere remembered.
         return BackStep(scope: parentScope, at: nil)
+    }
+
+    /// Whether Home, with this trail, has somewhere to go back to: the place
+    /// you left for it, when you came from one. `peekBack`'s walk, but running
+    /// off the end means no Back rather than the tree parent, which from Home
+    /// is Home again.
+    private func backFromHome(_ trail: [BackStep]) -> Bool {
+        guard let step = trail.last(where: { step in
+            step.scope.map { TreeOps.byId(tree, $0) != nil } ?? true
+        }) else { return false }
+        return step.scope != nil || step.search != nil || step.trash
     }
 
     /// The topmost row on screen and how far down the viewport it sits — enough
@@ -3207,6 +3241,8 @@ struct SlabLayer {
     let search: String?
     let live: Bool
     let restoring: ScrollAnchor?
+    /// Whether Home, if this is Home, draws Back.
+    var homeBack = false
     /// What the screen shows, which is what carries it across the swap. Not
     /// the query itself, or every keystroke would rebuild the screen.
     var key: String { "\(scope ?? "")|\(trash)|\(search != nil)" }
