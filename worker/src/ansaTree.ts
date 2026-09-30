@@ -330,11 +330,15 @@ export class AnsaTree extends DurableObject {
    * runtime auto-replies to Close frames, and this worker is pinned past that,
    * so it is safe but not required.
    *
-   * 1005 means "no status received" and is not a code close() accepts, so it
-   * has to be mapped rather than echoed back.
+   * The code can't always be echoed back: close() accepts only 1000 and
+   * 3000–4999, and throws on anything else. The runtime reports reserved codes
+   * that were never on the wire — 1005 when the peer sent no status, 1006 when
+   * it dropped without a close frame (an app killed mid-connection), 1015 for a
+   * TLS failure — so every code close() would reject becomes 1000.
    */
   webSocketClose(ws: WebSocket, code: number, reason: string): void {
-    ws.close(code === 1005 ? 1000 : code, reason)
+    const sendable = code === 1000 || (code >= 3000 && code <= 4999)
+    ws.close(sendable ? code : 1000, reason)
   }
 
   /**

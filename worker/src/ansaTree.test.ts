@@ -439,12 +439,23 @@ describe('socket messages', () => {
     expect(() => tree.webSocketError(ws as never)).not.toThrow()
   })
 
-  it('closes with 1000 when the peer sent no status', () => {
-    // 1005 means "no status received" and close() rejects it as an argument, so
-    // echoing it back verbatim would throw inside the close handler.
-    const ws = fakeSocket()
-    tree.webSocketClose(ws as never, 1005, 'gone')
-    expect(ws.closedWith).toEqual({ code: 1000, reason: 'gone' })
+  it('closes with 1000 when the reported code is one close() rejects', () => {
+    // close() accepts only 1000 and 3000–4999. 1005 (no status) and 1006 (no
+    // close frame, e.g. an app killed mid-connection) arrive here routinely, and
+    // echoing them back verbatim would throw inside the close handler.
+    for (const code of [1001, 1005, 1006, 1011, 1015, 2999, 5000]) {
+      const ws = fakeSocket()
+      tree.webSocketClose(ws as never, code, 'gone')
+      expect(ws.closedWith, `code ${code}`).toEqual({ code: 1000, reason: 'gone' })
+    }
+  })
+
+  it('echoes back a code close() accepts', () => {
+    for (const code of [1000, 3000, 4999]) {
+      const ws = fakeSocket()
+      tree.webSocketClose(ws as never, code, 'bye')
+      expect(ws.closedWith).toEqual({ code, reason: 'bye' })
+    }
   })
 })
 
