@@ -66,6 +66,16 @@ struct OutlineView: View {
     /// back from the trash returns to the screen it was opened over.
     @State private var inTrash = false
 
+    /// Whether Search is the screen showing. A third axis for the trash's
+    /// reason: `scope` stays the place Search was opened from, which is where
+    /// closing it returns and what Recently visited leaves out.
+    @State private var inSearch = false
+    /// What is typed in Search's field.
+    @State private var query = ""
+    @FocusState private var searchFocused: Bool
+    /// Where the list under Search was looking, put back when Search closes.
+    @State private var searchReturn: ScrollAnchor?
+
     /// Whether Home's gear has Settings up.
     @State private var settingsShown = false
 
@@ -246,7 +256,8 @@ struct OutlineView: View {
             ZStack {
                 ForEach(slabLayers, id: \.key) { layer in
                     slab(for: layer.scope, interactive: layer.live,
-                         trash: layer.trash, restoring: layer.restoring)
+                         trash: layer.trash, search: layer.search,
+                         restoring: layer.restoring)
                     // Over the revealed screen, under the one being lifted
                     // off it.
                     if !layer.live { backdrop }
@@ -746,12 +757,16 @@ struct OutlineView: View {
     ///   the three things that would collide with the live copy — focus, row
     ///   geometry, and gestures — at the source rather than letting a second
     ///   set of writes land and be sorted out afterwards.
+    /// - Parameter search: the query, when this screen is Search.
     @ViewBuilder private func slab(
-        for scope: NodeId?, interactive: Bool, trash: Bool,
+        for scope: NodeId?, interactive: Bool, trash: Bool, search: String? = nil,
         restoring: ScrollAnchor? = nil
     ) -> some View {
             VStack(spacing: 0) {
-                header(for: scope, interactive: interactive, trash: trash)
+                // Search has no header: the field at the bottom is its title.
+                if search == nil {
+                    header(for: scope, interactive: interactive, trash: trash)
+                }
 
                 if !store.live {
                     // Only about receiving. Saying "not saved" here would be a
@@ -773,7 +788,12 @@ struct OutlineView: View {
                     )
                 }
 
-                if trash {
+                if search != nil {
+                    SearchPage(
+                        tree: tree, from: trash ? nil : scope,
+                        onOpen: { if interactive { openFromSearch($0) } },
+                        onTapAway: { if interactive { searchFocused = false } })
+                } else if trash {
                     // `interactive` too: the copy drawn behind the swipe must
                     // not take the gesture either, the same as an outline's.
                     TrashView(store: store, backing: interactive && backPull > 0)
@@ -807,6 +827,9 @@ struct OutlineView: View {
             // either, so it is not something in this view suppressing it. The
             // inset was already carrying the plus for the same reason the bar
             // needs, and it draws.
+            if let search {
+                searchBar(query: search, interactive: interactive)
+            } else {
             HStack(spacing: 0) {
                 if edit.isEditing || focusedRow != nil { keyboardHolder }
                 if edit.isEditing {
@@ -835,6 +858,7 @@ struct OutlineView: View {
             // a low row's text touching the depth buttons. Empty space, so it
             // takes no taps from the rows under it.
             .padding(.top, edit.isEditing ? Space.gutter : 0)
+            }
         }
         // Opaque, so the rows behind cannot show through the slab as it
         // moves. A `VStack` paints only what its children paint, and the
@@ -1144,16 +1168,104 @@ struct OutlineView: View {
             pillTab(
                 onHome ? "house.fill" : "house", label: "Home", lit: onHome,
                 interactive: interactive, action: goHome)
-            // Search arrives in the next stage; the button is here so the
-            // pill has its final shape.
+            // Never lit: Search replaces the pill while it is showing.
             pillTab(
                 "magnifyingglass", label: "Search", lit: false,
-                interactive: interactive, action: {})
+                interactive: interactive, action: openSearch)
         }
         .padding(Space.tight)
         .modifier(PillSurface())
         .padding(.bottom, Space.corner - homeIndicator)
         .padding(.leading, Space.corner)
+    }
+
+    /// Search's field, in the pill's place at the bottom.
+    ///
+    /// With the keyboard up it runs the full width just above the keys. With
+    /// the keyboard down it drops to the pill's line and narrows from the left,
+    /// and a round Home grows in the space it gave up — so the way home is where
+    /// the pill's Home was, and the field stays one tap from typing again.
+    @ViewBuilder private func searchBar(query shown: String, interactive: Bool) -> some View {
+        let up = interactive && searchFocused
+        HStack(spacing: 10) {
+            if !up {
+                Image(systemName: "house")
+                    .font(.system(size: 20, weight: .medium))
+                    .foregroundStyle(Color.primary)
+                    // Flattened before the glass, for `captureButton`'s reason:
+                    // this rides the inset down with the keyboard.
+                    .drawingGroup()
+                    .frame(width: 52, height: 52)
+                    .modifier(CaptureButtonSurface())
+                    .contentShape(Circle())
+                    .highPriorityGesture(
+                        TapGesture().onEnded(goHome), including: interactive ? .all : .none)
+                    .accessibilityLabel("Home")
+                    .accessibilityAddTraits(.isButton)
+                    .transition(.scale(scale: 0.3).combined(with: .opacity))
+            }
+            searchField(query: shown, up: up, interactive: interactive)
+        }
+        // Keyboard up: the gutter, clear of the keys. Down: the corners the
+        // pill and the plus keep.
+        .padding(.horizontal, up ? Space.gutter : Space.corner)
+        .padding(.bottom, up ? Space.row : Space.corner - homeIndicator)
+        .animation(.easeOut(duration: 0.25), value: up)
+    }
+
+    /// The field itself: a glass capsule with the one ✕.
+    ///
+    /// The ✕ clears the text, and on an empty field closes Search. With the
+    /// keyboard down and nothing typed it has nothing to clear and Home is
+    /// beside it, so it goes.
+    @ViewBuilder private func searchField(query shown: String, up: Bool, interactive: Bool)
+        -> some View
+    {
+        let clearable = !shown.isEmpty || up
+        HStack(spacing: 0) {
+            HStack(spacing: Space.row) {
+                Image(systemName: "magnifyingglass")
+                    .foregroundStyle(.secondary)
+                // Only the live copy is a field. Two fields on one focus
+                // binding would each claim the keyboard; the copy behind a
+                // swipe just shows what was typed.
+                if interactive {
+                    TextField("Search", text: $query)
+                        .focused($searchFocused)
+                        .submitLabel(.search)
+                        .autocorrectionDisabled()
+                        .textInputAutocapitalization(.never)
+                } else {
+                    Text(shown.isEmpty ? "Search" : shown)
+                        .foregroundStyle(shown.isEmpty ? .secondary : .primary)
+                        .lineLimit(1)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+            .padding(.leading, 14)
+            .frame(maxHeight: .infinity)
+            // All of it opens the keyboard, not just the text's width. Not
+            // the ✕, whose clear should leave the keyboard where it was.
+            .contentShape(Rectangle())
+            .simultaneousGesture(
+                TapGesture().onEnded { searchFocused = true },
+                including: interactive ? .all : .none)
+            Image(systemName: "xmark.circle.fill")
+                .foregroundStyle(.secondary)
+                .frame(width: 36, height: 44)
+                .contentShape(Rectangle())
+                .highPriorityGesture(
+                    TapGesture().onEnded {
+                        if query.isEmpty { zoomOut() } else { query = "" }
+                    },
+                    including: interactive && clearable ? .all : .none)
+                .opacity(clearable ? 1 : 0)
+                .accessibilityLabel(shown.isEmpty ? "Close search" : "Clear")
+                .accessibilityHidden(!clearable)
+        }
+        .padding(.trailing, Space.inner)
+        .frame(height: up ? 48 : 52)
+        .modifier(PillSurface())
     }
 
     /// One half of the pill. A high-priority tap rather than a `Button`, for
@@ -1462,7 +1574,7 @@ struct OutlineView: View {
     /// Whether there is a screen behind this one. Everything but Home has one:
     /// a project's top level goes back to Home, and the trash to whatever it
     /// was opened over.
-    private var canGoBack: Bool { inTrash || scope != nil }
+    private var canGoBack: Bool { inSearch || inTrash || scope != nil }
 
     /// The rows the outline draws, flattened depth-first with a folded subtree
     /// counting as the single line it shows.
@@ -2069,7 +2181,11 @@ struct OutlineView: View {
     /// deliberately does not use this.
     ///
     /// Matches `setScope` in `src/Outliner.tsx`.
-    private func setScope(_ id: NodeId?) {
+    ///
+    /// - Parameter step: what Back from `id` returns to, when it is not simply
+    ///   the screen being left. Search passes itself, so Back comes back to it
+    ///   with the query.
+    private func setScope(_ id: NodeId?, leaving step: BackStep? = nil) {
         // Here rather than in the callers that navigate. A run and its anchor
         // are both facts about one scope, so any move out of that scope ends
         // them — and `openProject`/`zoomOut` clearing them individually left
@@ -2094,17 +2210,18 @@ struct OutlineView: View {
         //
         // Past the end `popBack` hands off to the tree parent, so back still
         // works once the trail runs out.
-        if id != scope {
-            backTrail.append(BackStep(scope: scope, at: topRowAnchor()))
+        if id != scope || step != nil {
+            backTrail.append(step ?? BackStep(scope: scope, at: topRowAnchor()))
             if backTrail.count > 200 { backTrail.removeFirst() }
         }
         // Going *into* a place stamps it as just-visited, which is what
         // Recently visited and resume read. Going up (home, a breadcrumb to an
         // ancestor, the fallback when a scope is deleted) stamps nothing, so
         // passing back through a parent doesn't count as visiting it. The same
-        // rule as the web's `setScope`.
+        // rule as the web's `setScope`. A place picked in Search is gone to,
+        // never passed through, so it counts even when it is above you.
         let goingUp = id == nil
-            || (scope.map { here in TreeOps.lineageOf(tree, here).contains { $0.id == id } } ?? false)
+            || (step?.search == nil && scope.map { here in TreeOps.lineageOf(tree, here).contains { $0.id == id } } ?? false)
         scope = id
         if let id, !goingUp {
             apply(.markOpened(id: id, at: Date().timeIntervalSince1970 * 1000))
@@ -2125,9 +2242,40 @@ struct OutlineView: View {
     /// Home, from the pill. Through `setScope`, so Back from the project you
     /// open next returns here.
     private func goHome() {
+        closeSearch()
         inTrash = false
         guard scope != nil else { return }
         setScope(nil)
+    }
+
+    /// Open Search over the current screen, empty and with the keyboard up.
+    private func openSearch() {
+        endRun(releasingFocus: true)
+        autoScope = false
+        searchReturn = scope == nil || inTrash ? nil : topRowAnchor()
+        query = ""
+        inSearch = true
+        // A turn later: the field is built by this change, and focus aimed at
+        // a field that does not exist yet is dropped.
+        DispatchQueue.main.async { searchFocused = true }
+    }
+
+    /// Back to the screen Search was opened over, where it was looking.
+    private func closeSearch() {
+        guard inSearch else { return }
+        searchFocused = false
+        inSearch = false
+        restore = scope == nil || inTrash ? nil : searchReturn
+    }
+
+    /// Go to a place picked in Search. Back from there returns to Search with
+    /// what was typed.
+    private func openFromSearch(_ id: NodeId) {
+        let step = BackStep(scope: scope, at: searchReturn, search: query, trash: inTrash)
+        searchFocused = false
+        inSearch = false
+        inTrash = false
+        setScope(id, leaving: step)
     }
 
     /// Open a project: zoom in, and record that it was opened.
@@ -2810,6 +2958,12 @@ struct OutlineView: View {
         // The trash is one step above the grid and holds no run, so leaving it
         // is only this — the trail below it is the scope you were in before
         // you came to the grid, and back from the trash must not spend it.
+        // Search sits over the screen it was opened from, the way the trash
+        // does.
+        if inSearch {
+            closeSearch()
+            return
+        }
         if inTrash {
             inTrash = false
             return
@@ -2824,7 +2978,17 @@ struct OutlineView: View {
         autoScope = false
         let step = popBack()
         scope = step.scope
-        restore = step.at
+        if let search = step.search {
+            // Back to Search as it was left, keyboard down: you came back to
+            // look at the list, not to type.
+            inTrash = step.trash
+            query = search
+            searchReturn = step.at
+            inSearch = true
+            restore = nil
+        } else {
+            restore = step.at
+        }
     }
 
     /// Take the next step back, spending it. `peekBack` decides where; this
@@ -2855,15 +3019,28 @@ struct OutlineView: View {
     /// pulled; the two keys never match, since back always changes the scope
     /// or leaves the trash.
     private var slabLayers: [SlabLayer] {
-        let live = SlabLayer(scope: scope, trash: inTrash, live: true, restoring: restore)
+        let live = SlabLayer(
+            scope: scope, trash: inTrash, search: inSearch ? query : nil,
+            live: true, restoring: restore)
         guard backPull > 0 else { return [live] }
         // `inTrash` is read by `slab` itself, so the copy behind a trash pull
         // has to be drawn with it already false — otherwise the screen
         // revealed is a second trash. Back from the trash lands on the scope
-        // it was opened over, which is still `scope`.
-        let behind = SlabLayer(
-            scope: inTrash ? scope : peekBack.scope, trash: false, live: false,
-            restoring: inTrash ? nil : peekBack.at)
+        // it was opened over, which is still `scope`. Search the same, one
+        // layer up: it lands on the trash if that is what it covered.
+        let behind: SlabLayer
+        if inSearch {
+            behind = SlabLayer(
+                scope: scope, trash: inTrash, search: nil, live: false,
+                restoring: inTrash ? nil : searchReturn)
+        } else if inTrash {
+            behind = SlabLayer(scope: scope, trash: false, search: nil, live: false, restoring: nil)
+        } else {
+            let step = peekBack
+            behind = SlabLayer(
+                scope: step.scope, trash: step.trash, search: step.search, live: false,
+                restoring: step.search == nil ? step.at : nil)
+        }
         return [behind, live]
     }
 
@@ -2959,16 +3136,23 @@ struct ScrollAnchor: Equatable {
 struct SlabLayer {
     let scope: NodeId?
     let trash: Bool
+    /// The query, when the screen is Search.
+    let search: String?
     let live: Bool
     let restoring: ScrollAnchor?
-    /// What the screen shows, which is what carries it across the swap.
-    var key: String { "\(scope ?? "")|\(trash)" }
+    /// What the screen shows, which is what carries it across the swap. Not
+    /// the query itself, or every keystroke would rebuild the screen.
+    var key: String { "\(scope ?? "")|\(trash)|\(search != nil)" }
 }
 
 /// One step of the back trail: the scope, and where the list was looking.
 struct BackStep {
     let scope: NodeId?
     let at: ScrollAnchor?
+    /// Set when the step is Search: what was typed, to put back. `scope` and
+    /// `trash` are then the screen Search was opened over.
+    var search: String? = nil
+    var trash = false
 }
 
 /// The scope's progress, as a thin row under the nav bar.
@@ -4097,30 +4281,34 @@ private struct ProjectGrid: View {
     }
 }
 
-/// A home-screen section header that folds its section.
+/// A home-screen section header, which folds its section when given `open`.
 ///
 /// The chevron and the tap are drawn here because `Section(isExpanded:)` only
 /// folds under the list styles whose card this screen had to stop using.
 private struct SectionHeader: View {
     let title: String
-    @Binding var open: Bool
+    var open: Binding<Bool>? = nil
 
     var body: some View {
         Button {
-            open.toggle()
+            open?.wrappedValue.toggle()
         } label: {
             HStack {
                 Text(title)
                 Spacer()
-                Image(systemName: "chevron.down")
-                    // Rotated rather than swapped for `chevron.right`: a glyph
-                    // swap cuts, and the turn is what says the section moved.
-                    .rotationEffect(.degrees(open ? 0 : -90))
-                    .font(.footnote.weight(.semibold))
+                if let open {
+                    Image(systemName: "chevron.down")
+                        // Rotated rather than swapped for `chevron.right`: a
+                        // glyph swap cuts, and the turn is what says the
+                        // section moved.
+                        .rotationEffect(.degrees(open.wrappedValue ? 0 : -90))
+                        .font(.footnote.weight(.semibold))
+                }
             }
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .allowsHitTesting(open != nil)
         .foregroundStyle(.secondary)
         .textCase(nil)
         .font(.subheadline.weight(.semibold))
@@ -4328,6 +4516,101 @@ private struct PinnedTaskRow: View {
     private var projectName: String {
         guard let root = trail.first else { return "" }
         return root.text.isEmpty ? "Untitled" : root.text
+    }
+}
+
+/// Search before anything is typed: the places you were in last, newest first,
+/// on Home's cards. The field is the slab's bottom inset rather than part of
+/// this, so it can ride the keyboard.
+private struct SearchPage: View {
+    let tree: Tree
+    /// The place Search was opened from, left off the list: you are in it.
+    let from: NodeId?
+    let onOpen: (NodeId) -> Void
+    /// A tap anywhere on the page, which takes the keyboard down.
+    let onTapAway: () -> Void
+
+    var body: some View {
+        let places = TreeOps.recentlyVisited(tree, excluding: from)
+        List {
+            // The heading alone when there is nothing yet: an empty state
+            // explaining visits would be longer than the list it stands for.
+            Section {
+                ForEach(Array(places.enumerated()), id: \.element.id) { i, node in
+                    VisitedRow(
+                        node: node, trail: trail(of: node), finished: finished(node),
+                        onOpen: { onOpen(node.id) })
+                        .listRowInsets(
+                            EdgeInsets(
+                                top: Space.inner, leading: Space.gutter,
+                                bottom: Space.inner, trailing: Space.gutter))
+                        .modifier(
+                            HomeCard(
+                                slot: CardSlot.at(i, of: places.count), lifted: false,
+                                separator: i < places.count - 1))
+                }
+            } header: {
+                SectionHeader(title: "Recently visited")
+            }
+        }
+        .listStyle(.plain)
+        .scrollContentBackground(.hidden)
+        .background(Color(.systemGroupedBackground))
+        .scrollDismissesKeyboard(.immediately)
+        .simultaneousGesture(TapGesture().onEnded(onTapAway))
+    }
+
+    /// Where the place is, above it: "Lisbon trip › Itinerary", or "Project"
+    /// for a project, which has nothing above it to name.
+    private func trail(of node: Node) -> String {
+        let above = TreeOps.lineageOf(tree, node.id).dropLast()
+        guard !above.isEmpty else { return "Project" }
+        return above.map { $0.text.isEmpty ? "Untitled" : $0.text }.joined(separator: " › ")
+    }
+
+    /// `recentlyVisited`'s own test for what sinks to the bottom.
+    private func finished(_ node: Node) -> Bool {
+        let p = TreeOps.progressOf(tree, node.id)
+        return p.total > 0 && p.done == p.total
+    }
+}
+
+/// A place in Recently visited: its name, and the trail above it.
+private struct VisitedRow: View {
+    let node: Node
+    let trail: String
+    let finished: Bool
+    let onOpen: () -> Void
+
+    @Environment(\.dynamicTypeSize) private var typeSize
+
+    var body: some View {
+        // `PinnedTaskRow`'s two lines, so a place reads the same here as a
+        // pin does on Home.
+        Button(action: onOpen) {
+            HStack(spacing: 6) {
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(node.text.isEmpty ? "Untitled" : node.text)
+                        .font(.body.weight(.medium))
+                        .foregroundStyle(finished ? .secondary : .primary)
+                        .lineLimit(typeSize.isAccessibilitySize ? 2 : 1)
+                    Text(trail)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+                Spacer(minLength: 8)
+                if finished {
+                    Image(systemName: "checkmark")
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(Color.done)
+                        .accessibilityLabel("Finished")
+                }
+            }
+            .frame(minHeight: Space.tap, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 }
 
