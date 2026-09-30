@@ -1140,7 +1140,7 @@ struct OutlineView: View {
     /// Home is lit on Home. Neither half is lit on an outline page, which is
     /// somewhere you went from one of them rather than one of them.
     @ViewBuilder private func navPill(onHome: Bool, interactive: Bool) -> some View {
-        HStack(spacing: Space.inner) {
+        HStack(spacing: Space.tight) {
             pillTab(
                 onHome ? "house.fill" : "house", label: "Home", lit: onHome,
                 interactive: interactive, action: goHome)
@@ -1150,7 +1150,7 @@ struct OutlineView: View {
                 "magnifyingglass", label: "Search", lit: false,
                 interactive: interactive, action: {})
         }
-        .padding(Space.inner)
+        .padding(Space.tight)
         .modifier(PillSurface())
         .padding(.bottom, Space.corner - homeIndicator)
         .padding(.leading, Space.corner)
@@ -1164,11 +1164,12 @@ struct OutlineView: View {
         action: @escaping () -> Void
     ) -> some View {
         Image(systemName: systemImage)
-            .font(.system(size: 19, weight: .medium))
+            .font(.system(size: 21, weight: .medium))
             .foregroundStyle(lit ? Color.accentColor : Color.primary)
-            .frame(width: 44, height: 44)
-            .background(Circle().fill(Color(.tertiarySystemFill)).opacity(lit ? 1 : 0))
-            .contentShape(Circle())
+            // 48 tall so the pill, with its 2pt rim, is the + disc's 52.
+            .frame(width: 60, height: 48)
+            .background(Capsule().fill(Color(.tertiarySystemFill)).opacity(lit ? 1 : 0))
+            .contentShape(Capsule())
             .highPriorityGesture(
                 TapGesture().onEnded(action), including: interactive ? .all : .none)
             .accessibilityLabel(label)
@@ -3288,7 +3289,7 @@ enum Space {
     static let gutter: CGFloat = 16
     /// How far a corner control sits from the two screen edges it floats over.
     ///
-    /// 24 lines the pill's Home button up with the outer edge of a
+    /// 24 lines the pill's left edge up with the outer edge of a
     /// bullet's ring above it (17 inset + 7 to the ring inside its 32pt
     /// column). 36 left the pair standing out in the open.
     static let corner: CGFloat = 24
@@ -3433,12 +3434,11 @@ private struct OutlineRow: View {
     /// `listRowInsets` is zeroed so a guide segment can fill its row, which
     /// takes the leading margin with it. This puts it back.
     ///
-    /// Set by the pill's Home button below the list, not by the row: the
-    /// guides run down behind that button, and at an arbitrary inset they
-    /// crossed it at arbitrary points. This puts the second-level guide
-    /// through its centre, and since the button is 44 wide and the guides are
-    /// 20 apart, the first and third fall 2pt inside its two edges.
-    static let railInset: CGFloat = Space.corner + Space.inner + 44 / 2 - 16 - indent
+    /// Puts the second-level guide 50pt in, where it ran through the centre
+    /// of the round button that once sat in the bottom-left corner. The
+    /// pill's Home oval is wider and centres 6pt right of that; the guides
+    /// stay put rather than narrowing every row to follow it.
+    static let railInset: CGFloat = 50 - 16 - indent
 
     /// A single-line row's content height, without the row's own vertical
     /// padding. Only a fallback for a row `List` has not measured yet — the
