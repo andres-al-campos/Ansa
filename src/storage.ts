@@ -12,6 +12,11 @@
 import { OP_KINDS, type Op } from '@shared/ops'
 import { invalidTree, type Tree } from '@shared/tree'
 
+// TODO: both keys are per browser, not per account, and signing out
+// (AccountCard.tsx) clears neither. The next account to sign in on this browser
+// paints the previous account's tree until the first frame lands, and drains the
+// previous account's unsent ops into its own tree once that frame is adopted.
+// Key them by user id, or clear them on sign-out.
 const KEY = 'ansa.tree.v1'
 const QUEUE_KEY = 'ansa.queue.v1'
 
