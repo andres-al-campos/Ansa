@@ -1,7 +1,8 @@
 // The Electron main process. Ansa's desktop app is a thin native window around
 // the exact same web build the browser app ships — the React app talks to the
-// live Worker over HTTPS/WebSocket, so there is no local server to run and
-// nothing here but the window, a native menu, and a couple of safety rails.
+// live Worker over HTTPS/WebSocket, so there is no API server to run. What's
+// here is the window, a native menu, a couple of safety rails, and a loopback
+// server that only serves the bundle (see PORT below).
 //
 // The web bundle is loaded from `web/` next to this file. `build.sh desktop`
 // copies the root `dist/` there after building it with the live API URL and
