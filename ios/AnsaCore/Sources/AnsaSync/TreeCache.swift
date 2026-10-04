@@ -21,6 +21,11 @@ import Foundation
 /// parent whose other children were finished elsewhere, and an index-based
 /// `moveNode` means a different position once someone else has reordered the
 /// list. Those are real conflicts and want a real answer, not a silent merge.
+///
+/// TODO (traced, not run): the cost is that edits queued before a kill vanish
+/// from the screen after relaunch. The adopted server tree lacks them, their
+/// echoes are skipped as our own origin, and they reappear only when the
+/// fingerprint check refetches.
 @MainActor
 public final class TreeCache {
     private let url: URL
