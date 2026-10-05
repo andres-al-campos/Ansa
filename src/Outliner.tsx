@@ -1416,8 +1416,8 @@ export default function Outliner({ initial }: { initial: Tree }) {
           <summary>Backup &amp; transfer</summary>
           <WhoAmIPanel />
           <p className="fine data-note">
-            Saved automatically in this browser. Export a copy only to keep it elsewhere or move to
-            another machine.
+            Saved to your account automatically. Export a copy only to keep one outside
+            Ansa.
           </p>
           <div className="data-actions">
             <button onClick={handleExport}>Export</button>
