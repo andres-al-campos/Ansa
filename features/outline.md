@@ -40,9 +40,6 @@ project. It also showed the first gotcha below.
 
 ## Gotchas
 
-- Bug, open: naming a new project and pressing Enter shows two rows, an
-  "Untitled" one and the focused empty one. Neither reaches the server; the
-  extra row is gone after a reload. Seen with fast and slow typing.
 - Undo is web only and covers your own edits. An edit from another device or a
   Claude replaces the tree without a checkpoint, so ⌘Z doesn't undo it. iOS has
   no undo.
