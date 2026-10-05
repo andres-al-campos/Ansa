@@ -27,8 +27,6 @@ Preconditions: `./build.sh web` running, a project with a task.
 
 - Only deliberate deletes go to the trash. Emptying a row or merging rows with
   Backspace removes without trashing, on purpose.
-- Deletes made by a Claude through the MCP skip the trash and can't be
-  restored.
 - The project delete's confirm button is titled "Delete for good", but it goes
   to the trash.
 - A restored project lands after the last project, not at its old position.

@@ -343,7 +343,8 @@ server.registerTool(
   'remove_task',
   {
     title: 'Delete a task',
-    description: 'Delete a task and everything nested under it. This cannot be undone through the API.',
+    description:
+      'Delete a task and everything nested under it. It goes to the trash, where the user can restore it for 30 days.',
     inputSchema: { id: z.string() },
   },
   async ({ id }) => {
@@ -351,11 +352,13 @@ server.registerTool(
     // to locate it by, and the useful echo is the list it was removed from.
     const { tree: before } = await api('/api/tree')
     const parentId = byId(before, id)?.parentId ?? null
-    const { tree } = await api(`/api/nodes/${id}`, { method: 'DELETE' })
+    // To the trash, like a delete in the app: a Claude's mistakes should be as
+    // recoverable as a person's.
+    const { tree } = await api(`/api/nodes/${id}?trash=1`, { method: 'DELETE' })
     // A deleted project has no surviving parent to show, so fall back to the
     // top-level list — which is exactly what changed in that case.
     return text(
-      `Deleted ${id} and its subtree.\n\n` +
+      `Moved ${id} and its subtree to the trash.\n\n` +
         (parentId === null ? renderProjects(tree) : changed(tree, parentId)),
     )
   },

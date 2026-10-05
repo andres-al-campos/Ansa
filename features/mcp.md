@@ -29,7 +29,7 @@ Unverified: whether a token in the Keychain gets in the way locally.
 
 ## Gotchas
 
-- `remove_task` deletes for good; it doesn't use the trash.
+- `remove_task` sends to the trash, like a delete in the app.
 - No tools for pins or the trash.
 - Every MCP write reaches other clients as a whole tree rather than a single
   change.
