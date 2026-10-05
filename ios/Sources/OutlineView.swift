@@ -1484,20 +1484,21 @@ struct OutlineView: View {
     /// as a project's header.
     private func homeTopRow(interactive: Bool, back: Bool, veiled: Bool) -> some View {
         HStack(spacing: Space.row) {
-            // Back to where you were, when you came from somewhere. A
-            // high-priority tap for the pill's reason.
-            if back {
-                // The project header's chevron: body size, ink on the gutter.
-                Image(systemName: "chevron.left")
-                    .foregroundStyle(.tint)
-                    .frame(width: 44, height: 44, alignment: .leading)
-                    .contentShape(Rectangle())
-                    .highPriorityGesture(
-                        TapGesture().onEnded { zoomOut() },
-                        including: interactive ? .all : .none)
-                    .accessibilityLabel("Back")
-                    .accessibilityAddTraits(.isButton)
-            }
+            // Back to where you were, greyed when you came from nowhere —
+            // there, not hidden, so the row does not shift sideways the moment
+            // there is history. A high-priority tap for the pill's reason.
+            //
+            // The project header's chevron: body size, ink on the gutter.
+            Image(systemName: "chevron.left")
+                .foregroundStyle(back ? AnyShapeStyle(.tint) : AnyShapeStyle(.quaternary))
+                .frame(width: 44, height: 44, alignment: .leading)
+                .contentShape(Rectangle())
+                .highPriorityGesture(
+                    TapGesture().onEnded { zoomOut() },
+                    including: interactive && back ? .all : .none)
+                .accessibilityLabel("Back")
+                .accessibilityAddTraits(.isButton)
+                .disabled(!back)
             // Only signed in: the keyless build has no Clerk to read, and
             // reading one is a crash.
             if signedIn { AccountRow() }
