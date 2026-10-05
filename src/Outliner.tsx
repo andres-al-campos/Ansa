@@ -1118,7 +1118,7 @@ export default function Outliner({ initial }: { initial: Tree }) {
 
   const lineage = scope ? lineageOf(tree, scope) : []
 
-  // Sidebar projects, split into Pinned and Recent (most-recently-opened first).
+  // Sidebar projects, split into Pinned and the rest, each in manual order.
   const sections = projectSections(tree)
 
   // The shelf: pinned projects and pinned tasks in one hand-set order. A
@@ -1201,7 +1201,7 @@ export default function Outliner({ initial }: { initial: Tree }) {
   }
 
   // One sidebar project row: the name plus a ⋯ menu holding pin and delete.
-  // Shared by both the Pinned and Recent lists.
+  // Shared by both the Pinned and Projects lists.
   const projectRow = (node: (typeof sections.unpinned)[number]) => {
     const active = scope !== null && lineage[0]?.id === node.id
     const open = menuOpen === node.id
