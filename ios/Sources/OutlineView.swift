@@ -85,11 +85,8 @@ struct OutlineView: View {
     /// The node the Move to box is choosing a place for, or nil when it is
     /// down.
     @State private var moving: NodeId?
-    /// Whether Back's long-press has the path up.
+    /// Whether the title has the path up.
     @State private var pathShown = false
-    /// Set when a long-press on Back opens the path, so the Button's own action
-    /// on the release that follows does not also go back.
-    @State private var backHeld = false
 
     /// The scope being renamed, and the name being typed for it.
     ///
@@ -532,8 +529,7 @@ struct OutlineView: View {
 
                 Spacer(minLength: 0)
 
-                // The destination, not the route. The path is on Back's
-                // long-press instead, so the title is only a name.
+                // The name, and the way up: a tap lists the ancestors.
                 if trash {
                     // A plain name. `ScopeTitle` carries the rename field and
                     // the drop target, and the trash has neither.
@@ -547,7 +543,10 @@ struct OutlineView: View {
                         editing: interactive && renamingScope != nil && renamingScope == scope,
                         editText: $renameText,
                         typing: $renamingFocus,
-                        onCommit: commitScopeRename)
+                        onCommit: commitScopeRename,
+                        // Nothing above a project but Home, which the pill
+                        // already is, so a project's title stays a name.
+                        onShowPath: pathAction(for: scope, interactive: interactive))
                 }
 
                 Spacer(minLength: 0)
@@ -575,20 +574,17 @@ struct OutlineView: View {
         }
     }
 
-    /// Back, with the path above this scope on a long-press.
+    /// Back, to wherever you were — the same step as the edge swipe.
     ///
     /// Always live: at a project's top level it goes to Home.
     ///
-    /// The path used to hang off the title as a menu. It moved here because it
-    /// is a list of places back could go, and because a title that is a button
-    /// cannot also be only a name.
+    /// The path up the tree is on the title, not here. Back is history, like a
+    /// browser's, and the ancestors are not places it goes. It was a
+    /// long-press here for a while, which nobody would find and which iOS
+    /// already uses on a back button for something else.
     @ViewBuilder private func backButton(for scope: NodeId?, interactive: Bool, trash: Bool)
         -> some View
     {
-        // Root first, and without the scope itself, which is where you already
-        // are. Empty in the trash: its path is the scope underneath, and one
-        // tap of Back already goes there.
-        let ancestors = trash ? [] : scope.map { Array(TreeOps.lineageOf(tree, $0).dropLast()) } ?? []
         let enabled = interactive && (trash || scope != nil)
         let glyph = Image(systemName: "chevron.left")
             // Same 44pt target as the `...` opposite, for the same reason: a
@@ -598,25 +594,18 @@ struct OutlineView: View {
             .frame(width: 44, height: 44, alignment: .leading)
             .contentShape(Rectangle())
         Button {
-            if backHeld { backHeld = false; return }
             if interactive { zoomOut() }
         } label: { glyph }
-        // A long-press opening `pathOverlay`, not `.contextMenu`, which lifts
-        // and enlarges the button over the progress bar while the menu is up
-        // and gives no say over row height. `Menu(primaryAction:)` avoided the
-        // lift but dropped the tap.
-        .simultaneousGesture(
-            LongPressGesture(minimumDuration: 0.4).onEnded { _ in
-                guard interactive, !ancestors.isEmpty else { return }
-                backHeld = true
-                showPath()
-            })
         .disabled(!enabled)
         .accessibilityLabel("Back")
     }
 
     /// The path above this scope, outermost first, as 44pt rows, hung under
-    /// Back while its long-press has it up.
+    /// the title while it has it up.
+    ///
+    /// Not a `Menu` on the title: the title is also the drop target for a
+    /// drag and carries the rename field, and a `Menu` wrapped around it
+    /// takes over both.
     ///
     /// Drawn here rather than as a `.popover`: iOS 26 draws popovers as glass
     /// with its own large corner radius, and `presentationCornerRadius` does
@@ -625,7 +614,7 @@ struct OutlineView: View {
         // The ZStack stays and its children come and go, so each one gets its
         // own transition. Behind a single `if` around the whole thing, only
         // the outer view's transition would run.
-        ZStack(alignment: .topLeading) {
+        ZStack(alignment: .top) {
             if pathShown, !inTrash, let scope {
                 let ancestors = Array(TreeOps.lineageOf(tree, scope).dropLast())
                 // A tap anywhere else closes it without doing anything else.
@@ -654,13 +643,11 @@ struct OutlineView: View {
                 .frame(minWidth: 180, maxWidth: 280, alignment: .leading)
                 .fixedSize()
                 .modifier(PathBoxSurface())
-                // Grows out of the chevron above it and shrinks back into it.
-                .transition(.scale(scale: 0.4, anchor: .topLeading)
+                // Grows out of the title above it and shrinks back into it.
+                .transition(.scale(scale: 0.4, anchor: .top)
                     .combined(with: .opacity))
-                // Under the header band, its left edge on the gutter under
-                // the chevron.
+                // Under the header band, centred under the title.
                 .padding(.top, 44)
-                .padding(.leading, Space.row)
             }
         }
     }
@@ -669,10 +656,19 @@ struct OutlineView: View {
         withAnimation(.spring(duration: 0.3, bounce: 0.2)) { pathShown = true }
     }
 
+    /// Whether the scope sits under anything but Home — what the title's path
+    /// has to offer.
+    private func hasAncestors(_ scope: NodeId?) -> Bool {
+        guard let scope else { return false }
+        return TreeOps.lineageOf(tree, scope).count > 1
+    }
+
+    private func pathAction(for scope: NodeId?, interactive: Bool) -> (() -> Void)? {
+        guard interactive, hasAncestors(scope) else { return nil }
+        return { showPath() }
+    }
+
     private func hidePath() {
-        // The release after the long-press doesn't always reach the Button, and
-        // a `backHeld` left set swallows the next real tap on Back.
-        backHeld = false
         withAnimation(.easeOut(duration: 0.18)) { pathShown = false }
     }
 
@@ -3592,10 +3588,11 @@ private struct ScopeTitle: View {
     /// a row follows. It decides whether that is a rename, a delete, or
     /// nothing at all.
     let onCommit: () -> Void
+    /// Opens the path above this scope. Nil where there is none to show, and
+    /// the title is then only a name, with no glyph promising a list.
+    let onShowPath: (() -> Void)?
 
     var body: some View {
-        // A name and nothing else. The path it used to open as a menu is on
-        // Back's long-press now.
         if editing {
             nameField
         } else {
@@ -3658,10 +3655,19 @@ private struct ScopeTitle: View {
         // One line, not a stack. The figure moved to its own row under the bar,
         // which is what lets the name have the whole height here instead of
         // splitting it with a caption.
-        Text(title)
-            .font(.title3.weight(.semibold))
-            .lineLimit(1)
-            .truncationMode(.tail)
+        // ⌃⌄, not ⌄: the pop-up button's glyph, "pick one of these places".
+        // A down chevron on a menu that goes *up* the tree read backwards.
+        HStack(spacing: 4) {
+            Text(title)
+                .lineLimit(1)
+                .truncationMode(.tail)
+            if onShowPath != nil {
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .font(.title3.weight(.semibold))
         .foregroundStyle(
             lit ? AnyShapeStyle(DropPalette.nest) : AnyShapeStyle(.primary))
         // As wide as the bar allows. A drop on the header is easy to miss when
@@ -3700,6 +3706,16 @@ private struct ScopeTitle: View {
             }
         }
         .animation(.easeOut(duration: 0.12), value: lit)
+        // The whole box, not just the name: the same rectangle the drop
+        // target is, so a short title is still easy to hit.
+        .contentShape(Rectangle())
+        // High priority, like the other header taps: the page's back swipe is
+        // a drag from zero distance, and on a device that eats a plain tap.
+        .highPriorityGesture(
+            TapGesture().onEnded { onShowPath?() },
+            including: onShowPath == nil ? .none : .all)
+        .accessibilityAddTraits(onShowPath == nil ? AccessibilityTraits() : .isButton)
+        .accessibilityHint(onShowPath == nil ? "" : "Shows the places above this one")
     }
 }
 
