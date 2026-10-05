@@ -2,8 +2,8 @@ import AnsaCore
 import AnsaSync
 import SwiftUI
 
-/// The outline, Workflowy-style: tap a bullet to zoom into that node, and the
-/// breadcrumb walks back out.
+/// The outline, Workflowy-style: swipe a row right to zoom into that node, tap
+/// its bullet to fold it, and Back walks out again.
 ///
 /// The tree comes from `OutlineStore`, which applies each edit locally with the
 /// same pure op the server will run and queues it for sending. Nothing in this
