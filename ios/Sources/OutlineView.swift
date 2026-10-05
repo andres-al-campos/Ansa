@@ -4419,170 +4419,180 @@ private struct ProjectGrid: View {
                 ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         } else {
-            List {
-                // The shelf goes first now that it cannot grow past `pinCap`.
-                // An uncapped one at the top would push the projects off the
-                // screen; a short one is the reason you came to this screen.
-                if !nothingPinned {
-                    Section {
-                        // Folded by hand rather than with `Section(isExpanded:)`,
-                        // which only folds under `.sidebar` and `.insetGrouped` —
-                        // and those are the styles that draw the card whose
-                        // corners cannot be squared. Emitting no rows folds the
-                        // section under any style.
-                        if pinnedOpen {
-                            // One `ForEach` over projects and tasks together: the
-                            // shelf is arranged by hand, and a drag can only move
-                            // a row within the list it is drawn in.
-                            ForEach(Array(shownPins.enumerated()), id: \.element.node.id) { i, pin in
-                                Group {
-                                    if pin.trail.isEmpty {
-                                        projectRow(pin.node)
-                                    } else {
-                                        PinnedTaskRow(
-                                            node: pin.node,
-                                            trail: pin.trail,
-                                            progress: TreeOps.progressOf(tree, pin.node.id),
-                                            onOpen: { onOpen(pin.node.id) })
+            ScrollViewReader { proxy in
+                List {
+                    // The shelf goes first now that it cannot grow past `pinCap`.
+                    // An uncapped one at the top would push the projects off the
+                    // screen; a short one is the reason you came to this screen.
+                    if !nothingPinned {
+                        Section {
+                            // Folded by hand rather than with `Section(isExpanded:)`,
+                            // which only folds under `.sidebar` and `.insetGrouped` —
+                            // and those are the styles that draw the card whose
+                            // corners cannot be squared. Emitting no rows folds the
+                            // section under any style.
+                            if pinnedOpen {
+                                // One `ForEach` over projects and tasks together: the
+                                // shelf is arranged by hand, and a drag can only move
+                                // a row within the list it is drawn in.
+                                ForEach(Array(shownPins.enumerated()), id: \.element.node.id) { i, pin in
+                                    Group {
+                                        if pin.trail.isEmpty {
+                                            projectRow(pin.node)
+                                        } else {
+                                            PinnedTaskRow(
+                                                node: pin.node,
+                                                trail: pin.trail,
+                                                progress: TreeOps.progressOf(tree, pin.node.id),
+                                                onOpen: { onOpen(pin.node.id) })
+                                        }
                                     }
+                                    // Declared here for every row in the section, so
+                                    // the two kinds start at the same x. The card
+                                    // below is inset by the same gutter.
+                                    .listRowInsets(
+                                        EdgeInsets(
+                                            top: Space.inner, leading: Space.gutter,
+                                            bottom: Space.inner, trailing: Space.gutter))
+                                    .modifier(
+                                        HomeCard(
+                                            slot: CardSlot.at(i, of: pinRowCount),
+                                            lifted: isLifted(section: 0, row: i),
+                                            separator: i < pinRowCount - 1))
                                 }
-                                // Declared here for every row in the section, so
-                                // the two kinds start at the same x. The card
-                                // below is inset by the same gutter.
-                                .listRowInsets(
-                                    EdgeInsets(
-                                        top: Space.inner, leading: Space.gutter,
-                                        bottom: Space.inner, trailing: Space.gutter))
-                                .modifier(
-                                    HomeCard(
-                                        slot: CardSlot.at(i, of: pinRowCount),
-                                        lifted: isLifted(section: 0, row: i),
-                                        separator: i < pinRowCount - 1))
-                            }
-                            // Only while the whole shelf is showing. A drag inside
-                            // a capped list would renumber against positions the
-                            // user cannot see.
-                            .onMove(perform: showAllPins || pinCount <= pinCap ? onMovePin : nil)
+                                // Only while the whole shelf is showing. A drag inside
+                                // a capped list would renumber against positions the
+                                // user cannot see.
+                                .onMove(perform: showAllPins || pinCount <= pinCap ? onMovePin : nil)
 
-                            // A row rather than an inner scroll view. Nesting one
-                            // scroller inside the page's would make a single drag
-                            // ambiguous about which list it moves, and hand off
-                            // mid-gesture when the inner one hits its end.
-                            if pinCount > pinCap && !showAllPins {
-                                Button {
-                                    // Explicit, because a bare state write here
-                                    // pops five rows in on one frame and takes the
-                                    // button out from under the finger in the same
-                                    // one. The fold above animates itself; this is
-                                    // a plain `@State` change and gets nothing
-                                    // unless it asks.
-                                    withAnimation(.easeOut(duration: 0.2)) {
-                                        showAllPins = true
+                                // A row rather than an inner scroll view. Nesting one
+                                // scroller inside the page's would make a single drag
+                                // ambiguous about which list it moves, and hand off
+                                // mid-gesture when the inner one hits its end.
+                                if pinCount > pinCap && !showAllPins {
+                                    Button {
+                                        // Explicit, because a bare state write here
+                                        // pops five rows in on one frame and takes the
+                                        // button out from under the finger in the same
+                                        // one. The fold above animates itself; this is
+                                        // a plain `@State` change and gets nothing
+                                        // unless it asks.
+                                        withAnimation(.easeOut(duration: 0.2)) {
+                                            showAllPins = true
+                                        }
+                                    } label: {
+                                        Text("Show all \(pinCount)")
+                                            .font(.subheadline)
+                                            .foregroundStyle(.tint)
+                                            .frame(maxWidth: .infinity, alignment: .leading)
+                                            .padding(.vertical, Space.row)
+                                            .contentShape(Rectangle())
                                     }
-                                } label: {
-                                    Text("Show all \(pinCount)")
-                                        .font(.subheadline)
-                                        .foregroundStyle(.tint)
-                                        .frame(maxWidth: .infinity, alignment: .leading)
-                                        .padding(.vertical, Space.row)
-                                        .contentShape(Rectangle())
+                                    .buttonStyle(.plain)
+                                    .listRowInsets(
+                                        EdgeInsets(
+                                            top: Space.inner, leading: Space.gutter,
+                                            bottom: Space.inner, trailing: Space.gutter))
+                                    .modifier(
+                                        HomeCard(slot: .bottom, lifted: false, separator: false))
                                 }
-                                .buttonStyle(.plain)
-                                .listRowInsets(
-                                    EdgeInsets(
-                                        top: Space.inner, leading: Space.gutter,
-                                        bottom: Space.inner, trailing: Space.gutter))
-                                .modifier(
-                                    HomeCard(slot: .bottom, lifted: false, separator: false))
                             }
+                        } header: {
+                            SectionHeader(title: "Pinned", open: $pinnedOpen.animated)
+                        }
+                    }
+
+                    Section {
+                        if projectsOpen {
+                            ForEach(Array(projects.enumerated()), id: \.element.id) { i, project in
+                                projectRow(project)
+                                    .modifier(
+                                        HomeCard(
+                                            slot: CardSlot.at(i, of: projects.count),
+                                            lifted: isLifted(section: 1, row: i),
+                                            separator: i < projects.count - 1))
+                            }
+                            .onMove(perform: onMoveProject)
                         }
                     } header: {
-                        SectionHeader(title: "Pinned", open: $pinnedOpen.animated)
+                        SectionHeader(title: "Projects", open: $projectsOpen.animated)
+                    }
+
+                    // Its own section with no header, so it reads as a place of its
+                    // own rather than the last project in the list.
+                    Section {
+                        // `.plain` and an explicit shape, the same as a project row:
+                        // the default button style in a sidebar list only takes a
+                        // tap on the label's own glyph and text, so the rest of the
+                        // row swallowed it.
+                        Button(action: onOpenTrash) {
+                            // Text first, can at the trailing edge — not a `Label`,
+                            // which reserves an icon column ahead of the text and so
+                            // started "Trash" well right of every project name. The
+                            // rows share a left edge now; the can sits where a
+                            // project's count does.
+                            HStack(spacing: 6) {
+                                Text("Trash")
+                                    .font(.body.weight(.medium))
+                                    .foregroundStyle(.secondary)
+                                Spacer(minLength: 8)
+                                Image(systemName: "trash")
+                                    .foregroundStyle(.secondary)
+                            }
+                            // One line where a project row has two, so the shared
+                            // minimum is what gives this row its height.
+                            .frame(minHeight: Space.tap, alignment: .leading)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        // The same insets as a project row, which every other row in
+                        // this list already declares. Left out, this one kept the
+                        // sidebar's defaults and started at a different x than the
+                        // cards above it.
+                        .listRowInsets(
+                            EdgeInsets(
+                                top: Space.inner, leading: Space.gutter,
+                                bottom: Space.inner, trailing: Space.gutter))
+                        // On a row, not on the `List`: the recognizer has to reach
+                        // the collection view, and a `.background` on the list is
+                        // hosted outside it — the walk up finds no scroll view and
+                        // silently attaches nothing. This row is always here and
+                        // there is only ever one of it.
+                        //
+                        // Before `HomeCard`, not after: the card sets a row
+                        // background, and a `.background` applied after that is
+                        // hosted outside the cell again.
+                        .background(
+                            ListLiftFeedback(onDragChanged: { lifted = $0 })
+                                .frame(width: 0, height: 0))
+                        .modifier(
+                            HomeCard(
+                                slot: .only, lifted: false, separator: false,
+                                // This row has no header. Matching the header's
+                                // *inset* alone left it far tighter than every other
+                                // break on the screen; matching the header's whole
+                                // span was too much, empty.
+                                gapAbove: Space.headerBreak,
+                                // Trash is a place, not a project. The line says so
+                                // before the row has been read.
+                                divider: true))
                     }
                 }
-
-                Section {
-                    if projectsOpen {
-                        ForEach(Array(projects.enumerated()), id: \.element.id) { i, project in
-                            projectRow(project)
-                                .modifier(
-                                    HomeCard(
-                                        slot: CardSlot.at(i, of: projects.count),
-                                        lifted: isLifted(section: 1, row: i),
-                                        separator: i < projects.count - 1))
-                        }
-                        .onMove(perform: onMoveProject)
-                    }
-                } header: {
-                    SectionHeader(title: "Projects", open: $projectsOpen.animated)
-                }
-
-                // Its own section with no header, so it reads as a place of its
-                // own rather than the last project in the list.
-                Section {
-                    // `.plain` and an explicit shape, the same as a project row:
-                    // the default button style in a sidebar list only takes a
-                    // tap on the label's own glyph and text, so the rest of the
-                    // row swallowed it.
-                    Button(action: onOpenTrash) {
-                        // Text first, can at the trailing edge — not a `Label`,
-                        // which reserves an icon column ahead of the text and so
-                        // started "Trash" well right of every project name. The
-                        // rows share a left edge now; the can sits where a
-                        // project's count does.
-                        HStack(spacing: 6) {
-                            Text("Trash")
-                                .font(.body.weight(.medium))
-                                .foregroundStyle(.secondary)
-                            Spacer(minLength: 8)
-                            Image(systemName: "trash")
-                                .foregroundStyle(.secondary)
-                        }
-                        // One line where a project row has two, so the shared
-                        // minimum is what gives this row its height.
-                        .frame(minHeight: Space.tap, alignment: .leading)
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    // The same insets as a project row, which every other row in
-                    // this list already declares. Left out, this one kept the
-                    // sidebar's defaults and started at a different x than the
-                    // cards above it.
-                    .listRowInsets(
-                        EdgeInsets(
-                            top: Space.inner, leading: Space.gutter,
-                            bottom: Space.inner, trailing: Space.gutter))
-                    // On a row, not on the `List`: the recognizer has to reach
-                    // the collection view, and a `.background` on the list is
-                    // hosted outside it — the walk up finds no scroll view and
-                    // silently attaches nothing. This row is always here and
-                    // there is only ever one of it.
-                    //
-                    // Before `HomeCard`, not after: the card sets a row
-                    // background, and a `.background` applied after that is
-                    // hosted outside the cell again.
-                    .background(
-                        ListLiftFeedback(onDragChanged: { lifted = $0 })
-                            .frame(width: 0, height: 0))
-                    .modifier(
-                        HomeCard(
-                            slot: .only, lifted: false, separator: false,
-                            // This row has no header. Matching the header's
-                            // *inset* alone left it far tighter than every other
-                            // break on the screen; matching the header's whole
-                            // span was too much, empty.
-                            gapAbove: Space.headerBreak,
-                            // Trash is a place, not a project. The line says so
-                            // before the row has been read.
-                            divider: true))
+                .listStyle(.plain)
+                // The grouped grey the cards sit on. `.sidebar` painted this; under
+                // `.plain` the list's own background is the page's, so it has to be
+                // said.
+                .scrollContentBackground(.hidden)
+                .background(Color(.systemGroupedBackground))
+                // A new project is added at the bottom, which on a long list is
+                // below the fold, and a List only builds the rows it shows. With
+                // no field for the focus to land on, the edit stayed open with the
+                // bottom bar hidden for it and nothing on screen to type into.
+                .onChange(of: editing) { _, id in
+                    guard let id else { return }
+                    proxy.scrollTo(id)
                 }
             }
-            .listStyle(.plain)
-            // The grouped grey the cards sit on. `.sidebar` painted this; under
-            // `.plain` the list's own background is the page's, so it has to be
-            // said.
-            .scrollContentBackground(.hidden)
-            .background(Color(.systemGroupedBackground))
         }
     }
 
