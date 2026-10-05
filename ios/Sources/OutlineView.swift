@@ -898,8 +898,13 @@ struct OutlineView: View {
                 // second way in.
                 //
                 // Not in the trash, where there is nothing to add to.
+                //
+                // Not on Home either, where the open field is a project's name
+                // and the keyboard's own ✓ already confirms it — and goes in.
+                // A second ✓ that only saved and stayed put looked the same
+                // and did less.
                 if edit.isEditing {
-                    doneButton(interactive: interactive)
+                    if !home(scope, trash: trash) { doneButton(interactive: interactive) }
                 } else if !trash {
                     captureButton(interactive: interactive, home: scope == nil)
                 }
