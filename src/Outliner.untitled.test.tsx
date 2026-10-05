@@ -2,6 +2,7 @@ import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { clerkMock } from './testClerk'
 import { silenceSocket } from './testSocket'
 import { act, cleanup, fireEvent, render } from '@testing-library/react'
+import { flushSync } from 'react-dom'
 import { seedTree } from '@shared/seed'
 import Outliner from './Outliner'
 
@@ -32,7 +33,9 @@ function projects(container: HTMLElement) {
  *
  * jsdom leaves isContentEditable false whatever the attribute says, which would
  * let the window-level "Enter adds a task" shortcut fire on keypresses the real
- * browser routes only to the title. Set it so the test exercises the real path.
+ * browser routes only to the title. Read it off the attribute, as a browser
+ * does, so it also goes false once the title leaves edit mode — a fixed `true`
+ * hid a double-add on Enter.
  */
 function startNewProject(container: HTMLElement) {
   const add = [...container.querySelectorAll('button')].find((b) =>
@@ -40,7 +43,9 @@ function startNewProject(container: HTMLElement) {
   ) as HTMLElement
   act(() => add.click())
   const title = container.querySelector('h1[contenteditable="true"]') as HTMLElement
-  Object.defineProperty(title, 'isContentEditable', { value: true })
+  Object.defineProperty(title, 'isContentEditable', {
+    get: () => title.getAttribute('contenteditable') === 'true',
+  })
   return title
 }
 
@@ -104,4 +109,36 @@ test('a project genuinely named Untitled is kept', () => {
   })
 
   expect(projects(container).some((p) => /Untitled/.test(p))).toBe(true)
+})
+
+test('naming a new project and pressing Enter opens exactly one first task', async () => {
+  const { container } = render(<Outliner initial={seedTree()} />)
+  const title = startNewProject(container)
+  act(() => {
+    title.textContent = 'Groceries'
+    fireEvent.input(title)
+  })
+
+  // A real keypress gets a microtask checkpoint between listeners, so React's
+  // update from the title's keydown renders before the same Enter bubbles on
+  // to the window, and by then the title is no longer editable. The window's
+  // "Enter adds a task" shortcut must still leave that Enter alone. A scripted
+  // dispatch has no checkpoint (and fireEvent's act() defers the render past
+  // the whole dispatch), so flush from a document listener, which runs between
+  // React's root and the window.
+  const env = globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
+  const actEnv = env.IS_REACT_ACT_ENVIRONMENT
+  const checkpoint = () => flushSync(() => {})
+  env.IS_REACT_ACT_ENVIRONMENT = false
+  document.addEventListener('keydown', checkpoint)
+  try {
+    title.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
+  } finally {
+    document.removeEventListener('keydown', checkpoint)
+    env.IS_REACT_ACT_ENVIRONMENT = actEnv
+  }
+  await act(async () => {})
+
+  expect(title.textContent).toBe('Groceries')
+  expect(container.querySelectorAll('main .row')).toHaveLength(1)
 })

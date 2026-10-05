@@ -583,7 +583,16 @@ export default function Outliner({ initial }: { initial: Tree }) {
 
       // Enter with nothing focused is a shortcut for a new task in the current
       // scope — the same as clicking "+ add a subtask", but from the keyboard.
-      if (e.key === 'Enter' && !inField && scopeRef.current !== null && !leafOnlyRef.current) {
+      // An Enter something else already handled is skipped: by the time Enter
+      // on the project title bubbles here, React has re-rendered the title as
+      // no longer editable, so inField alone would add a second row.
+      if (
+        e.key === 'Enter' &&
+        !e.defaultPrevented &&
+        !inField &&
+        scopeRef.current !== null &&
+        !leafOnlyRef.current
+      ) {
         e.preventDefault()
         addSiblingRef.current(null)
         return
