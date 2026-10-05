@@ -263,6 +263,10 @@ struct OutlineView: View {
             // rebuilds the same rows from nothing, which drew a frame of
             // half-filled list: a flicker with nothing moving.
             ZStack {
+                // Above the slabs, not in one: a slab is keyed by its screen,
+                // so one in a slab leaves with that screen — and opening a
+                // just-named project is a screen change with the keyboard up.
+                if edit.isEditing || focusedRow != nil { keyboardHolder }
                 ForEach(slabLayers, id: \.key) { layer in
                     slab(for: layer.scope, interactive: layer.live,
                          trash: layer.trash, search: layer.search,
@@ -882,7 +886,6 @@ struct OutlineView: View {
                 searchBar(query: search, interactive: interactive)
             } else {
             HStack(spacing: 0) {
-                if edit.isEditing || focusedRow != nil { keyboardHolder }
                 if edit.isEditing {
                     // Not for a project's name on Home: indenting would file
                     // one project inside the one above it.
@@ -2045,6 +2048,12 @@ struct OutlineView: View {
         // project rather than beside it. `setScope` clears the run, which is
         // why this comes second.
         addRow()
+        // `addRow` parks focus in the holder and hands it on a turn later, but
+        // that handover gives up unless it reads the holder back, and across
+        // a screen change focus still reads as the name field for a turn or
+        // two. Without this the keyboard stays up with the typing going into
+        // the holder.
+        if let first = edit.editing { DispatchQueue.main.async { claimFocus(first, triesLeft: 10) } }
     }
 
     /// Leave the run. The open row is a sentinel: if it has text it becomes a
@@ -2227,6 +2236,17 @@ struct OutlineView: View {
                 handOff(to: id, triesLeft: triesLeft - 1, then: landed)
             } else {
             }
+        }
+    }
+
+    /// Move focus to `id` and keep at it until it reads back. Unlike `handOff`
+    /// it does not first check where focus is — for a caller that knows focus
+    /// is somewhere in flight and only cares where it ends up.
+    private func claimFocus(_ id: NodeId, triesLeft: Int) {
+        guard focusedRow != id, triesLeft > 0 else { return }
+        focusedRow = id
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.03) {
+            claimFocus(id, triesLeft: triesLeft - 1)
         }
     }
 
