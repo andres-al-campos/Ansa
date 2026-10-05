@@ -3662,8 +3662,10 @@ private struct ScopeTitle: View {
                 .lineLimit(1)
                 .truncationMode(.tail)
             if onShowPath != nil {
+                // Small enough to be a footnote to the name, and no smaller:
+                // under about 10pt the two chevrons close into one diamond.
                 Image(systemName: "chevron.up.chevron.down")
-                    .font(.footnote.weight(.semibold))
+                    .font(.caption2.weight(.semibold))
                     .foregroundStyle(.secondary)
             }
         }
