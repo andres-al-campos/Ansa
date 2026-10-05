@@ -51,16 +51,6 @@ struct OutlineView: View {
     /// The project whose delete is awaiting confirmation.
     @State private var pendingDelete: Node?
 
-    /// The scope being renamed, and the name being typed for it.
-    ///
-    /// Deliberately not `EditController`: that one is the row path's, keyed by
-    /// the row whose `TextField` exists. The scope has no row — zooming in is
-    /// what turns its row into the header — so its rename is a state of its
-    /// own, and the two cannot overwrite each other.
-    /// The trash row was tapped. There is no trash screen on the phone yet, so
-    /// this says so rather than letting the row do nothing — a row that
-    /// swallows a tap reads as broken.
-    /// Whether the trash sheet is up.
     /// Whether the trash is the screen showing. A second axis beside `scope`
     /// rather than a case of it: every navigation helper here keys off a
     /// `NodeId?`, and the trash has no node to be. `scope` is left as it was, so
@@ -101,6 +91,12 @@ struct OutlineView: View {
     /// on the release that follows does not also go back.
     @State private var backHeld = false
 
+    /// The scope being renamed, and the name being typed for it.
+    ///
+    /// Deliberately not `EditController`: that one is the row path's, keyed by
+    /// the row whose `TextField` exists. The scope has no row — zooming in is
+    /// what turns its row into the header — so its rename is a state of its
+    /// own, and the two cannot overwrite each other.
     @State private var renamingScope: NodeId?
     @State private var renameText = ""
     @FocusState private var renamingFocus: Bool
