@@ -71,8 +71,9 @@ the server's tree once the live connection is established.
 
 Locally the app skips the sign-in gate — the Worker runs its dev auth stub
 (`ANSA_DEV_AUTH=1` in `.dev.vars`) and `build.sh` leaves the Clerk publishable
-key unset. If `CLERK_SECRET_KEY` happens to be set in your shell, the key gets
-set too and you'll be asked to sign in.
+key unset. If `CLERK_SECRET_KEY` is set in your shell or the Keychain, the key
+gets set too and you'll be asked to sign in; `./build.sh web --no-auth` skips
+both.
 
 `npm test` runs the suite. `npm run build` type-checks and builds the app into
 `dist/`.
