@@ -880,6 +880,9 @@ struct OutlineView: View {
             // needs, and it draws.
             if let search {
                 searchBar(query: search, interactive: interactive)
+            } else if renaming(scope, interactive: interactive) {
+                // Drawn by the overlay below instead, under the keys.
+                Color.clear.frame(height: 0)
             } else {
             HStack(spacing: 0) {
                 if edit.isEditing {
@@ -919,17 +922,20 @@ struct OutlineView: View {
         // than riding the keys, so the keys slide over them. With the keyboard
         // down, Search's own Home takes the pill's corner.
         //
+        // The same while the title is being renamed: the pill and the + have
+        // nothing to do with a name, and riding up they sat on top of the keys.
+        //
         // On a layer the size of the page that ignores the keyboard: on the
         // button alone, `ignoresSafeArea` left it riding up with the keys.
         .overlay {
-            if search != nil {
+            if search != nil || renaming(scope, interactive: interactive) {
                 Color.clear
                     .overlay(alignment: .bottom) {
-                        if interactive && searchSpot != .low {
+                        if search == nil || (interactive && searchSpot != .low) {
                             HStack(spacing: 0) {
                                 navPill(
                                     onHome: home(scope, trash: trash), interactive: false,
-                                    searchHidden: true)
+                                    searchHidden: search != nil)
                                 Spacer(minLength: 0)
                                 if !trash { captureButton(interactive: false, home: scope == nil) }
                             }
@@ -1474,6 +1480,11 @@ struct OutlineView: View {
                 TapGesture().onEnded(action), including: interactive ? .all : .none)
             .accessibilityLabel(label)
             .accessibilityAddTraits(lit ? [.isButton, .isSelected] : .isButton)
+    }
+
+    /// Whether this screen's title is the field being typed into.
+    private func renaming(_ scope: NodeId?, interactive: Bool) -> Bool {
+        interactive && renamingScope != nil && renamingScope == scope
     }
 
     /// Whether this screen is Home: no scope, and not the trash.
