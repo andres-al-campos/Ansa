@@ -6,7 +6,7 @@ again. Several features exist on one platform only; the file says which.
 
 | Feature | File | Platforms | Driveable headless? |
 |---|---|---|---|
-| Outline a project | [outline.md](outline.md) | web, iOS | Not yet proven |
+| Outline a project | [outline.md](outline.md) | web, iOS | Yes, web (2026-10-04) |
 | Check things off | [check-off.md](check-off.md) | web, iOS | Not yet proven |
 | Reorganize | [reorganize.md](reorganize.md) | web, iOS | Not yet proven |
 | Get around | [get-around.md](get-around.md) | web, iOS | Not yet proven |
@@ -38,10 +38,14 @@ are left out on purpose; read the code when a task needs them.
 
 ## Driving conventions
 
-- `./build.sh web` runs the Worker under `wrangler dev` on :8787 and the app on
-  http://localhost:5173, with throwaway local storage. Sign-in is skipped: the
-  dev auth stub makes every local client the user `legacy`, so the web app, a
-  local MCP and the simulator all edit one tree.
+- `./build.sh web --no-auth` runs the Worker under `wrangler dev` on :8787 and
+  the app on http://localhost:5173, with throwaway local storage and no
+  sign-in: the dev auth stub makes every local client the user `legacy`, so
+  the web app, a local MCP and the simulator all edit one tree. Use it for
+  driving. Plain `./build.sh web` shows a sign-in wall on a machine with the
+  Clerk secret in the Keychain.
+- Doctor: `curl http://127.0.0.1:8787/api/health` should answer
+  `{"ok":true,"auth":"dev"}` before driving.
 - `ios/build.sh sim --no-auth` runs the iOS app in a simulator against that
   local Worker, without the sign-in wall. Plain `ios/build.sh` installs on the
   phone against the live Worker.

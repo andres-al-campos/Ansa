@@ -18,7 +18,7 @@ Mark tasks done and see how far along a project is.
 
 ## Driving it
 
-Preconditions: `./build.sh web` running, a project with a parent and two
+Preconditions: `./build.sh web --no-auth` running, a project with a parent and two
 children.
 
 1. Tick both children.

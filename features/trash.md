@@ -18,7 +18,7 @@ Deleted tasks wait 30 days in the trash, where they can be put back.
 
 ## Driving it
 
-Preconditions: `./build.sh web` running, a project with a task.
+Preconditions: `./build.sh web --no-auth` running, a project with a task.
 
 1. Delete the task with ⌘/Ctrl+Backspace, open Trash, click restore.
 2. Expected: the task is back in place and the entry is gone.

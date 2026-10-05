@@ -19,7 +19,7 @@ another branch, and reorder projects and pins.
 
 ## Driving it
 
-Preconditions: `./build.sh web` running, a project with a few rows.
+Preconditions: `./build.sh web --no-auth` running, a project with a few rows.
 
 1. Drag the last row onto the middle of the first.
 2. Expected: it becomes the first row's first child.

@@ -19,7 +19,7 @@ without a reload, and edits made offline go out on reconnect.
 
 ## Driving it
 
-Preconditions: `./build.sh web` running.
+Preconditions: `./build.sh web --no-auth` running.
 
 1. Open http://localhost:5173 in two tabs, rename a task in one.
 2. Expected: the other tab shows the new name without a reload.

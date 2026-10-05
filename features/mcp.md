@@ -18,7 +18,7 @@ the person.
 
 ## Driving it
 
-Preconditions: `./build.sh web` running.
+Preconditions: `./build.sh web --no-auth` running.
 
 1. Run the MCP server with `ANSA_API=http://127.0.0.1:8787` and no token, so
    the dev stub treats it as `legacy`, the same user as the local web app.

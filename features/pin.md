@@ -16,7 +16,7 @@ Keep the projects and tasks you're working on one tap away.
 
 ## Driving it
 
-Preconditions: `./build.sh web` running, a project with a task.
+Preconditions: `./build.sh web --no-auth` running, a project with a task.
 
 1. Zoom into the task, click its pin button.
 2. Expected: it appears under Pinned in the sidebar, with its trail.

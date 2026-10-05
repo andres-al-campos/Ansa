@@ -16,7 +16,7 @@ Find a task by its text. iOS only; the web has no search.
 
 ## Driving it
 
-Preconditions: `ios/build.sh sim --no-auth` running against `./build.sh web`.
+Preconditions: `ios/build.sh sim --no-auth` running against `./build.sh web --no-auth`.
 
 1. Open Search, type part of a task's text.
 2. Expected: the task is listed; tapping it opens it.

@@ -15,7 +15,7 @@ Export the whole account as JSON, or replace it from a file. Web only.
 
 ## Driving it
 
-Preconditions: `./build.sh web` running.
+Preconditions: `./build.sh web --no-auth` running.
 
 Partly blocked: Export is a browser download. Import can be driven with a file
 input and a confirm dialog.

@@ -28,15 +28,21 @@ to do. Projects are the top-level rows; everything else nests under them.
 
 ## Driving it
 
-Preconditions: `./build.sh web` running (see the README).
+Preconditions: `./build.sh web --no-auth` running (see the README).
 
 1. Open http://localhost:5173, click + New project, type a name, press Enter.
 2. Type a task, Enter, type another, Tab to nest it.
 3. Expected: the second task shows indented under the first, and survives a
    reload (the server has it, not only the browser).
 
+Last driven 2026-10-04: nesting and reload passed, and the reload reopened the
+project. It also showed the first gotcha below.
+
 ## Gotchas
 
+- Bug, open: naming a new project and pressing Enter shows two rows, an
+  "Untitled" one and the focused empty one. Neither reaches the server; the
+  extra row is gone after a reload. Seen with fast and slow typing.
 - Undo is web only and covers your own edits. An edit from another device or a
   Claude replaces the tree without a checkpoint, so ⌘Z doesn't undo it. iOS has
   no undo.

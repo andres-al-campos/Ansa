@@ -24,7 +24,7 @@ back out.
 
 ## Driving it
 
-Preconditions: `./build.sh web` running, a project with nested rows.
+Preconditions: `./build.sh web --no-auth` running, a project with nested rows.
 
 1. Hover a row with children, click the arrow at its right edge.
 2. Expected: the row becomes the header, its children the list, and the

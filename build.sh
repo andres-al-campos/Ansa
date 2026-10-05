@@ -8,6 +8,7 @@
 #   ./build.sh              package the desktop .app and install it, the default
 #   ./build.sh desktop      dev run of the desktop app (hot-reload window)
 #   ./build.sh web          run the local web stack: API + Vite app together
+#   ./build.sh web --no-auth  the same without sign-in, even with a Keychain secret
 #   ./build.sh deploy       test, then publish the API and the app
 #   ./build.sh deploy api   the Worker only
 #   ./build.sh deploy app   the Pages bundle only
@@ -131,8 +132,15 @@ keychain_secret() {
   security find-generic-password -s "$1" -w 2>/dev/null || true
 }
 
+# `web --no-auth` skips the Keychain, so the app opens with no sign-in on a
+# machine that has a secret. It's what an agent driving the app uses.
+if [ "${1:-}" = "web" ] && [ "${2:-}" = "--no-auth" ]; then
+  unset CLERK_SECRET_KEY VITE_CLERK_PUBLISHABLE_KEY
+  NO_AUTH=1
+fi
+
 # An already-set env var wins, so CI and Railway work with this same script.
-if [ -z "${CLERK_SECRET_KEY:-}" ]; then
+if [ -z "${NO_AUTH:-}" ] && [ -z "${CLERK_SECRET_KEY:-}" ]; then
   CLERK_SECRET_KEY=$(keychain_secret ansa-clerk-secret)
   export CLERK_SECRET_KEY
 fi
@@ -589,9 +597,9 @@ case "${1:-}" in
     desktop; exit 0 ;;
   deploy) deploy "${2:-both}"; exit 0 ;;
   web)
-    if [ -n "${2:-}" ]; then
-      echo "'web' takes no argument." >&2
-      echo "Usage: ./build.sh web" >&2
+    if [ -n "${2:-}" ] && [ "$2" != "--no-auth" ]; then
+      echo "'web' takes only --no-auth." >&2
+      echo "Usage: ./build.sh web [--no-auth]" >&2
       exit 1
     fi
     ;;
