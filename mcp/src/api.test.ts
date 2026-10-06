@@ -93,12 +93,13 @@ test('move_task reports what happened rather than assuming success', () => {
   expect(body).toMatch(/Did not move/)
 })
 
-test('an env token wins over the Keychain', () => {
+test('an env token wins over the Keychain, and an empty one turns it off', () => {
   // Order matters for anywhere that isn't this laptop: CI, a container, or a
   // Linux box passes ANSA_TOKEN the ordinary way, and a Keychain lookup that
   // took precedence would either shadow it or, on a machine with no `security`
-  // binary, cost a failed subprocess on every start.
-  expect(source).toMatch(/process\.env\.ANSA_TOKEN\s*\|\|\s*keychainToken\(\)/)
+  // binary, cost a failed subprocess on every start. `??` rather than `||` so
+  // ANSA_TOKEN= gives a local dev worker the header instead of the token.
+  expect(source).toMatch(/process\.env\.ANSA_TOKEN\s*\?\?\s*keychainToken\(\)/)
 })
 
 test('the Keychain lookup is macOS-only and fails quiet', () => {
