@@ -321,10 +321,12 @@ deploy() {
   # leaving it armed prints a spurious "Stopping…" on success.
   trap - INT TERM EXIT
 
-  # Tests before either half goes out. The suite is ~10s and covers the tree
-  # model both sides share, so skipping it to save time is a false economy.
-  echo "Running tests …"
-  npm test
+  # Everything before either half goes out: the push hook runs only the tests a
+  # change could affect, so a release is where the whole of check runs. A
+  # separate process rather than a call, so check's own set -e and stack trap
+  # behave as they do when run directly.
+  echo "Running ./build.sh check before deploying …"
+  "$0" check
 
   # Each half is checked immediately after it ships, not both at the end: when
   # the API is broken the app deploy should not go out on top of it.

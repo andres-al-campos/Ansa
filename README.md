@@ -80,8 +80,9 @@ typecheck, the TypeScript and Swift suites, the Swift-to-server wire and agreeme
 `npm run drive`, which works the web app and the MCP in a headless browser. It
 uses a `./build.sh web --no-auth` you already have running, or starts one and
 stops it when done. `npm test` runs just the TypeScript suite. Before each
-push, `.githooks/pre-push` runs `npm test`, plus the Swift/TypeScript agreement
-check when the push changes an op; `./build.sh` turns the hook on. `npm run build`
+push, `.githooks/pre-push` runs the tests the push could affect and the laws,
+plus the Swift/TypeScript agreement check when the push changes an op;
+`./build.sh` turns the hook on. `npm run build`
 type-checks and builds the app into `dist/`.
 
 ## Deploying
@@ -90,7 +91,7 @@ type-checks and builds the app into `dist/`.
 ./build.sh deploy
 ```
 
-Runs the tests, then ships the Worker and the app, checking each live URL before
+Runs `./build.sh check`, then ships the Worker and the app, checking each live URL before
 moving on. `./build.sh deploy api` or `deploy app` when only one changed.
 
 The API goes first on purpose. If it fails, the old app is still talking to the
