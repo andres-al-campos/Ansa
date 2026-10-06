@@ -66,7 +66,7 @@ describe('the MCP token', () => {
       ANSA_MCP_USER: 'user_real',
     }
     // The stub answers, but from the header — not from the MCP token.
-    await expect(ownerOf(bearer(TOKEN), env)).resolves.toBe('legacy')
+    await expect(ownerOf(bearer(TOKEN), env)).resolves.toBe('dev')
   })
 
   // The stub trusts x-ansa-user. If it could still answer with Clerk

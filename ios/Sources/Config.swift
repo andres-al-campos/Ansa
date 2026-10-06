@@ -20,7 +20,7 @@ enum Config {
     /// one test user every client defaults to, so the simulator, the browser and
     /// the MCP all see the same tree. A Clerk-backed server ignores this and
     /// uses the bearer token.
-    static let devUser = "legacy"
+    static let devUser = "dev"
 
     static var apiBase: URL {
         #if DEBUG

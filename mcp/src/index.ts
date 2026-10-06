@@ -31,7 +31,7 @@ const BASE = process.env.ANSA_API ?? 'https://ansa.id3arium.workers.dev'
  * deployed worker ignores it, by design.
  */
 const TOKEN = process.env.ANSA_TOKEN || keychainToken()
-const USER = process.env.ANSA_USER ?? 'legacy'
+const USER = process.env.ANSA_USER ?? 'dev'
 
 /**
  * The token from the macOS Keychain, or empty if it isn't there.

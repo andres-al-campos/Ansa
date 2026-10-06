@@ -40,7 +40,7 @@ are left out on purpose; read the code when a task needs them.
 
 - `./build.sh web --no-auth` runs the Worker under `wrangler dev` on :8787 and
   the app on http://localhost:5173, with throwaway local storage and no
-  sign-in: the dev auth stub makes every local client the user `legacy`, so
+  sign-in: the dev auth stub makes every local client the user `dev`, so
   the web app, a local MCP and the simulator all edit one tree. Use it for
   driving. Plain `./build.sh web` shows a sign-in wall on a machine with the
   Clerk secret in the Keychain.

@@ -128,7 +128,7 @@ function stubOwner(req: Request): string {
   // With no header, every request is the one test user every client defaults
   // to, so a client that sends a token instead (the MCP with a Keychain token)
   // still lands on the same tree as the browser.
-  return 'legacy'
+  return 'dev'
 }
 
 /**

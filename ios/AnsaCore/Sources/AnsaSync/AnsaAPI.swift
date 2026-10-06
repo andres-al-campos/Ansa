@@ -48,7 +48,7 @@ public actor AnsaAPI {
     public init(
         base: URL,
         token: @escaping TokenSource,
-        user: String = "legacy",
+        user: String = "dev",
         authenticated: Bool = false,
         session: URLSession = .shared,
         defaults: UserDefaults = .standard

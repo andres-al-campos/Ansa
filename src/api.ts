@@ -56,7 +56,7 @@ export const ORIGIN = `web-${crypto.randomUUID()}`
  * ignores it entirely. Set VITE_ANSA_USER to run a second account in another
  * browser profile and check that the two trees stay apart.
  */
-const USER = import.meta.env.VITE_ANSA_USER ?? 'legacy'
+const USER = import.meta.env.VITE_ANSA_USER ?? 'dev'
 
 /**
  * How to get the current Clerk session token, installed by the provider at
