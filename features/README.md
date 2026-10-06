@@ -11,7 +11,7 @@ again. Several features exist on one platform only; the file says which.
 | Reorganize | [reorganize.md](reorganize.md) | web, iOS | Yes, web (2026-10-06) |
 | Get around | [get-around.md](get-around.md) | web, iOS | Yes, web (2026-10-06) |
 | Pin | [pin.md](pin.md) | web, iOS | Yes, web (2026-10-06) |
-| Search | [search.md](search.md) | iOS only | Not yet proven (needs the simulator) |
+| Search | [search.md](search.md) | iOS only | Yes (2026-10-06), by hand on the simulator |
 | Trash | [trash.md](trash.md) | web, iOS | Yes, web (2026-10-06) |
 | Backup & transfer | [backup.md](backup.md) | web only | Yes (2026-10-06) |
 | Sign in and sync | [sync.md](sync.md) | web, iOS | Live updates, web (2026-10-06); sign-in not driven |

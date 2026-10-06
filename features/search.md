@@ -19,9 +19,16 @@ Find a task by its text. iOS only; the web has no search.
 Preconditions: `ios/build.sh sim --no-auth` running against `./build.sh web --no-auth`.
 
 1. Open Search, type part of a task's text.
-2. Expected: the task is listed; tapping it opens it.
+2. Expected: the task is listed under Results with the match highlighted and
+   its project beneath; tapping it opens that project.
+
+Driven by hand 2026-10-06: "zebra" found "Call the zebra keeper" from Home and
+opened drive search. No repeatable drive yet; the app has no UI test target.
 
 ## Gotchas
 
 - The matching rule lives only in the Swift code. Search on the web would need
   it ported to the shared TypeScript model first, or the two will disagree.
+- The simulator tool's screenshot can keep returning the frame from the
+  middle of the page's grow animation while the app has moved on. When the
+  screen looks frozen, check with `xcrun simctl io booted screenshot`.
