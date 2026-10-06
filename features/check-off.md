@@ -32,5 +32,11 @@ Last driven 2026-10-06, web.
 - A parent's done state is derived, not stored independently. Any change that
   moves, adds or removes children re-derives it, so a parent can flip to done
   or back without anyone ticking it.
+- A task's own tick isn't kept while it has children. Tab a finished task
+  under an open one and the open one ticks; Shift-Tab it back out and it stays
+  ticked. The mirror case unticks a finished task the same way. Accepted
+  (2026-10-06): keeping the tick needs a stored field in both apps, and the
+  cheaper "untick when the last child leaves" rule reopens finished projects
+  when their last task is deleted.
 - "Hide completed" exists in the web code with no toggle (see
   [Get around](get-around.md)); re-adding it is a markup change.
