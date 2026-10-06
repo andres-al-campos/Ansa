@@ -120,7 +120,7 @@ function tokenOf(req: Request): string | null {
 }
 
 /** The user id the dev stub is told to trust. Not authentication. */
-function stubOwner(req: Request, env: AuthEnv): string {
+function stubOwner(req: Request): string {
   const header = req.headers.get('x-ansa-user')
   if (header && header.length > 0) return header
   const user = new URL(req.url).searchParams.get('user')
@@ -216,6 +216,6 @@ export async function ownerOf(req: Request, env: AuthEnv): Promise<string | null
       return null
     }
   }
-  if (env.ANSA_DEV_AUTH === '1') return stubOwner(req, env)
+  if (env.ANSA_DEV_AUTH === '1') return stubOwner(req)
   return null
 }
