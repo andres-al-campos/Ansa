@@ -9,6 +9,7 @@
 #   ./build.sh desktop      dev run of the desktop app (hot-reload window)
 #   ./build.sh web          run the local web stack: API + Vite app together
 #   ./build.sh web --no-auth  the same without sign-in, even with a Keychain secret
+#   ./build.sh check        typecheck, tests, then the drives on a no-sign-in stack
 #   ./build.sh deploy       test, then publish the API and the app
 #   ./build.sh deploy api   the Worker only
 #   ./build.sh deploy app   the Pages bundle only
@@ -584,6 +585,61 @@ desktop_dist() {
   fi
 }
 
+# Everything that can be checked without a person: types, the test suites, then
+# the drives against a no-sign-in stack. A stack already running in dev auth is
+# reused, so check works alongside `./build.sh web --no-auth`; otherwise check
+# starts one and stops it when done.
+check() {
+  trap - INT TERM EXIT
+
+  echo "Typechecking …"
+  npm run typecheck
+  echo "Running tests …"
+  npm test
+  if command -v swift >/dev/null 2>&1; then
+    echo "Running the AnsaCore tests and the Swift-to-TypeScript wire check …"
+    ios/build.sh test
+    ios/build.sh wire
+  else
+    echo "Skipping the AnsaCore and wire checks: swift isn't installed (needs Xcode on macOS)."
+  fi
+
+  local health="http://127.0.0.1:${API_PORT}/api/health"
+  if ! curl -fsS "$health" 2>/dev/null | grep -q '"auth":"dev"'; then
+    if curl -fsS "$health" >/dev/null 2>&1; then
+      echo "The API on :${API_PORT} is running with sign-in, and the drives need it off." >&2
+      echo "Stop that ./build.sh web and re-run, or start ./build.sh web --no-auth yourself." >&2
+      exit 1
+    fi
+    # Globals, not locals: the EXIT trap runs after check() has returned.
+    STACK_LOG=$(mktemp -t ansa-check-stack)
+    echo "Starting the web stack without sign-in (log: ${STACK_LOG}) …"
+    ANSA_NO_OPEN=1 ./build.sh web --no-auth >"$STACK_LOG" 2>&1 &
+    STACK_PID=$!
+    # Stop it however check ends. Its own trap takes down wrangler and Vite.
+    trap 'kill "$STACK_PID" 2>/dev/null; wait "$STACK_PID" 2>/dev/null; rm -f "$STACK_LOG"' EXIT
+    local waited=0
+    until curl -fsS "$health" 2>/dev/null | grep -q '"auth":"dev"' \
+        && curl -fsS "$APP_URL" >/dev/null 2>&1; do
+      if ! kill -0 "$STACK_PID" 2>/dev/null; then
+        echo "The web stack stopped before it was up. Its last lines:" >&2
+        tail -n 15 "$STACK_LOG" >&2
+        exit 1
+      fi
+      if [ "$waited" -ge 120 ]; then
+        echo "The web stack wasn't up after 120s. Its last lines:" >&2
+        tail -n 15 "$STACK_LOG" >&2
+        exit 1
+      fi
+      sleep 2; waited=$((waited + 2))
+    done
+  fi
+
+  echo "Running the drives …"
+  npm run drive
+  echo "All checks passed."
+}
+
 # The bare default packages and installs the desktop app; everything else is an
 # explicit argument. `web` is the only one that falls through to the run-stack
 # code below — the rest handle themselves and exit here.
@@ -597,6 +653,7 @@ case "${1:-}" in
     fi
     desktop; exit 0 ;;
   deploy) deploy "${2:-both}"; exit 0 ;;
+  check) check; exit 0 ;;
   web)
     if [ -n "${2:-}" ] && [ "$2" != "--no-auth" ]; then
       echo "'web' takes only --no-auth." >&2
@@ -606,7 +663,7 @@ case "${1:-}" in
     ;;
   *)
     echo "Unknown argument: $1" >&2
-    echo "Usage: ./build.sh [desktop | web | deploy [app|api]]" >&2
+    echo "Usage: ./build.sh [desktop | web | check | deploy [app|api]]" >&2
     exit 1
     ;;
 esac

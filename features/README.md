@@ -44,6 +44,8 @@ are left out on purpose; read the code when a task needs them.
   the web app, a local MCP and the simulator all edit one tree. Use it for
   driving. Plain `./build.sh web` shows a sign-in wall on a machine with the
   Clerk secret in the Keychain.
+- `./build.sh check` runs the tests and then every drive below, starting a
+  no-sign-in stack if none is up. Run it before and after changing a feature.
 - Doctor: `curl http://127.0.0.1:8787/api/health` should answer
   `{"ok":true,"auth":"dev"}` before driving. `npm run drive` checks this first.
 - `npm run drive` runs every web and MCP drive in a headless Chromium; name
