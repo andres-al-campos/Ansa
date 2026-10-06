@@ -40,8 +40,9 @@ import { verifyToken } from '@clerk/backend'
 export interface AuthEnv {
   CLERK_SECRET_KEY?: string
   /**
-   * The header-trusting dev stub. Only ever set in .dev.vars for `wrangler
-   * dev`; a deployed worker must not have it. See assertNotProduction.
+   * The header-trusting dev stub. Only ever set for `wrangler dev`, by
+   * build.sh's local run; a deployed worker must not have it. See
+   * assertNotProduction.
    */
   ANSA_DEV_AUTH?: string
   ANSA_DEV_USER?: string

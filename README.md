@@ -70,7 +70,7 @@ The app opens from a localStorage cache for an instant first paint, then adopts
 the server's tree once the live connection is established.
 
 Locally the app skips the sign-in gate — the Worker runs its dev auth stub
-(`ANSA_DEV_AUTH=1` in `.dev.vars`) and `build.sh` leaves the Clerk publishable
+(`build.sh` passes it `ANSA_DEV_AUTH=1`) and leaves the Clerk publishable
 key unset. If `CLERK_SECRET_KEY` is set in your shell or the Keychain, the key
 gets set too and you'll be asked to sign in; `./build.sh web --no-auth` skips
 both.

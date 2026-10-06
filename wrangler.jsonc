@@ -53,6 +53,6 @@
   // CLERK_SECRET_KEY is a secret, not a var: `wrangler secret put
   // CLERK_SECRET_KEY`. It must never appear in this file, which is committed.
   //
-  // ANSA_DEV_AUTH belongs only in .dev.vars (gitignored, local only). A
+  // ANSA_DEV_AUTH is set only by build.sh's local run, never here. A
   // deployed worker carrying it refuses every request — see misconfiguredAuth.
 }
