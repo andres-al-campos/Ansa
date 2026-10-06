@@ -106,6 +106,7 @@ kill_tree() {
 
 cleanup() {
   trap - INT TERM EXIT
+  if [ -n "${WORKER_ENV:-}" ]; then rm -f "$WORKER_ENV"; fi
   # Nothing was started, so there is nothing to stop. Reached when the script
   # exits early — a usage error, or a deploy — and announcing "Stopping…" there
   # buries the actual message. The ${#pids[@]:-0} guard is also what keeps
@@ -123,7 +124,7 @@ cleanup() {
 trap cleanup INT TERM EXIT
 
 # Secrets come from the macOS Keychain locally and from the platform's own
-# secret store when deployed. The server only ever reads process.env, so it
+# secret store when deployed. The Worker reads them from its env bindings, so it
 # doesn't know or care which one filled it — keep it that way.
 #
 # Add the secret with (it prompts, so it stays out of shell history):
@@ -610,7 +611,20 @@ case "${1:-}" in
     ;;
 esac
 
+# wrangler dev gives the Worker what .dev.vars holds and nothing from this
+# script's environment, so the auth chosen above is handed over in a file. It's
+# read after .dev.vars so it wins, and an empty CLERK_SECRET_KEY keeps --no-auth
+# in dev mode even if .dev.vars has a secret. It can hold the secret, so mktemp
+# makes it private to this user and cleanup removes it.
+WORKER_ENV=$(mktemp -t ansa-worker-env)
+{
+  echo "ANSA_DEV_AUTH=${ANSA_DEV_AUTH}"
+  echo "CLERK_SECRET_KEY=${CLERK_SECRET_KEY:-}"
+} > "$WORKER_ENV"
+
 API_CMD=(npx wrangler dev --port "$API_PORT")
+if [ -f .dev.vars ]; then API_CMD+=(--env-file .dev.vars); fi
+API_CMD+=(--env-file "$WORKER_ENV")
 API_NAME="worker (wrangler dev)"
 # Explicit even though src/api.ts would derive the same URL in dev, so the port
 # is decided in one place.
@@ -640,6 +654,20 @@ if ! kill -0 "${pids[0]}" 2>/dev/null; then
   exit 1
 fi
 echo "Server is up."
+
+# The app asks for sign-in exactly when it has the Clerk key, so the Worker has
+# to be checking Clerk tokens exactly then. Either mismatch looks like a broken
+# app: a sign-in that never takes, or a dev Worker behind a wall.
+want_auth=dev
+if [ -n "${VITE_CLERK_PUBLISHABLE_KEY:-}" ]; then want_auth=clerk; fi
+got_auth=$(curl -s "http://127.0.0.1:${API_PORT}/api/health" | sed -n 's/.*"auth":"\([a-z]*\)".*/\1/p')
+if [ "$got_auth" != "$want_auth" ]; then
+  echo "The app expects ${want_auth} auth but the Worker reports '${got_auth}'." >&2
+  echo "The Worker's auth comes from .dev.vars and the env file this script writes;" >&2
+  echo "check the bindings wrangler printed above. To run without sign-in:" >&2
+  echo "  ./build.sh web --no-auth" >&2
+  exit 1
+fi
 
 echo "Starting app on ${APP_URL} …"
 npm run dev &
