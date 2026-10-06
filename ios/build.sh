@@ -6,6 +6,7 @@
 #   ./build.sh sim          the same, on a simulator, against a local wrangler
 #   ./build.sh test         run the AnsaCore suite (no device needed)
 #   ./build.sh wire         check the Swift op encoding against the server
+#   ./build.sh agree        check Swift and TypeScript applyOp make the same tree
 #   ./build.sh clean        drop the generated project and build output
 #
 #   --no-auth               (sim only) build without a Clerk key, so the app
@@ -175,6 +176,10 @@ case "${1:-run}" in
     ./AnsaCore/Tools/check-wire.sh
     ;;
 
+  agree)
+    ./AnsaCore/Tools/check-agreement.sh
+    ;;
+
   clean)
     rm -rf Ansa.xcodeproj build AnsaCore/.build
     echo "Removed the generated project and build output."
@@ -342,6 +347,6 @@ print(hit[0]["udid"] if hit else "")')
 
   *)
     die "Unknown command: $1
-Usage: ./build.sh [sim|test|wire|clean] [--no-auth]   (no argument builds to the phone)"
+Usage: ./build.sh [sim|test|wire|agree|clean] [--no-auth]   (no argument builds to the phone)"
     ;;
 esac

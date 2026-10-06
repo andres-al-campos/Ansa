@@ -39,9 +39,9 @@ locally alike — `wrangler dev` runs the same code.
 - **`ios/`** — a SwiftUI app for the same tree, with its own `./build.sh` that
   builds, installs and launches on a connected iPhone. `AnsaCore` is the tree
   model and `AnsaSync` the client, both plain Swift packages testable without a
-  device; `ios/AnsaCore/Tools/check-wire.sh` checks the Swift op encoding
-  against the server's, since the two models are written twice and have to
-  agree.
+  device. The tree model is written twice, in Swift and TypeScript, so
+  `ios/AnsaCore/Tools/check-wire.sh` checks the server can read the ops Swift
+  sends and `check-agreement.sh` checks both sides' ops make the same tree.
 
 ## Running it
 
@@ -76,7 +76,7 @@ gets set too and you'll be asked to sign in; `./build.sh web --no-auth` skips
 both.
 
 `./build.sh check` checks everything that doesn't need a person: the
-typecheck, the TypeScript and Swift suites, the Swift-to-server wire check, and
+typecheck, the TypeScript and Swift suites, the Swift-to-server wire and agreement checks, and
 `npm run drive`, which works the web app and the MCP in a headless browser. It
 uses a `./build.sh web --no-auth` you already have running, or starts one and
 stops it when done. `npm test` runs just the TypeScript suite. `npm run build`

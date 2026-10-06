@@ -9,11 +9,8 @@
 # the two never meet inside either test run. This is the only check that spans
 # the boundary, so it runs against the real parseOp rather than a copy of it.
 #
-# TODO: this checks how ops are encoded, not what they do. Nothing checks that
-# Swift applyOp and TypeScript applyOp produce the same tree; indent, outdent,
-# adoptFollowing and moveNode are resolved separately on each side, and a
-# mismatch only shows at runtime, when the fingerprint check refetches and the
-# row jumps to the server's position. The Swift tests are hand-ported cases.
+# This checks how ops are encoded, not what they do; check-agreement.sh checks
+# that both sides' applyOp then make the same tree.
 #
 # Not part of `swift test`: it needs node and the repo's TypeScript, which a
 # bare package checkout won't have. Run it when either side's op format changes.

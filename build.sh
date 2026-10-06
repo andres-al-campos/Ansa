@@ -597,11 +597,12 @@ check() {
   echo "Running tests …"
   npm test
   if command -v swift >/dev/null 2>&1; then
-    echo "Running the AnsaCore tests and the Swift-to-TypeScript wire check …"
+    echo "Running the AnsaCore tests and the Swift-to-TypeScript wire and agreement checks …"
     ios/build.sh test
     ios/build.sh wire
+    ios/build.sh agree
   else
-    echo "Skipping the AnsaCore and wire checks: swift isn't installed (needs Xcode on macOS)."
+    echo "Skipping the AnsaCore, wire and agreement checks: swift isn't installed (needs Xcode on macOS)."
   fi
 
   local health="http://127.0.0.1:${API_PORT}/api/health"
