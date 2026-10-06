@@ -16,6 +16,9 @@ const root = fileURLToPath(new URL('..', import.meta.url))
 const pkg = JSON.parse(readFileSync(`${root}/package.json`, 'utf8'))
 const declared = new Set(Object.keys({ ...pkg.dependencies, ...pkg.devDependencies }))
 
+/** A line that is a comment in shell or JS/TS. */
+const COMMENT = /^\s*(#|\/\/|\*|\/\*)/
+
 /** `npx [flags] <tool>[@version]` → tool. */
 const NPX = /\bnpx\s+(?:-{1,2}[\w-]+\s+)*(@?[\w./-]+?)(?:@[\w.^~-]+)?(?=[\s`'"]|$)/gm
 
@@ -31,8 +34,10 @@ test('every npx tool is pinned in package.json', () => {
   for (const file of files) {
     const text = readFileSync(`${root}/${file}`, 'utf8')
     for (const m of text.matchAll(NPX)) {
+      const line = text.slice(0, m.index).split('\n').length
+      // A comment may say npx without running it; Markdown is where commands get copied from.
+      if (!file.endsWith('.md') && COMMENT.test(text.split('\n')[line - 1])) continue
       if (!declared.has(m[1])) {
-        const line = text.slice(0, m.index).split('\n').length
         unpinned.push(`${file}:${line} runs \`npx ${m[1]}\``)
       }
     }
