@@ -10,7 +10,7 @@
 import fc from 'fast-check'
 import { readFileSync, writeFileSync } from 'node:fs'
 
-import { opArb, treeArb } from '../../../shared/ops.arbitraries.ts'
+import { caseArb } from '../../../shared/ops.arbitraries.ts'
 import { applyOp, parseOp, type Op } from '../../../shared/ops.ts'
 import type { Tree } from '../../../shared/tree.ts'
 
@@ -36,12 +36,9 @@ function canonical(tree: Tree): string {
 const [mode, casesPath, arg] = process.argv.slice(2)
 
 if (mode === 'gen') {
-  const validOp = opArb.filter((op) => !('error' in parseOp(op)))
-  const samples = fc.sample(fc.tuple(treeArb, fc.array(validOp, { maxLength: 8 })), {
-    numRuns: RUNS,
-    seed: Number(arg),
-  })
-  const cases: Case[] = samples.map(([tree, ops]) => {
+  const samples = fc.sample(caseArb(), { numRuns: RUNS, seed: Number(arg) })
+  const cases: Case[] = samples.map(([tree, all]) => {
+    const ops = all.filter((op) => !('error' in parseOp(op)))
     const expected: Tree[] = []
     let t = tree
     for (const op of ops) expected.push((t = applyOp(t, op).tree))

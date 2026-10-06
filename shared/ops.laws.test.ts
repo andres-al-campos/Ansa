@@ -10,7 +10,7 @@
 import fc from 'fast-check'
 import { describe, expect, test } from 'vitest'
 
-import { opArb, treeArb } from './ops.arbitraries.ts'
+import { caseArb, opArb, treeArb } from './ops.arbitraries.ts'
 import { applyOp, type Op } from './ops.ts'
 import { invalidTree, type Node, type Tree } from './tree.ts'
 
@@ -49,7 +49,7 @@ describe('applyOp laws', () => {
   // broken tree an op can make is one invalidTree catches.
   test('law 1: the server never stores a broken tree', () => {
     fc.assert(
-      fc.property(treeArb, fc.array(opArb, { maxLength: 8 }), (start, ops) => {
+      fc.property(caseArb(), ([start, ops]) => {
         let tree = start
         for (const op of ops) {
           const next = applyOp(tree, op).tree
