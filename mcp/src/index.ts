@@ -29,12 +29,8 @@ const BASE = process.env.ANSA_API ?? 'https://ansa.id3arium.workers.dev'
  * same tree the browser and the phone see. `ANSA_USER` is the dev stub's
  * header, which only a local server with ANSA_DEV_AUTH=1 will honour — a
  * deployed worker ignores it, by design.
- *
- * An empty ANSA_TOKEN means no token, so the Keychain's can be turned off for a
- * local dev worker: that worker ignores tokens, and without the header it would
- * act as ANSA_DEV_USER instead of the browser's `legacy`.
  */
-const TOKEN = process.env.ANSA_TOKEN ?? keychainToken()
+const TOKEN = process.env.ANSA_TOKEN || keychainToken()
 const USER = process.env.ANSA_USER ?? 'legacy'
 
 /**
