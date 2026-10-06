@@ -16,13 +16,11 @@ enum Config {
     /// address the same Durable Object per account.
     static let prodAPI = URL(string: "https://ansa.id3arium.workers.dev")!
 
-    /// Who a debug build claims to be against the local Worker's dev stub.
-    ///
-    /// The stub keys each account's Durable Object off this header, so a
-    /// distinct name is a separate tree — the simulator cannot touch the
-    /// `legacy` tree the browser uses on the same server. A Clerk-backed server
-    /// ignores this and uses the bearer token.
-    static let devUser = "ios-dev"
+    /// Who a debug build claims to be against the local Worker's dev stub: the
+    /// one test user every client defaults to, so the simulator, the browser and
+    /// the MCP all see the same tree. A Clerk-backed server ignores this and
+    /// uses the bearer token.
+    static let devUser = "legacy"
 
     static var apiBase: URL {
         #if DEBUG

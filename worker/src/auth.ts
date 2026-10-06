@@ -45,7 +45,6 @@ export interface AuthEnv {
    * assertNotProduction.
    */
   ANSA_DEV_AUTH?: string
-  ANSA_DEV_USER?: string
   /**
    * SHA-256 of the MCP server's bearer token, hex-encoded.
    *
@@ -126,9 +125,10 @@ function stubOwner(req: Request, env: AuthEnv): string {
   if (header && header.length > 0) return header
   const user = new URL(req.url).searchParams.get('user')
   if (user && user.length > 0) return user
-  // With no header, every request is one user — the pre-auth single-user
-  // behaviour, so local work needs no signed-in browser.
-  return env.ANSA_DEV_USER ?? 'legacy'
+  // With no header, every request is the one test user every client defaults
+  // to, so a client that sends a token instead (the MCP with a Keychain token)
+  // still lands on the same tree as the browser.
+  return 'legacy'
 }
 
 /**

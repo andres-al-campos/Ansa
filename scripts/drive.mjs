@@ -294,9 +294,7 @@ await drive('mcp', async (page, project) => {
   const transport = new StdioClientTransport({
     command: `${ROOT}node_modules/.bin/tsx`,
     args: [`${ROOT}mcp/src/index.ts`],
-    // ANSA_TOKEN= turns off the Keychain token: a dev worker ignores tokens, and
-    // without the user header it would act as ANSA_DEV_USER, not `legacy`.
-    env: { ...process.env, ANSA_API: API, ANSA_TOKEN: '' },
+    env: { ...process.env, ANSA_API: API },
     stderr: 'pipe',
   })
   const client = new Client({ name: 'drive', version: '0' })
