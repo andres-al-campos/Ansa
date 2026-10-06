@@ -79,7 +79,9 @@ both.
 typecheck, the TypeScript and Swift suites, the Swift-to-server wire and agreement checks, and
 `npm run drive`, which works the web app and the MCP in a headless browser. It
 uses a `./build.sh web --no-auth` you already have running, or starts one and
-stops it when done. `npm test` runs just the TypeScript suite. `npm run build`
+stops it when done. `npm test` runs just the TypeScript suite. Before each
+push, `.githooks/pre-push` runs `npm test`, plus the Swift/TypeScript agreement
+check when the push changes an op; `./build.sh` turns the hook on. `npm run build`
 type-checks and builds the app into `dist/`.
 
 ## Deploying

@@ -641,6 +641,10 @@ check() {
   echo "All checks passed."
 }
 
+# Point git at the repo's hooks (.githooks/pre-push runs the fast tests). A git
+# setting rather than a committed file, so every entry point sets it.
+git -C "$(dirname "$0")" config core.hooksPath .githooks 2>/dev/null || true
+
 # The bare default packages and installs the desktop app; everything else is an
 # explicit argument. `web` is the only one that falls through to the run-stack
 # code below — the rest handle themselves and exit here.
