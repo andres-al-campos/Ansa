@@ -24,13 +24,13 @@ back out.
 
 ## Driving it
 
-Preconditions: `./build.sh web --no-auth` running, a project with nested rows.
+Preconditions: `./build.sh web --no-auth` running.
 
-1. Hover a row with children, click the arrow at its right edge.
-2. Expected: the row becomes the header, its children the list, and the
-   breadcrumb names the project.
-3. Reload. Expected: the app opens on that project (resume lands on the
-   project, not the deep scope).
+`npm run drive -- get-around` zooms into Parent with the arrow at the row's
+right edge, checks the breadcrumb names the project, then reloads and checks
+the app opens on the project.
+
+Last driven 2026-10-06, web. Not driven: fold, the desktop back/forward, iOS.
 
 ## Gotchas
 

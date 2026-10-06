@@ -6,16 +6,16 @@ again. Several features exist on one platform only; the file says which.
 
 | Feature | File | Platforms | Driveable headless? |
 |---|---|---|---|
-| Outline a project | [outline.md](outline.md) | web, iOS | Yes, web (2026-10-04) |
-| Check things off | [check-off.md](check-off.md) | web, iOS | Not yet proven |
-| Reorganize | [reorganize.md](reorganize.md) | web, iOS | Not yet proven |
-| Get around | [get-around.md](get-around.md) | web, iOS | Not yet proven |
-| Pin | [pin.md](pin.md) | web, iOS | Not yet proven |
-| Search | [search.md](search.md) | iOS only | Not yet proven |
-| Trash | [trash.md](trash.md) | web, iOS | Not yet proven |
-| Backup & transfer | [backup.md](backup.md) | web only | Partly: the export is a browser download |
-| Sign in and sync | [sync.md](sync.md) | web, iOS | Not yet proven |
-| Let a Claude work on it | [mcp.md](mcp.md) | MCP | Not yet proven |
+| Outline a project | [outline.md](outline.md) | web, iOS | Yes, web (2026-10-06) |
+| Check things off | [check-off.md](check-off.md) | web, iOS | Yes, web (2026-10-06) |
+| Reorganize | [reorganize.md](reorganize.md) | web, iOS | Yes, web (2026-10-06) |
+| Get around | [get-around.md](get-around.md) | web, iOS | Yes, web (2026-10-06) |
+| Pin | [pin.md](pin.md) | web, iOS | Yes, web (2026-10-06) |
+| Search | [search.md](search.md) | iOS only | Not yet proven (needs the simulator) |
+| Trash | [trash.md](trash.md) | web, iOS | Yes, web (2026-10-06) |
+| Backup & transfer | [backup.md](backup.md) | web only | Yes (2026-10-06) |
+| Sign in and sync | [sync.md](sync.md) | web, iOS | Live updates, web (2026-10-06); sign-in not driven |
+| Let a Claude work on it | [mcp.md](mcp.md) | MCP | Yes (2026-10-06) |
 
 ## What counts as a feature
 
@@ -45,7 +45,11 @@ are left out on purpose; read the code when a task needs them.
   driving. Plain `./build.sh web` shows a sign-in wall on a machine with the
   Clerk secret in the Keychain.
 - Doctor: `curl http://127.0.0.1:8787/api/health` should answer
-  `{"ok":true,"auth":"dev"}` before driving.
+  `{"ok":true,"auth":"dev"}` before driving. `npm run drive` checks this first.
+- `npm run drive` runs every web and MCP drive in a headless Chromium; name
+  drives to run a few (`npm run drive -- trash sync`). Each makes its own
+  project and deletes it for good, and leaves screenshots in `drive-out/`.
+  `npm run drive -- --clean` removes projects an interrupted run left behind.
 - `ios/build.sh sim --no-auth` runs the iOS app in a simulator against that
   local Worker, without the sign-in wall. Plain `ios/build.sh` installs on the
   phone against the live Worker.

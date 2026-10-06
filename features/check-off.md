@@ -18,11 +18,14 @@ Mark tasks done and see how far along a project is.
 
 ## Driving it
 
-Preconditions: `./build.sh web --no-auth` running, a project with a parent and two
-children.
+Preconditions: `./build.sh web --no-auth` running.
 
-1. Tick both children.
-2. Expected: the parent shows done, and the Home card's count rises by 2.
+- `npm run drive -- check-off`: ticking one child leaves the parent open,
+  ticking both completes it, unticking one reopens it.
+- `npm run drive -- check-off-home`: the Home card reads "0 of 2 done (0%)",
+  then "1 of 2 done (50%)", then "All done".
+
+Last driven 2026-10-06, web.
 
 ## Gotchas
 

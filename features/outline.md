@@ -28,15 +28,13 @@ to do. Projects are the top-level rows; everything else nests under them.
 
 ## Driving it
 
-Preconditions: `./build.sh web --no-auth` running (see the README).
+Preconditions: `./build.sh web --no-auth` running.
 
-1. Open http://localhost:5173, click + New project, type a name, press Enter.
-2. Type a task, Enter, type another, Tab to nest it.
-3. Expected: the second task shows indented under the first, and survives a
-   reload (the server has it, not only the browser).
+`npm run drive -- outline` makes a project, types Parent, nests Child A and
+Child B under it with Tab, and checks the nesting survives a reload.
 
-Last driven 2026-10-04: nesting and reload passed, and the reload reopened the
-project. It also showed the first gotcha below.
+Last driven 2026-10-06 by the script; by hand 2026-10-04, which also showed the
+first gotcha below.
 
 ## Gotchas
 

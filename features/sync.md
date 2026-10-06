@@ -21,8 +21,11 @@ without a reload, and edits made offline go out on reconnect.
 
 Preconditions: `./build.sh web --no-auth` running.
 
-1. Open http://localhost:5173 in two tabs, rename a task in one.
-2. Expected: the other tab shows the new name without a reload.
+`npm run drive -- sync` opens the project in two tabs, renames Child A in
+one, and checks the other shows the new name without a reload.
+
+Last driven 2026-10-06, web. Not driven: the offline queue, drift reload, the
+toast, iOS.
 
 ## Gotchas
 

@@ -19,10 +19,15 @@ another branch, and reorder projects and pins.
 
 ## Driving it
 
-Preconditions: `./build.sh web --no-auth` running, a project with a few rows.
+Preconditions: `./build.sh web --no-auth` running.
 
-1. Drag the last row onto the middle of the first.
-2. Expected: it becomes the first row's first child.
+- `npm run drive -- reorganize-drag`: holds Child B's bullet, drags it onto
+  the middle of Parent, and checks it lands as Parent's first child.
+- `npm run drive -- reorganize-keys`: ⌥↑ moves Child B above Child A,
+  Shift+Tab outdents it, and both survive a reload.
+
+Last driven 2026-10-06, web. Not driven: card, sidebar and pin reordering;
+iOS.
 
 ## Gotchas
 

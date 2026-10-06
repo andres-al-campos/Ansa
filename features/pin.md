@@ -16,10 +16,12 @@ Keep the projects and tasks you're working on one tap away.
 
 ## Driving it
 
-Preconditions: `./build.sh web --no-auth` running, a project with a task.
+Preconditions: `./build.sh web --no-auth` running.
 
-1. Zoom into the task, click its pin button.
-2. Expected: it appears under Pinned in the sidebar, with its trail.
+`npm run drive -- pin` zooms into Child A, pins it, and checks it shows in
+the sidebar.
+
+Last driven 2026-10-06, web. Not driven: shelf ordering, iOS.
 
 ## Gotchas
 

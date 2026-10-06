@@ -20,16 +20,23 @@ the person.
 
 Preconditions: `./build.sh web --no-auth` running.
 
-1. Run the MCP server with `ANSA_API=http://127.0.0.1:8787` and no token, so
-   the dev stub treats it as `legacy`, the same user as the local web app.
-2. Call `rename_task` on a visible task.
-3. Expected: the browser shows the new name without a reload.
+`npm run drive -- mcp` launches the MCP server over stdio with
+`ANSA_API=http://127.0.0.1:8787 ANSA_TOKEN=`, checks `view_tree` lists a
+project the browser just made, then calls `rename_task` and checks the browser
+shows the new name without a reload.
 
-Unverified: whether a token in the Keychain gets in the way locally.
+`ANSA_TOKEN=` matters on a machine with `ansa-mcp-token` in the Keychain:
+without it the server sends the token instead of the `legacy` header, the dev
+worker ignores the token, and the server edits whichever tree `ANSA_DEV_USER`
+names, not the browser's.
+
+Last driven 2026-10-06. Not driven: the other tools.
 
 ## Gotchas
 
 - `remove_task` sends to the trash, like a delete in the app.
 - No tools for pins or the trash.
+- Locally, a Keychain token sends it to a different tree than the browser's
+  unless `ANSA_TOKEN=` is set (see Driving it).
 - Every MCP write reaches other clients as a whole tree rather than a single
   change.

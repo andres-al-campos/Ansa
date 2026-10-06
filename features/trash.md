@@ -18,10 +18,13 @@ Deleted tasks wait 30 days in the trash, where they can be put back.
 
 ## Driving it
 
-Preconditions: `./build.sh web --no-auth` running, a project with a task.
+Preconditions: `./build.sh web --no-auth` running.
 
-1. Delete the task with ⌘/Ctrl+Backspace, open Trash, click restore.
-2. Expected: the task is back in place and the entry is gone.
+`npm run drive -- trash` deletes Child B with ⌘/Ctrl+Backspace, opens
+Trash, restores it, and checks it is back under Parent and gone from Trash.
+Every drive also ends with Trash's Delete, which removes its project for good.
+
+Last driven 2026-10-06, web. Not driven: the daily sweep, paging, iOS.
 
 ## Gotchas
 
