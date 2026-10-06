@@ -47,7 +47,7 @@ print(String(decoding: try JSONEncoder().encode(results), as: UTF8.self))
 SWIFT
 } > "$work/replay.swift"
 
-swiftc -O "$work/replay.swift" -o "$work/replay" 2>&1 | grep -v warning: || true
+swiftc "$work/replay.swift" -o "$work/replay" 2>&1 | grep -v warning: || true
 "$work/replay" "$work/cases.json" > "$work/swift.json"
 
 if ! npx tsx "$here/agreement.ts" compare "$work/cases.json" "$work/swift.json"; then
