@@ -67,7 +67,7 @@ never echo it into a shell.
 
 ## This build.sh is deliberately not shared
 
-`~/Projects/Code/ios-template` is the blueprint for new iOS apps, and
+`~/Projects/Code/tooling/ios-template` is the blueprint for new iOS apps, and
 `walled_garden/sync-build-scripts.sh` keeps the three walled_garden copies
 aligned. Ansa's is neither: it does Keychain key injection, builds Release for
 the phone, and has `wire`. Fixes can be carried across by hand where they apply
