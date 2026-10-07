@@ -163,13 +163,10 @@ describe('rejected writes', () => {
     expect(storeA.load()).toEqual([])
   })
 
-  it('refuses an op that would leave the tree invalid', () => {
+  it('leaves the tree alone when an op moves a node under a parent that is gone', () => {
     const { id } = storeA.addChild(null, 'project')
-    expect(() =>
-      storeA.applyOp({ op: 'moveNode', id, parentId: 'ghost', index: 0 }),
-    ).toThrow(RejectedWriteError)
-    // Nothing was saved — the tree is still the one good node.
-    expect(storeA.load()).toHaveLength(1)
+    storeA.applyOp({ op: 'moveNode', id, parentId: 'ghost', index: 0 })
+    expect(storeA.load().map((n) => n.parentId)).toEqual([null])
   })
 
   it('refuses an invalid tree wholesale', () => {

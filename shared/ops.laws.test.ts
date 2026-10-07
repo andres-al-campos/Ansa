@@ -12,7 +12,7 @@ import { describe, expect, test } from 'vitest'
 
 import { caseArb, opArb, treeArb } from './ops.arbitraries.ts'
 import { applyOp, type Op } from './ops.ts'
-import { invalidTree, type Node, type Tree } from './tree.ts'
+import { type Node, type Tree } from './tree.ts'
 
 /** Every way a tree can be broken, as readable strings; empty when it's sound. */
 function treeProblems(tree: Tree): string[] {
@@ -43,17 +43,12 @@ function treeProblems(tree: Tree): string[] {
 }
 
 describe('applyOp laws', () => {
-  // applyOp itself can produce a broken tree: adding or moving under a parent
-  // that's gone leaves an orphan. The server runs invalidTree on every result
-  // and refuses those writes, so the law is about what gets stored: every
-  // broken tree an op can make is one invalidTree catches.
-  test('law 1: the server never stores a broken tree', () => {
+  test('law 1: no op breaks a tree', () => {
     fc.assert(
       fc.property(caseArb(), ([start, ops]) => {
         let tree = start
         for (const op of ops) {
-          const next = applyOp(tree, op).tree
-          if (invalidTree(next) === null) tree = next
+          tree = applyOp(tree, op).tree
           expect(treeProblems(tree), JSON.stringify(op)).toEqual([])
         }
       }),
@@ -68,6 +63,19 @@ describe('applyOp laws', () => {
         if (!('id' in op) || op.op === 'addChild') return
         const ghost = { ...op, id: 'ghost' } as Op
         expect(applyOp(tree, ghost).tree).toEqual(tree)
+      }),
+      { numRuns: 2000 },
+    )
+  })
+
+  test('law 2b: an add or move relative to a node that does not exist changes nothing', () => {
+    fc.assert(
+      fc.property(treeArb, opArb, (tree, op) => {
+        let orphaned: Op
+        if ('parentId' in op) orphaned = { ...op, parentId: 'ghost' } as Op
+        else if (op.op === 'insertAtDepth') orphaned = { ...op, anchorId: 'ghost' }
+        else return
+        expect(applyOp(tree, orphaned).tree).toEqual(tree)
       }),
       { numRuns: 2000 },
     )

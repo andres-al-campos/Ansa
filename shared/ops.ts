@@ -187,6 +187,20 @@ function structural(
   return { tree: reconcileDone(after, touchedRoots(before, after, ids)), completed: [] }
 }
 
+/** The nodes an add or move places its node under or beside; null means the root list. */
+function placedBy(op: Op): NodeId[] {
+  switch (op.op) {
+    case 'addChild':
+    case 'addSubtree':
+    case 'moveNode':
+      return op.parentId === null ? [] : [op.parentId]
+    case 'insertAtDepth':
+      return op.scope === null ? [op.anchorId] : [op.anchorId, op.scope]
+    default:
+      return []
+  }
+}
+
 /**
  * Apply an op to a tree, returning the new tree.
  *
@@ -200,6 +214,12 @@ function structural(
  * which the app uses to fire the completion animation.
  */
 export function applyOp(tree: Tree, op: Op): { tree: Tree; completed: NodeId[] } {
+  // An add or move that places its node relative to one that's gone would
+  // leave an orphan. Same rule as an op naming a missing node: a queued op that
+  // lost a race with a delete changes nothing.
+  if (placedBy(op).some((id) => !tree.some((n) => n.id === id))) {
+    return { tree: [...tree], completed: [] }
+  }
   switch (op.op) {
     case 'addChild':
       return structural(tree, addChild(tree, op.parentId, op.text, op.id, op.at).tree, op.parentId)

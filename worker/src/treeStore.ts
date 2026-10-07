@@ -595,10 +595,10 @@ export class TreeStore {
    * branches both land where a whole-tree write would have let the later one
    * erase the earlier.
    *
-   * The invalidTree check stays even though cross-owner links are now
-   * impossible: an op naming a parent that doesn't exist still produces a
-   * dangling parentId, which orphans a branch out of every view while it sits
-   * in the table.
+   * The invalidTree check is a backstop. applyOp already turns an add or move
+   * under a missing node into a no-op (law 1 in shared/ops.laws.test.ts), but a
+   * new op that gets that wrong would leave a dangling parentId, which orphans
+   * a branch out of every view while it sits in the table.
    */
   applyOp(op: Op): { tree: Tree; completed: NodeId[] } {
     const before = this.load()

@@ -204,14 +204,12 @@ describe('writes roll back rather than landing half-done', () => {
     expect(tree.load().map((n) => n.text)).toEqual(['keep me'])
   })
 
-  it('leaves the stored tree untouched when an op is refused', async () => {
+  it('leaves the stored tree untouched by a move under a parent that is gone', async () => {
+    // A queued op that lost a race with a delete. applyOp makes it a no-op
+    // rather than an orphan, the same as an op naming a node that's gone.
     await tree.applyOp({ op: 'addChild', id: 'a', parentId: null, text: 'project', at: 1 }, null)
-    await expect(
-      tree.applyOp({ op: 'moveNode', id: 'a', parentId: 'ghost', index: 0 }, null),
-    ).rejects.toThrow(RejectedWriteError)
-    // replace() is DELETE-then-INSERT: without the transaction, a throw between
-    // the two would leave the table empty and the tree gone.
-    expect(tree.load().map((n) => n.text)).toEqual(['project'])
+    await tree.applyOp({ op: 'moveNode', id: 'a', parentId: 'ghost', index: 0 }, null)
+    expect(tree.load().map((n) => [n.text, n.parentId])).toEqual([['project', null]])
   })
 
   it('refuses a malformed op before touching storage', async () => {
@@ -388,10 +386,9 @@ describe('broadcast', () => {
     await tree.applyOp({ op: 'addChild', id: 'a', parentId: null, text: 'project', at: 1 }, null)
     const ws = fakeSocket()
     ctx.acceptWebSocket(ws)
-    // A move onto a parent that doesn't exist. Moving a node that doesn't exist
-    // is deliberately a no-op in shared/tree.ts rather than an error, so it
-    // would not exercise this.
-    await expect(tree.applyOp({ op: 'moveNode', id: 'a', parentId: 'ghost', index: 0 }, null)).rejects.toThrow(
+    // An op naming a missing node is a no-op rather than an error, so it would
+    // not exercise this; a malformed one is refused.
+    await expect(tree.applyOp({ op: 'moveNode', id: 'a', parentId: 'a' }, null)).rejects.toThrow(
       RejectedWriteError,
     )
     expect(ws.sent).toEqual([])

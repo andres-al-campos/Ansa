@@ -72,6 +72,19 @@ public enum Op: Equatable, Sendable {
         case .markOpened: "markOpened"
         }
     }
+
+    /// The nodes an add or move places its node under or beside; a nil
+    /// parent means the root list.
+    var placedBy: [NodeId] {
+        switch self {
+        case let .addChild(_, parentId, _, _), let .addSubtree(_, parentId, _, _),
+            let .moveNode(_, parentId, _):
+            parentId.map { [$0] } ?? []
+        case let .insertAtDepth(_, anchorId, _, _, scope):
+            [anchorId] + (scope.map { [$0] } ?? [])
+        default: []
+        }
+    }
 }
 
 /// The conformance itself is declared on the struct in Tree.swift, because
@@ -272,6 +285,12 @@ extension TreeOps {
     /// `completed` rides along from setDone: the ids of parents that flipped to
     /// done, which the UI uses to fire the completion animation.
     public static func applyOp(_ tree: Tree, _ op: Op) -> (tree: Tree, completed: [NodeId]) {
+        // An add or move that places its node relative to one that's gone
+        // would leave an orphan. Same rule as an op naming a missing node: a
+        // queued op that lost a race with a delete changes nothing.
+        if op.placedBy.contains(where: { id in !tree.contains { $0.id == id } }) {
+            return (tree, [])
+        }
         switch op {
         case let .addChild(id, parentId, text, at):
             return structural(tree, addChild(tree, parentId, text, id: id, now: at).tree, parentId)
