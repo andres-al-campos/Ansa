@@ -29,14 +29,15 @@ enum LocalAPI {
         return tree?.first { $0["id"] as? String == id }
     }
 
-    /// The children of `parent`, by text. The app makes ids of its own on
-    /// some paths, so tests look nodes up rather than trusting an order.
-    static func child(of parent: String, text: String) async throws -> String {
+    /// The child of `parent` with this text; nil for a project. The app makes
+    /// ids of its own on some paths, so tests look nodes up rather than
+    /// trusting an order.
+    static func child(of parent: String?, text: String) async throws -> String {
         let data = try await call("GET", "/api/tree")
         let tree = (try JSONSerialization.jsonObject(with: data) as? [String: Any])?["tree"] as? [[String: Any]] ?? []
         guard let id = tree.first(where: { $0["parentId"] as? String == parent && $0["text"] as? String == text })?["id"] as? String
         else {
-            throw Failure("The Worker has no \"\(text)\" under \(parent). Check the /api/nodes/subtree route in worker/src/index.ts.")
+            throw Failure("The Worker has no \"\(text)\" under \(parent ?? "Home"). Check that the app sent it, then the /api/nodes/subtree route in worker/src/index.ts.")
         }
         return id
     }

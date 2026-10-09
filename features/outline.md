@@ -33,8 +33,13 @@ Preconditions: `./build.sh web --no-auth` running.
 `npm run drive -- outline` makes a project, types Parent, nests Child A and
 Child B under it with Tab, and checks the nesting survives a reload.
 
+`ios/build.sh drive outline` (~60s, simulator) makes a project from Home's +,
+names it, types Parent, then Child A with Indent and Child B, and checks that
+shape on the Worker.
+
 Last driven 2026-10-06 by the script; by hand 2026-10-04, which also showed the
-first gotcha below.
+first gotcha below. iOS 2026-10-09: ✓, and ✗ against a build whose Indent did
+nothing.
 
 ## Gotchas
 
