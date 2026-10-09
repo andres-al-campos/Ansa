@@ -8,7 +8,7 @@ again. Several features exist on one platform only; the file says which.
 |---|---|---|---|
 | Outline a project | [outline.md](outline.md) | web, iOS | Yes, web (2026-10-06), iOS (2026-10-09) |
 | Check things off | [check-off.md](check-off.md) | web, iOS | Yes, web (2026-10-06), iOS (2026-10-09) |
-| Reorganize | [reorganize.md](reorganize.md) | web, iOS | Yes, web (2026-10-06) |
+| Reorganize | [reorganize.md](reorganize.md) | web, iOS | Yes, web (2026-10-06), iOS (2026-10-09) |
 | Get around | [get-around.md](get-around.md) | web, iOS | Yes, web (2026-10-06), iOS (2026-10-09) |
 | Pin | [pin.md](pin.md) | web, iOS | Yes, web (2026-10-06), iOS (2026-10-09) |
 | Search | [search.md](search.md) | iOS only | Yes, iOS simulator (2026-10-08) |

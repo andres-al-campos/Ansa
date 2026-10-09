@@ -28,6 +28,15 @@ enum LocalAPI {
             body: ["parentId": parent, "nodes": texts.map { ["text": $0] }])
     }
 
+    /// The texts of `parent`'s children, in their order.
+    static func children(of parent: String) async throws -> [String] {
+        let data = try await call("GET", "/api/tree")
+        let tree = (try JSONSerialization.jsonObject(with: data) as? [String: Any])?["tree"] as? [[String: Any]] ?? []
+        return tree.filter { $0["parentId"] as? String == parent }
+            .sorted { ($0["order"] as? Double ?? 0) < ($1["order"] as? Double ?? 0) }
+            .compactMap { $0["text"] as? String }
+    }
+
     /// A node as the Worker has it, or nil if it has none with that id.
     static func node(_ id: String) async throws -> [String: Any]? {
         let data = try await call("GET", "/api/tree")

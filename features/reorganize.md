@@ -26,8 +26,17 @@ Preconditions: `./build.sh web --no-auth` running.
 - `npm run drive -- reorganize-keys`: ⌥↑ moves Child B above Child A,
   Shift+Tab outdents it, and both survive a reload.
 
-Last driven 2026-10-06, web. Not driven: card, sidebar and pin reordering;
-iOS.
+- `ios/build.sh drive reorganize` (~60s, simulator): long-presses Three's
+  bullet, drags it above One, and checks the order on the Worker.
+
+Last driven 2026-10-06, web; 2026-10-09, iOS: ✓, and ✗ against a build whose
+long press didn't pick the row up. Not driven: card, sidebar and pin
+reordering; iOS indent steps and edge scrolling.
+
+The iOS drive can't see a drag that loses to the List's scroll: injected
+touches skip that arbitration (see `bulletGesture` in OutlineView.swift), and
+that is how a past bug passed in the simulator. Check a change to the drag's
+gestures by hand on a phone.
 
 ## Gotchas
 
