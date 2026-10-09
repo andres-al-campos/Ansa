@@ -4033,6 +4033,14 @@ private struct OutlineRow: View {
                 // this looked like it worked.) Both the fold and the drag live
                 // in there — see `bulletGesture`.
                 .highPriorityGesture(bulletGesture)
+                // The fold for VoiceOver, and the id UI tests find it by. A
+                // leaf's dot folds nothing, so it isn't offered.
+                .accessibilityElement()
+                .accessibilityLabel(node.collapsed ? "Expand" : "Collapse")
+                .accessibilityAddTraits(.isButton)
+                .accessibilityAction { if hasChildren { onCollapse() } }
+                .accessibilityHidden(!hasChildren)
+                .accessibilityIdentifier("bullet \(node.id)")
 
             // Guarded like the text's Button below: a swipe that starts on the
             // box delivers its tail as a tap, which ticked the task.

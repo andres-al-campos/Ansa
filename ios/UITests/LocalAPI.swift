@@ -22,6 +22,12 @@ enum LocalAPI {
         return id
     }
 
+    /// Adds `texts` as children of `parent`, in order.
+    static func add(_ texts: [String], under parent: String) async throws {
+        _ = try await call("POST", "/api/nodes/subtree",
+            body: ["parentId": parent, "nodes": texts.map { ["text": $0] }])
+    }
+
     /// A node as the Worker has it, or nil if it has none with that id.
     static func node(_ id: String) async throws -> [String: Any]? {
         let data = try await call("GET", "/api/tree")

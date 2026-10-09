@@ -33,7 +33,13 @@ Preconditions: `./build.sh web --no-auth` running.
 right edge, checks the breadcrumb names the project, then reloads and checks
 the app opens on the project.
 
-Last driven 2026-10-06, web. Not driven: fold, the desktop back/forward, iOS.
+`ios/build.sh drive get-around` (~60s, simulator) folds and unfolds a branch
+with its bullet, zooms in with a full right swipe and comes back with Back,
+then relaunches and checks the app lands on the project.
+
+Last driven 2026-10-06, web; 2026-10-09, iOS: ✓, and ✗ against a build whose
+bullet didn't fold and one that reopened on Home. Not driven: fold on web,
+the desktop back/forward, iOS edge swipe and title jump.
 
 ## Gotchas
 
