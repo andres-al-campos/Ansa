@@ -29,7 +29,8 @@ set -euo pipefail
 # Run from the repo root regardless of where this is called from.
 cd "$(dirname "$0")"
 
-APP_PORT=5173
+# ANSA_APP_PORT moves it, for when another project already holds 5173.
+APP_PORT=${ANSA_APP_PORT:-5173}
 # wrangler's own default, and the port src/api.ts falls back to in dev.
 API_PORT=8787
 APP_URL="http://localhost:${APP_PORT}"
@@ -80,6 +81,7 @@ check_port_free() {
     echo "Port ${port} is already in use by pid ${pid} ($(ps -p "$pid" -o comm= 2>/dev/null))." >&2
     echo "That's probably an Ansa ${what} you started earlier." >&2
     echo "Stop it and re-run, or: kill ${pid}" >&2
+    [ "$port" = "$APP_PORT" ] && echo "If it isn't Ansa, run on another port instead: ANSA_APP_PORT=5174 ./build.sh web" >&2
     exit 1
   fi
 }
@@ -639,7 +641,7 @@ check() {
   fi
 
   echo "Running the drives …"
-  npm run drive
+  ANSA_APP="$APP_URL" npm run drive
   echo "Checking the laws …"
   ANSA_APP="$APP_URL" node laws/no-two-axis-scroll.mjs
   laws/no-two-axis-scroll.sh
@@ -743,7 +745,8 @@ if [ "$got_auth" != "$want_auth" ]; then
 fi
 
 echo "Starting app on ${APP_URL} …"
-npm run dev &
+# The flag wins over vite.config.ts; strictPort there still applies.
+npm run dev -- --port "$APP_PORT" &
 pids+=($!)
 
 # Wait for Vite to actually serve before opening a browser at it, so the tab
