@@ -11,7 +11,7 @@ again. Several features exist on one platform only; the file says which.
 | Reorganize | [reorganize.md](reorganize.md) | web, iOS | Yes, web (2026-10-06) |
 | Get around | [get-around.md](get-around.md) | web, iOS | Yes, web (2026-10-06) |
 | Pin | [pin.md](pin.md) | web, iOS | Yes, web (2026-10-06) |
-| Search | [search.md](search.md) | iOS only | Yes (2026-10-06), by hand on the simulator |
+| Search | [search.md](search.md) | iOS only | Yes, iOS simulator (2026-10-08) |
 | Trash | [trash.md](trash.md) | web, iOS | Yes, web (2026-10-06) |
 | Backup & transfer | [backup.md](backup.md) | web only | Yes (2026-10-06) |
 | Sign in and sync | [sync.md](sync.md) | web, iOS | Live updates, web (2026-10-06); sign-in not driven |
@@ -55,6 +55,10 @@ are left out on purpose; read the code when a task needs them.
 - `ios/build.sh sim --no-auth` runs the iOS app in a simulator against that
   local Worker, without the sign-in wall. Plain `ios/build.sh` installs on the
   phone against the live Worker.
+- `ios/build.sh drive` runs every iOS UI test (`ios/UITests/`) on a simulator
+  against that local Worker; `ios/build.sh drive search` runs one. Each seeds
+  its own project through the Worker and deletes it for good. The full log is
+  `ios/build/drive.log`.
 - `./build.sh` (no argument) installs and launches the desktop app, which talks
   to the live Worker: real data, so not for experiments. `./build.sh desktop`
   is a hot-reload window.

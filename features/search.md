@@ -16,14 +16,13 @@ Find a task by its text. iOS only; the web has no search.
 
 ## Driving it
 
-Preconditions: `ios/build.sh sim --no-auth` running against `./build.sh web --no-auth`.
+`ios/build.sh drive search` (~100s, most of it the build), with the local
+Worker up (`./build.sh web --no-auth`). It makes a project holding "Call the
+zebra keeper" plus a word nothing else has, searches that word from Home,
+checks the task is listed with its project beneath, taps it and checks the
+project opened. Then it deletes the project for good.
 
-1. Open Search, type part of a task's text.
-2. Expected: the task is listed under Results with the match highlighted and
-   its project beneath; tapping it opens that project.
-
-Driven by hand 2026-10-06: "zebra" found "Call the zebra keeper" from Home and
-opened drive search. No repeatable drive yet; the app has no UI test target.
+Last driven 2026-10-08: ✓, and ✗ against a build whose matching was broken.
 
 ## Gotchas
 

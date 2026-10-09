@@ -9,7 +9,7 @@
 #   ./build.sh desktop      dev run of the desktop app (hot-reload window)
 #   ./build.sh web          run the local web stack: API + Vite app together
 #   ./build.sh web --no-auth  the same without sign-in, even with a Keychain secret
-#   ./build.sh check        typecheck, tests, then the drives on a no-sign-in stack
+#   ./build.sh check        typecheck, tests, then the web and iOS drives on a no-sign-in stack
 #   ./build.sh deploy       test, then publish the API and the app
 #   ./build.sh deploy api   the Worker only
 #   ./build.sh deploy app   the Pages bundle only
@@ -640,6 +640,12 @@ check() {
 
   echo "Running the drives …"
   npm run drive
+  if command -v xcodebuild >/dev/null 2>&1; then
+    echo "Running the iOS drives …"
+    ios/build.sh drive
+  else
+    echo "Skipping the iOS drives: xcodebuild isn't installed (needs Xcode on macOS)."
+  fi
   echo "All checks passed."
 }
 
