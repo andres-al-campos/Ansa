@@ -21,7 +21,13 @@ Preconditions: `./build.sh web --no-auth` running.
 `npm run drive -- pin` zooms into Child A, pins it, and checks it shows in
 the sidebar.
 
-Last driven 2026-10-06, web. Not driven: shelf ordering, iOS.
+`ios/build.sh drive pin` (~60s, simulator) zooms into a task with a full
+right swipe, pins it from the ⋯ menu, finds it on Home's shelf, opens it from
+there and unpins it. Each step is read on screen and on the Worker.
+
+Last driven 2026-10-06, web; 2026-10-09, iOS: ✓, and ✗ against a build whose
+Pin did nothing and one whose shelf showed nothing. Not driven: shelf
+ordering, pinning a project on iOS.
 
 ## Gotchas
 

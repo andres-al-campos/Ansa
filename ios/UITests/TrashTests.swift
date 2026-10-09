@@ -37,7 +37,7 @@ final class TrashTests: XCTestCase {
         let row = app.buttons[text]
         try need(row.waitForExistence(timeout: 5),
             "\"\(name)\" opened without its task \"\(text)\". Check the row's text Button in OutlineView.swift.")
-        fullSwipeLeft(row, in: app)
+        row.fullSwipe(left: true, in: app)
 
         try need(row.waitForNonExistence(timeout: 5),
             "A full left swipe left \"\(text)\" in place. Check RowSwipeView's gesture and RowSwipe.isArmed in AnsaCore.")
@@ -62,7 +62,7 @@ final class TrashTests: XCTestCase {
         // A full swipe fires the first action, Restore. Tapping the revealed
         // button doesn't reach a SwiftUI swipe action from a UI test: the
         // row stays open and the action never runs.
-        fullSwipeLeft(entry, in: app)
+        entry.fullSwipe(left: true, in: app)
 
         try need(entry.waitForNonExistence(timeout: 5),
             "Restore left \"\(text)\" in Trash. Check restore(_:) in TrashView.swift.")
@@ -71,13 +71,5 @@ final class TrashTests: XCTestCase {
             "After Restore the Worker has \"\(text)\" \(back == nil ? "nowhere" : "under \(back?["parentId"] ?? "nothing")"), not under \(name). Check restoreTrash in OutlineStore.swift, then restore in worker/src/treeStore.ts.")
 
         print("✓ a full swipe sent \"\(text)\" to Trash, and Restore put it back under \(name)")
-    }
-
-    /// A full swipe, held to the far edge, the way a thumb commits it.
-    private func fullSwipeLeft(_ element: XCUIElement, in app: XCUIApplication) {
-        let start = element.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5))
-        let end = app.coordinate(withNormalizedOffset: CGVector(dx: 0.02, dy: 0))
-            .withOffset(CGVector(dx: 0, dy: start.screenPoint.y))
-        start.press(forDuration: 0.05, thenDragTo: end, withVelocity: .default, thenHoldForDuration: 0.1)
     }
 }
