@@ -42,6 +42,10 @@ targets:
   Ansa:
     type: application
     platform: iOS
+    # A shared scheme, so `xcodebuild test` runs the UI tests below.
+    scheme:
+      testTargets:
+        - AnsaUITests
     sources:
       - path: Sources
     dependencies:
@@ -83,4 +87,24 @@ targets:
         # prefix rather than the tidier product-shaped one.
         PRODUCT_BUNDLE_IDENTIFIER: com.id3arium.ansa
         TARGETED_DEVICE_FAMILY: "1,2"
+        GENERATE_INFOPLIST_FILE: false
+
+  # One test per feature, each driving the app the way a person would. Run one
+  # with `./build.sh drive <name>`; features/ names each feature's test.
+  AnsaUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: UITests
+    dependencies:
+      - target: Ansa
+    info:
+      path: UITests/Info.plist
+      properties:
+        # The tests seed through the local Worker over plain http, like the app.
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.id3arium.ansa.uitests
         GENERATE_INFOPLIST_FILE: false

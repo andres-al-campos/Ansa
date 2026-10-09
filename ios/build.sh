@@ -7,6 +7,7 @@
 #   ./build.sh test         run the AnsaCore suite (no device needed)
 #   ./build.sh wire         check the Swift op encoding against the server
 #   ./build.sh agree        check Swift and TypeScript applyOp make the same tree
+#   ./build.sh drive [name] run the UI tests, or one feature's, on a simulator
 #   ./build.sh clean        drop the generated project and build output
 #
 #   --no-auth               (sim only) build without a Clerk key, so the app
@@ -167,6 +168,30 @@ by USB and tap Trust on the phone.
 Check it with:  xcrun devicectl list devices"
 }
 
+# A booted simulator's id, booting ${DEFAULT_SIM} if none is.
+booted_sim() {
+  # Reuse whatever is already booted; the simulator takes far longer to start
+  # than the build does, and a rebuild-and-relaunch loop should not pay it.
+  local udid
+  udid=$(xcrun simctl list devices booted -j \
+    | python3 -c 'import json,sys
+devs=[d for v in json.load(sys.stdin)["devices"].values() for d in v]
+print(devs[0]["udid"] if devs else "")')
+
+  if [ -z "$udid" ]; then
+    echo "No simulator booted — starting ${DEFAULT_SIM}…" >&2
+    udid=$(xcrun simctl list devices available -j \
+      | DEFAULT_SIM="$DEFAULT_SIM" python3 -c 'import json,os,sys
+want=os.environ["DEFAULT_SIM"]
+devs=[d for v in json.load(sys.stdin)["devices"].values() for d in v]
+hit=[d for d in devs if d["name"]==want] or devs
+print(hit[0]["udid"] if hit else "")')
+    [ -n "$udid" ] || die "No iOS simulators are installed. Open Xcode → Settings → Components and add an iOS runtime."
+    xcrun simctl boot "$udid" >&2
+  fi
+  printf '%s' "$udid"
+}
+
 case "${1:-run}" in
   test)
     swift test --package-path AnsaCore
@@ -275,27 +300,49 @@ The signed app is at ${app} if you would rather install it from Xcode."
     echo "Signed with a personal team, so it stops opening after 7 days — re-run this to renew it."
     ;;
 
+  drive)
+    # Each feature's UI test (UITests/<Name>Tests.swift), or one by its name in
+    # features/: `drive search` runs SearchTests. On a simulator, against the
+    # local Worker, which the tests seed and clean up through.
+    curl -fsS http://127.0.0.1:8787/api/health 2>/dev/null | grep -q '"auth":"dev"' || die \
+      "The local Worker isn't up without sign-in, and the UI tests seed through it.
+Start it from the repo root with:  ./build.sh web --no-auth"
+
+    only=AnsaUITests
+    if [ -n "${2:-}" ]; then
+      # search → SearchTests, check-off → CheckOffTests.
+      class="$(printf '%s' "$2" | awk -F- '{for (i = 1; i <= NF; i++) printf "%s", toupper(substr($i, 1, 1)) substr($i, 2)}')Tests"
+      [ -f "UITests/${class}.swift" ] || die "No UI test for \"$2\": there's no UITests/${class}.swift.
+The ones there: $(ls UITests | sed -n 's/Tests\.swift$//p' | tr '\n' ' ')"
+      only="AnsaUITests/${class}"
+    fi
+
+    # The tests sign in as the dev stub's user, so the app must skip sign-in.
+    NO_AUTH=1
+    prepare
+    udid=$(booted_sim) || exit 1
+    open -a Simulator
+
+    mkdir -p build
+    log=build/drive.log
+    xcodebuild test \
+      -project Ansa.xcodeproj \
+      -scheme "$SCHEME" \
+      -configuration Debug \
+      -destination "id=$udid" \
+      -derivedDataPath build \
+      -only-testing:"$only" >"$log" 2>&1 || true
+    # xcodebuild's own summary lines and the tests' ✓ and failure messages; the
+    # rest is in the log.
+    grep -E "✓|error:|failed|passed|TEST (SUCCEEDED|FAILED)|BUILD FAILED" "$log" \
+      | grep -vE "^\s*$" || true
+    grep -q "TEST SUCCEEDED" "$log" || die "Drive failed. The full log is ios/${log}."
+    ;;
+
   sim)
     prepare
 
-    # Reuse whatever is already booted; the simulator takes far longer to start
-    # than the build does, and a rebuild-and-relaunch loop should not pay it.
-    udid=$(xcrun simctl list devices booted -j \
-      | python3 -c 'import json,sys
-devs=[d for v in json.load(sys.stdin)["devices"].values() for d in v]
-print(devs[0]["udid"] if devs else "")')
-
-    if [ -z "$udid" ]; then
-      echo "No simulator booted — starting ${DEFAULT_SIM}…"
-      udid=$(xcrun simctl list devices available -j \
-        | DEFAULT_SIM="$DEFAULT_SIM" python3 -c 'import json,os,sys
-want=os.environ["DEFAULT_SIM"]
-devs=[d for v in json.load(sys.stdin)["devices"].values() for d in v]
-hit=[d for d in devs if d["name"]==want] or devs
-print(hit[0]["udid"] if hit else "")')
-      [ -n "$udid" ] || die "No iOS simulators are installed. Open Xcode → Settings → Components and add an iOS runtime."
-      xcrun simctl boot "$udid"
-    fi
+    udid=$(booted_sim) || exit 1
 
     # Software keyboard, not the Mac's. A hardware keyboard means nothing ever
     # covers the bottom of the screen, so anything that has to stay clear of the
@@ -347,6 +394,6 @@ print(hit[0]["udid"] if hit else "")')
 
   *)
     die "Unknown command: $1
-Usage: ./build.sh [sim|test|wire|agree|clean] [--no-auth]   (no argument builds to the phone)"
+Usage: ./build.sh [sim|test|drive [name]|wire|agree|clean] [--no-auth]   (no argument builds to the phone)"
     ;;
 esac
