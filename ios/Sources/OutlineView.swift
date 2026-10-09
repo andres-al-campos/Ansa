@@ -291,7 +291,7 @@ struct OutlineView: View {
             // switcher and a passing notification banner, where tearing the
             // socket down and refetching on the way back would be churn for a
             // state the user is usually in for under a second.
-            // The keyboard going down drops the field to the pill's line, and
+            // The keyboard going down drops the field to Home's line, and
             // coming back up lifts it. Not while tucked: that is the grow and
             // the shrink, which move it themselves.
             .onChange(of: searchFocused) { _, focused in
@@ -544,7 +544,7 @@ struct OutlineView: View {
                         editText: $renameText,
                         typing: $renamingFocus,
                         onCommit: commitScopeRename,
-                        // Nothing above a project but Home, which the pill
+                        // Nothing above a project but Home, which its circle
                         // already is, so a project's title stays a name.
                         onShowPath: pathAction(for: scope, interactive: interactive))
                 }
@@ -782,7 +782,7 @@ struct OutlineView: View {
         for scope: NodeId?, interactive: Bool, trash: Bool, search: String? = nil,
         restoring: ScrollAnchor? = nil, homeBack: Bool = false
     ) -> some View {
-            // Search is up and grown, not just tucked in the pill on its way
+            // Search is up and grown, not just tucked into its circle on its way
             // in or out. What the header's veil and the frost follow.
             let veiled = search != nil && (!interactive || searchSpot != .tucked)
             VStack(spacing: 0) {
@@ -890,7 +890,7 @@ struct OutlineView: View {
                     // one project inside the one above it.
                     if !home(scope, trash: trash) { depthButtons(interactive: interactive) }
                 } else {
-                    navPill(onHome: home(scope, trash: trash), interactive: interactive)
+                    navCircles(onHome: home(scope, trash: trash), interactive: interactive)
                 }
                 Spacer(minLength: 0)
                 // One slot, two occupants, never both: Done while a field is
@@ -918,11 +918,11 @@ struct OutlineView: View {
             .padding(.top, edit.isEditing ? Space.gutter : 0)
             }
         }
-        // While Search is up the pill and the + stay where they were rather
-        // than riding the keys, so the keys slide over them. With the keyboard
-        // down, Search's own Home takes the pill's corner.
+        // While Search is up Home, Search and the + stay where they were
+        // rather than riding the keys, so the keys slide over them. With the
+        // keyboard down, Search's own Home takes Home's place.
         //
-        // The same while the title is being renamed: the pill and the + have
+        // The same while the title is being renamed: those three have
         // nothing to do with a name, and riding up they sat on top of the keys.
         //
         // On a layer the size of the page that ignores the keyboard: on the
@@ -933,7 +933,7 @@ struct OutlineView: View {
                     .overlay(alignment: .bottom) {
                         if search == nil || (interactive && searchSpot != .low) {
                             HStack(spacing: 0) {
-                                navPill(
+                                navCircles(
                                     onHome: home(scope, trash: trash), interactive: false,
                                     searchHidden: search != nil)
                                 Spacer(minLength: 0)
@@ -1252,60 +1252,57 @@ struct OutlineView: View {
     }
 
 
-    /// Home and Search, in one glass capsule in the capture button's opposite
-    /// corner: the same height and the same distance from the edges, so the
-    /// two read as a pair.
+    /// Home and Search, two glass circles in the capture button's opposite
+    /// corner, each the + disc's size and as far from the edges.
     ///
-    /// Home is lit on Home. Neither half is lit on an outline page, which is
+    /// Separate circles rather than one pill, so the bar looks the same with
+    /// Search open: its keyboard-down state already has Home alone in this
+    /// spot, and the field grows out of Search's circle beside it. Only the
+    /// field moves.
+    ///
+    /// Home is lit on Home. Neither is lit on an outline page, which is
     /// somewhere you went from one of them rather than one of them.
     ///
-    /// `searchHidden` is the pill under Search, whose Search half has grown
-    /// into the field and is drawn by it.
-    @ViewBuilder private func navPill(
+    /// `searchHidden` is under Search, whose circle has grown into the field
+    /// and is drawn by it.
+    @ViewBuilder private func navCircles(
         onHome: Bool, interactive: Bool, searchHidden: Bool = false
     ) -> some View {
-        HStack(spacing: Space.tight) {
-            pillTab(
+        HStack(spacing: Self.navGap) {
+            navCircle(
                 onHome ? "house.fill" : "house", label: "Home", lit: onHome,
                 interactive: interactive, action: goHome)
-            // Never lit: Search replaces the pill while it is showing.
-            pillTab(
+            // Never lit: Search replaces it while it is showing.
+            navCircle(
                 "magnifyingglass", label: "Search", lit: false,
                 interactive: interactive, action: openSearch)
                 .opacity(searchHidden ? 0 : 1)
         }
-        .padding(Space.tight)
-        .modifier(PillSurface())
         .padding(.bottom, Space.corner - homeIndicator)
         .padding(.leading, Space.corner)
     }
 
-    /// Search's field, in the pill's place at the bottom.
+    /// Search's field, beside Home at the bottom.
     ///
-    /// It opens as exactly the pill's Search half and grows from there to the
+    /// It opens as exactly Search's circle and grows from there to the
     /// full width just above the keys; closing runs that backwards. With the
-    /// keyboard down it drops to the pill's line and slots in beside
-    /// `searchHome`, which never moves — so the way home is where the pill's
-    /// Home was, and the field stays one tap from typing again.
+    /// keyboard down it drops to Home's line and slots in beside
+    /// `searchHome`, which never moves — so the way home is where it always
+    /// is, and the field stays one tap from typing again.
     @ViewBuilder private func searchBar(query shown: String, interactive: Bool) -> some View {
         let spot = interactive ? searchSpot : .low
-        // The pill's Search half: past the pill's rim, Home's half and the gap
-        // between them.
-        let tab = Space.corner + Space.tight + pillTabWidth + Space.tight
-        // Keyboard up: the gutter, clear of the keys. Down: the corner the
-        // plus keeps on the right, and Home's width and a gap on the left.
+        // Tucked and keyboard down, beside Home where Search's circle is.
+        // Keyboard up: the gutter, clear of the keys.
         let leading: CGFloat = switch spot {
-            case .tucked: tab
+            case .tucked, .low: Space.corner + navSize + Self.navGap
             case .up: Space.gutter
-            case .low: Space.corner + searchHomeSize + 10
         }
         let bottom: CGFloat = switch spot {
-            case .tucked: Space.corner - homeIndicator + Space.tight
+            case .tucked, .low: Space.corner - homeIndicator
             case .up: Space.row
-            case .low: Space.corner - homeIndicator
         }
         searchField(query: shown, spot: spot, interactive: interactive)
-            .frame(maxWidth: spot == .tucked ? pillTabWidth : .infinity)
+            .frame(maxWidth: spot == .tucked ? navSize : .infinity)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.leading, leading)
             .padding(.trailing, spot == .up ? Space.gutter : Space.corner)
@@ -1362,25 +1359,18 @@ struct OutlineView: View {
         .allowsHitTesting(shown)
     }
 
-    private let searchHomeSize: CGFloat = 56
-    /// One half of the pill. Search's field starts and ends at this width.
-    private let pillTabWidth: CGFloat = 64
+    /// Home's and Search's circles, the + disc's size. Search's field starts
+    /// and ends at this width.
+    private let navSize: CGFloat = 56
+    /// Between Home's circle and Search's, and between Home and the field.
+    private static let navGap: CGFloat = 10
 
-    /// Search's Home, in the pill's corner. Pinned to the page rather than
-    /// riding the keyboard like the field: the keys cover it while they are
-    /// up, and going down they uncover it where it always was. Nothing about
-    /// it moves, fades or grows.
+    /// Search's Home, where Home's circle always is. Pinned to the page rather
+    /// than riding the keyboard like the field: the keys cover it while they
+    /// are up, and going down they uncover it where it always was. Nothing
+    /// about it moves, fades or grows.
     private func searchHome(interactive: Bool) -> some View {
-        Image(systemName: "house")
-            .font(.system(size: 20, weight: .medium))
-            .foregroundStyle(Color.primary)
-            .frame(width: searchHomeSize, height: searchHomeSize)
-            .modifier(CaptureButtonSurface())
-            .contentShape(Circle())
-            .highPriorityGesture(
-                TapGesture().onEnded(goHome), including: interactive ? .all : .none)
-            .accessibilityLabel("Home")
-            .accessibilityAddTraits(.isButton)
+        navCircle("house", label: "Home", lit: false, interactive: interactive, action: goHome)
             .padding(.leading, Space.corner)
             .padding(.bottom, Space.corner - homeIndicator)
     }
@@ -1391,8 +1381,8 @@ struct OutlineView: View {
     /// keyboard down and nothing typed it has nothing to clear and Home is
     /// beside it, so it goes.
     ///
-    /// Tucked, it is drawn as the pill's Search half: the pill's glass, the
-    /// pill's magnifying glass, and no text. The words and the ✕ come in over
+    /// Tucked, it is drawn as Search's circle: the same glass, the same
+    /// magnifying glass, and no text. The words and the ✕ come in over
     /// the second half of the grow and go over the first half of the shrink,
     /// so they never squeeze through the narrow field.
     @ViewBuilder private func searchField(query shown: String, spot: SearchSpot, interactive: Bool)
@@ -1403,17 +1393,16 @@ struct OutlineView: View {
         let half = Self.searchGrow / 2
         let words = Animation.linear(duration: half).delay(tucked ? 0 : half)
         let height: CGFloat = switch spot {
-            case .tucked: 52
+            case .tucked, .low: navSize
             case .up: 48
-            case .low: searchHomeSize
         }
         HStack(spacing: 0) {
             HStack(spacing: Space.row) {
-                // The pill's glyph when tucked, the field's when grown.
+                // The circle's glyph when tucked, the field's when grown.
                 Image(systemName: "magnifyingglass")
                     .font(.system(size: 17, weight: .medium))
                     .foregroundStyle(tucked ? Color(.label) : Color(.secondaryLabel))
-                    .scaleEffect(tucked ? 21 / 17 : 1)
+                    .scaleEffect(tucked ? Self.navGlyph / 17 : 1)
                 // Only the live copy is a field. Two fields on one focus
                 // binding would each claim the keyboard; the copy behind a
                 // swipe just shows what was typed.
@@ -1433,9 +1422,8 @@ struct OutlineView: View {
                 }
                 .animation(words) { $0.opacity(tucked ? 0 : 1) }
             }
-            // Tucked, the glyph sits centred in the pill's half, as the
-            // pill's own does.
-            .padding(.leading, tucked ? (pillTabWidth - 20) / 2 : 14)
+            // Tucked, the glyph sits centred, as the circle's own does.
+            .padding(.leading, tucked ? (navSize - 20) / 2 : 14)
             .frame(maxHeight: .infinity)
             // All of it opens the keyboard, not just the text's width. Not
             // the ✕, whose clear should leave the keyboard where it was.
@@ -1459,23 +1447,25 @@ struct OutlineView: View {
         }
         .padding(.trailing, tucked ? 0 : Space.inner)
         .frame(height: height)
-        .modifier(PillSurface(shown: !tucked))
+        .modifier(FieldSurface())
     }
 
-    /// One half of the pill. A high-priority tap rather than a `Button`, for
-    /// the capture button's reason: the back swipe's `minimumDistance: 0` drag
-    /// can win a Button's tap on a device.
-    private func pillTab(
+    private static let navGlyph: CGFloat = 20
+
+    /// Home's or Search's circle. A high-priority tap rather than a `Button`,
+    /// for the capture button's reason: the back swipe's `minimumDistance: 0`
+    /// drag can win a Button's tap on a device.
+    private func navCircle(
         _ systemImage: String, label: String, lit: Bool, interactive: Bool,
         action: @escaping () -> Void
     ) -> some View {
         Image(systemName: systemImage)
-            .font(.system(size: 21, weight: .medium))
+            .font(.system(size: Self.navGlyph, weight: .medium))
             .foregroundStyle(lit ? Color.accentColor : Color.primary)
-            // 52 tall so the pill, with its 2pt rim, is the + disc's 56.
-            .frame(width: pillTabWidth, height: 52)
-            .background(Capsule().fill(Color(.tertiarySystemFill)).opacity(lit ? 1 : 0))
-            .contentShape(Capsule())
+            .frame(width: navSize, height: navSize)
+            .background(Circle().fill(Color(.tertiarySystemFill)).opacity(lit ? 1 : 0))
+            .modifier(CaptureButtonSurface())
+            .contentShape(Circle())
             .highPriorityGesture(
                 TapGesture().onEnded(action), including: interactive ? .all : .none)
             .accessibilityLabel(label)
@@ -1497,7 +1487,7 @@ struct OutlineView: View {
         HStack(spacing: Space.row) {
             // Back to where you were, greyed when you came from nowhere —
             // there, not hidden, so the row does not shift sideways the moment
-            // there is history. A high-priority tap for the pill's reason.
+            // there is history. A high-priority tap for the capture button's reason.
             //
             // The project header's chevron: body size, ink on the gutter.
             Image(systemName: "chevron.left")
@@ -1793,14 +1783,14 @@ struct OutlineView: View {
     /// Whether there is a screen behind this one. Everything but Home has one:
     /// a project's top level goes back to Home, and the trash to whatever it
     /// was opened over. Home has one only when you came to it from somewhere,
-    /// so a stray tap on the pill's Home costs one tap to undo.
+    /// so a stray tap on Home's circle costs one tap to undo.
     private var canGoBack: Bool {
         inTrash || scope != nil || backFromHome(backTrail)
     }
 
     /// Whether the edge swipe can take a touch. Not while Search is up: the
     /// swipe would pull the layer sideways while the field wants to shrink
-    /// down into the pill. The ✕, the header and bare frost close it.
+    /// down into its circle. The ✕, the header and bare frost close it.
     private var canSwipeBack: Bool { canGoBack && !inSearch }
 
     /// The rows the outline draws, flattened depth-first with a folded subtree
@@ -2484,11 +2474,11 @@ struct OutlineView: View {
         inTrash = true
     }
 
-    /// Home, from the pill. Through `setScope`, so Back from the project you
+    /// Home, from its circle. Through `setScope`, so Back from the project you
     /// open next returns here.
     private func goHome() {
         // Home arrives under the frost at once, and Search shrinks back into
-        // the pill over it, so the page being left is never seen swapping.
+        // its circle over it, so the page being left is never seen swapping.
         // From Home itself there is no new page, so it just closes.
         if inSearch {
             guard scope != nil || inTrash else {
@@ -2526,7 +2516,7 @@ struct OutlineView: View {
     }
 
     /// Back to the screen Search was opened over, which is still there under
-    /// it. The field shrinks back into the pill, then Search goes.
+    /// it. The field shrinks back into its circle, then Search goes.
     private func closeSearch() {
         guard inSearch else { return }
         searchFocused = false
@@ -3411,19 +3401,16 @@ private struct CaptureButtonSurface: ViewModifier {
     }
 }
 
-/// The Home and Search pill: `CaptureButtonSurface` in a capsule.
-private struct PillSurface: ViewModifier {
-    /// False for Search's field while it is tucked into the pill, which is
-    /// already glass around it.
-    var shown = true
-
+/// Search's field: `CaptureButtonSurface` in a capsule. Tucked, the capsule is
+/// a circle, so it stands in for Search's own.
+private struct FieldSurface: ViewModifier {
     func body(content: Content) -> some View {
         if #available(iOS 26, *) {
-            content.glassEffect(shown ? .regular.interactive() : .identity, in: .capsule)
+            content.glassEffect(.regular.interactive(), in: .capsule)
         } else {
             content
-                .background(Capsule().fill(.regularMaterial).opacity(shown ? 1 : 0))
-                .shadow(color: .black.opacity(shown ? 0.12 : 0), radius: 6, y: 2)
+                .background(Capsule().fill(.regularMaterial))
+                .shadow(color: .black.opacity(0.12), radius: 6, y: 2)
         }
     }
 }
@@ -3485,12 +3472,11 @@ struct SlabLayer {
 
 /// Where Search's field sits.
 enum SearchSpot {
-    /// Exactly the pill's Search half, with no glass of its own: where it grows
-    /// from and shrinks back into.
+    /// Exactly Search's circle: where it grows from and shrinks back into.
     case tucked
     /// Full width on the keys.
     case up
-    /// Keyboard down, on the pill's line beside Home.
+    /// Keyboard down, beside Home on its line.
     case low
 }
 
@@ -3844,7 +3830,7 @@ enum Space {
     static let gutter: CGFloat = 16
     /// How far a corner control sits from the two screen edges it floats over.
     ///
-    /// 24 lines the pill's left edge up with the outer edge of a
+    /// 24 lines Home's left edge up with the outer edge of a
     /// bullet's ring above it (17 inset + 7 to the ring inside its 32pt
     /// column). 36 left the pair standing out in the open.
     static let corner: CGFloat = 24
@@ -3990,9 +3976,9 @@ private struct OutlineRow: View {
     /// takes the leading margin with it. This puts it back.
     ///
     /// Puts the second-level guide 50pt in, where it ran through the centre
-    /// of the round button that once sat in the bottom-left corner. The
-    /// pill's Home oval is wider and centres 6pt right of that; the guides
-    /// stay put rather than narrowing every row to follow it.
+    /// of the round button that once sat in the bottom-left corner. Home's
+    /// circle centres 2pt right of that; the guides stay put rather than
+    /// narrowing every row to follow it.
     static let railInset: CGFloat = 50 - 16 - indent
 
     /// A single-line row's content height, without the row's own vertical
