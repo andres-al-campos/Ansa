@@ -12,7 +12,7 @@ Find a task by its text. iOS only; the web has no search.
 
 ## How to get to it
 
-- iOS: the Search pill; the page grows from it over the current screen.
+- iOS: the Search circle, beside Home at the bottom left; the field grows out of it over the current screen.
 
 ## Driving it
 
