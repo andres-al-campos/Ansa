@@ -1377,9 +1377,9 @@ struct OutlineView: View {
 
     /// The field itself: a glass capsule with the one ✕.
     ///
-    /// The ✕ clears the text, and on an empty field closes Search. With the
-    /// keyboard down and nothing typed it has nothing to clear and Home is
-    /// beside it, so it goes.
+    /// The ✕ clears the text, and on an empty field closes Search. It stays
+    /// with the keyboard down and nothing typed, where it is the plain way
+    /// out: Home beside it also closes Search, but goes Home as well.
     ///
     /// Tucked, it is drawn as Search's circle: the same glass, the same
     /// magnifying glass, and no text. The words and the ✕ come in over
@@ -1389,7 +1389,6 @@ struct OutlineView: View {
         -> some View
     {
         let tucked = spot == .tucked
-        let clearable = !shown.isEmpty || spot == .up
         let half = Self.searchGrow / 2
         let words = Animation.linear(duration: half).delay(tucked ? 0 : half)
         let height: CGFloat = switch spot {
@@ -1440,10 +1439,10 @@ struct OutlineView: View {
                     TapGesture().onEnded {
                         if query.isEmpty { zoomOut() } else { query = "" }
                     },
-                    including: interactive && clearable && !tucked ? .all : .none)
-                .animation(words) { $0.opacity(clearable && !tucked ? 1 : 0) }
+                    including: interactive && !tucked ? .all : .none)
+                .animation(words) { $0.opacity(tucked ? 0 : 1) }
                 .accessibilityLabel(shown.isEmpty ? "Close search" : "Clear")
-                .accessibilityHidden(!clearable)
+                .accessibilityHidden(tucked)
         }
         .padding(.trailing, tucked ? 0 : Space.inner)
         .frame(height: height)
@@ -4964,7 +4963,7 @@ private struct SearchPage: View {
     }
 
     @ViewBuilder private var results: some View {
-        let found = TreeOps.search(tree, query, from: from)
+        let found = TreeOps.search(tree, String(query.dropLast()) + "#", from: from)
         let binned = trash.filter { !TreeOps.matchRanges($0.text, query).isEmpty }.count
         if found.here.isEmpty && found.elsewhere.isEmpty {
             Section {
