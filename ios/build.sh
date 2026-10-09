@@ -313,7 +313,7 @@ Start it from the repo root with:  ./build.sh web --no-auth"
       # search → SearchTests, check-off → CheckOffTests.
       class="$(printf '%s' "$2" | awk -F- '{for (i = 1; i <= NF; i++) printf "%s", toupper(substr($i, 1, 1)) substr($i, 2)}')Tests"
       [ -f "UITests/${class}.swift" ] || die "No UI test for \"$2\": there's no UITests/${class}.swift.
-The ones there: $(ls UITests | sed -n 's/Tests\.swift$//p' | tr '\n' ' ')"
+The ones there: $(ls UITests | sed -n 's/Tests\.swift$//p' | sed -E 's/([a-z0-9])([A-Z])/\1-\2/g' | tr 'A-Z\n' 'a-z ')"
       only="AnsaUITests/${class}"
     fi
 
