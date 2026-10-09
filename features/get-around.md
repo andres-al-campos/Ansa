@@ -11,8 +11,10 @@ back out.
 - On open, lands in the project you last worked in, on any device (it follows
   the account, not the device)
 - Desktop app: back / forward buttons and a sidebar toggle
-- iOS: back follows where you came from, not the tree's parent; long-press
-  Back shows the path
+- iOS: Back and the edge swipe both go to where you came from, like a
+  browser, not to the tree's parent. Home's Back greys out with nowhere to go
+- iOS: tapping a nested place's title (marked ⌃⌄) shows the places above it.
+  A top-level project's title is plain text: there's nothing above it
 - Dormant on web: "leaves only" and "hide completed" views, wired through the
   render but with no toggle
 
@@ -20,7 +22,8 @@ back out.
 
 - Web: click a row's zoom arrow (right edge, on hover), click the bullet to
   fold, click Ansa for Home.
-- iOS: swipe a row right to zoom, tap its bullet to fold, Back to return.
+- iOS: swipe a row right to zoom, tap its bullet to fold, Back or an edge
+  swipe to return, the title to jump up the tree.
 
 ## Driving it
 
