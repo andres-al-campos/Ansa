@@ -22,6 +22,35 @@ enum LocalAPI {
         return id
     }
 
+    /// A node as the Worker has it, or nil if it has none with that id.
+    static func node(_ id: String) async throws -> [String: Any]? {
+        let data = try await call("GET", "/api/tree")
+        let tree = (try JSONSerialization.jsonObject(with: data) as? [String: Any])?["tree"] as? [[String: Any]]
+        return tree?.first { $0["id"] as? String == id }
+    }
+
+    /// The children of `parent`, by text. The app makes ids of its own on
+    /// some paths, so tests look nodes up rather than trusting an order.
+    static func child(of parent: String, text: String) async throws -> String {
+        let data = try await call("GET", "/api/tree")
+        let tree = (try JSONSerialization.jsonObject(with: data) as? [String: Any])?["tree"] as? [[String: Any]] ?? []
+        guard let id = tree.first(where: { $0["parentId"] as? String == parent && $0["text"] as? String == text })?["id"] as? String
+        else {
+            throw Failure("The Worker has no \"\(text)\" under \(parent). Check the /api/nodes/subtree route in worker/src/index.ts.")
+        }
+        return id
+    }
+
+    /// Whether the Worker comes to see `id` as done == `want` within a few
+    /// seconds: the app sends its ops on a queue, not at the tap.
+    static func settles(_ id: String, done want: Bool) async throws -> Bool {
+        for _ in 0..<20 {
+            if try await node(id)?["done"] as? Bool == want { return true }
+            try await Task.sleep(for: .milliseconds(250))
+        }
+        return false
+    }
+
     /// Deletes a node and its subtree for good, not to the trash.
     static func remove(_ id: String) async throws {
         _ = try await call("DELETE", "/api/nodes/\(id)")

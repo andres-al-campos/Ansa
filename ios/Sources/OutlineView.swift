@@ -4042,6 +4042,11 @@ private struct OutlineRow: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .accessibilityLabel("Done")
+            .accessibilityAddTraits(node.done ? .isSelected : [])
+            // By id, since two rows can read the same. UI tests find a row's
+            // box through it.
+            .accessibilityIdentifier("checkbox \(node.id)")
             // The box sits 20pt from a leaf's dot and 20pt from the text —
             // equal around the mark most rows show, since most tasks are
             // leaves, and the same step as one indent. A parent's 18pt ring

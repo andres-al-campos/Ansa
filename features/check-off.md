@@ -18,14 +18,18 @@ Mark tasks done and see how far along a project is.
 
 ## Driving it
 
-Preconditions: `./build.sh web --no-auth` running.
+Preconditions: `./build.sh web --no-auth` running (the iOS drive needs only its Worker).
 
 - `npm run drive -- check-off`: ticking one child leaves the parent open,
   ticking both completes it, unticking one reopens it.
 - `npm run drive -- check-off-home`: the Home card reads "0 of 2 done (0%)",
   then "1 of 2 done (50%)", then "All done".
 
-Last driven 2026-10-06, web.
+- `ios/build.sh drive check-off` (~60s, simulator): the same three steps from
+  the row checkboxes, each read on the box and on the Worker.
+
+Last driven 2026-10-06, web; 2026-10-09, iOS: ✓, and ✗ against a build whose
+checkbox did nothing and one that never synced a tick.
 
 ## Gotchas
 
