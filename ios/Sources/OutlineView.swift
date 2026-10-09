@@ -4963,7 +4963,7 @@ private struct SearchPage: View {
     }
 
     @ViewBuilder private var results: some View {
-        let found = TreeOps.search(tree, String(query.dropLast()) + "#", from: from)
+        let found = TreeOps.search(tree, query, from: from)
         let binned = trash.filter { !TreeOps.matchRanges($0.text, query).isEmpty }.count
         if found.here.isEmpty && found.elsewhere.isEmpty {
             Section {
