@@ -12,7 +12,7 @@ again. Several features exist on one platform only; the file says which.
 | Get around | [get-around.md](get-around.md) | web, iOS | Yes, web (2026-10-06) |
 | Pin | [pin.md](pin.md) | web, iOS | Yes, web (2026-10-06) |
 | Search | [search.md](search.md) | iOS only | Yes, iOS simulator (2026-10-08) |
-| Trash | [trash.md](trash.md) | web, iOS | Yes, web (2026-10-06) |
+| Trash | [trash.md](trash.md) | web, iOS | Yes, web (2026-10-06), iOS (2026-10-09) |
 | Backup & transfer | [backup.md](backup.md) | web only | Yes (2026-10-06) |
 | Sign in and sync | [sync.md](sync.md) | web, iOS | Live updates, web (2026-10-06); sign-in not driven |
 | Let a Claude work on it | [mcp.md](mcp.md) | MCP | Yes (2026-10-06) |

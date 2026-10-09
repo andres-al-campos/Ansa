@@ -51,13 +51,26 @@ enum LocalAPI {
         return false
     }
 
+    /// The id of the Trash entry holding `root`, or nil if none does.
+    static func trashEntry(holding root: String) async throws -> String? {
+        let data = try await call("GET", "/api/trash?limit=200")
+        let entries = (try JSONSerialization.jsonObject(with: data) as? [String: Any])?["entries"] as? [[String: Any]] ?? []
+        return entries.first { $0["rootId"] as? String == root }?["id"] as? String
+    }
+
+    /// Empties one Trash entry for good.
+    static func forget(_ entry: String) async throws {
+        _ = try await call("DELETE", "/api/trash/\(entry)")
+    }
+
     /// Deletes a node and its subtree for good, not to the trash.
     static func remove(_ id: String) async throws {
         _ = try await call("DELETE", "/api/nodes/\(id)")
     }
 
     private static func call(_ method: String, _ path: String, body: [String: Any]? = nil) async throws -> Data {
-        var req = URLRequest(url: base.appending(path: path))
+        // Not appending(path:), which escapes a query's "?" into the path.
+        var req = URLRequest(url: URL(string: base.absoluteString + path)!)
         req.httpMethod = method
         req.setValue("dev", forHTTPHeaderField: "x-ansa-user")
         if let body {

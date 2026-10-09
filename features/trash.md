@@ -24,9 +24,20 @@ Preconditions: `./build.sh web --no-auth` running.
 Trash, restores it, and checks it is back under Parent and gone from Trash.
 Every drive also ends with Trash's Delete, which removes its project for good.
 
-Last driven 2026-10-06, web. Not driven: the daily sweep, paging, iOS.
+`ios/build.sh drive trash` (~60s, simulator) does it by thumb: a full left
+swipe deletes the task, then a full swipe on its Trash row restores it. Each
+step is read on screen and on the Worker.
+
+Last driven 2026-10-06, web; 2026-10-09, iOS: ✓, and ✗ against a build whose
+swipe didn't delete and one whose Restore never reached the Worker. Not
+driven: the daily sweep, paging, iOS Delete for good.
 
 ## Gotchas
+
+- A UI test's tap on a revealed swipe button (Trash's Restore) never runs its
+  action; the row just stays open. The iOS drive uses the full swipe instead.
+- The row's delete swipe has no VoiceOver action, so VoiceOver can't delete a
+  task on iOS.
 
 - Only deliberate deletes go to the trash. Emptying a row or merging rows with
   Backspace removes without trashing, on purpose.
