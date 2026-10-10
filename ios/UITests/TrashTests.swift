@@ -86,7 +86,11 @@ final class TrashTests: XCTestCase {
         let across = app.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0))
             .withOffset(CGVector(dx: 0, dy: entry.frame.midY))
         edge.press(forDuration: 0.05, thenDragTo: across, withVelocity: .default, thenHoldForDuration: 0.1)
-        try need(trash.waitForExistence(timeout: 5),
+        // Trash's own header gone, not Home's Trash row present: a copy of
+        // Home is drawn behind a back swipe in progress, so its row exists
+        // whether or not Back finished.
+        let header = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'Deleted tasks stay here'")).firstMatch
+        try need(header.waitForNonExistence(timeout: 5) && trash.isHittable,
             "A right swipe from the screen's edge over \"\(text)\" didn't go back to Home. Check backHolding and zoomOutSwipe in OutlineView.swift.")
         let notRestored = try await LocalAPI.trashEntry(holding: task)
         try need(notRestored != nil,
