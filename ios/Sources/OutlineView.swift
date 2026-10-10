@@ -4029,12 +4029,14 @@ struct OutlineRow: View {
                 // mark drawn larger.
                 .frame(width: 32, height: 40)
                 .contentShape(Rectangle())
-                // High priority, not `.gesture`: a plain gesture loses the
-                // touch to the List's own scroll, so a real finger on the
-                // bullet scrolls the page and the drag never arms. (Injected
-                // touches in a simulator skip that arbitration, which is why
-                // this looked like it worked.) Both the fold and the drag live
-                // in there — see `bulletGesture`.
+                // High priority, not `.gesture`: when the drag still lived
+                // here, a plain gesture lost the touch to the List's own
+                // scroll, so a real finger on the bullet scrolled the page.
+                // (Injected touches in a simulator skip that arbitration,
+                // which is why it looked like it worked.) Only the fold tap
+                // lives here now — the drag arms from the row's `armGesture`
+                // — and whether the tap alone still needs the priority hasn't
+                // been checked on a device.
                 .highPriorityGesture(bulletGesture)
                 // The fold for VoiceOver, and the id UI tests find it by. A
                 // leaf's dot folds nothing, so it isn't offered.
