@@ -20,10 +20,10 @@ the person.
 
 Preconditions: `./build.sh web --no-auth` running.
 
-`npm run drive -- mcp` launches the MCP server over stdio with
-`ANSA_API=http://127.0.0.1:8787`, checks `view_tree` lists a
-project the browser just made, then calls `rename_task` and checks the browser
-shows the new name without a reload.
+- `npm run drive -- mcp`: launches the MCP server over stdio with
+  `ANSA_API=http://127.0.0.1:8787`, checks `view_tree` lists a
+  project the browser just made, then calls `rename_task` and checks the browser
+  shows the new name without a reload.
 
 Last driven 2026-10-06. Not driven: the other tools.
 

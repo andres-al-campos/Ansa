@@ -24,7 +24,6 @@ Preconditions: `./build.sh web --no-auth` running (the iOS drive needs only its 
   ticking both completes it, unticking one reopens it.
 - `npm run drive -- check-off-home`: the Home card reads "0 of 2 done (0%)",
   then "1 of 2 done (50%)", then "All done".
-
 - `ios/build.sh drive check-off` (~60s, simulator): the same three steps from
   the row checkboxes, each read on the box and on the Worker.
 

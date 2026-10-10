@@ -27,7 +27,9 @@ separate rather than merging them.
 
 - **Sub-features**: the selling points; the README's feature list comes from these.
 - **How to get to it**: the user's path, per platform.
-- **Driving it**: preconditions, then steps an agent can follow, or why it's blocked.
+- **Driving it**: preconditions, then one bullet per check, each led by its
+  command: `npm run drive -- <scenario>` or `ios/build.sh drive <name>`. A
+  feature with no check writes "No check yet" and why.
 - **Gotchas**: what has bitten us, or will.
 
 ## Keeping it current

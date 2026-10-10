@@ -16,11 +16,12 @@ Find a task by its text. iOS only; the web has no search.
 
 ## Driving it
 
-`ios/build.sh drive search` (~100s, most of it the build), with the local
-Worker up (`./build.sh web --no-auth`). It makes a project holding "Call the
-zebra keeper" plus a word nothing else has, searches that word from Home,
-checks the task is listed with its project beneath, taps it and checks the
-project opened. Then it deletes the project for good.
+Preconditions: `./build.sh web --no-auth` running (the drive needs only its Worker).
+
+- `ios/build.sh drive search` (~100s, most of it the build): makes a project
+  holding "Call the zebra keeper" plus a word nothing else has, searches that
+  word from Home, checks the task is listed with its project beneath, taps it
+  and checks the project opened. Then it deletes the project for good.
 
 Last driven 2026-10-08: ✓, and ✗ against a build whose matching was broken.
 

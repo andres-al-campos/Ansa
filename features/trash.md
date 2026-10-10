@@ -21,14 +21,14 @@ Deleted tasks wait 30 days in the trash, where they can be put back.
 
 Preconditions: `./build.sh web --no-auth` running.
 
-`npm run drive -- trash` deletes Child B with ⌘/Ctrl+Backspace, opens
-Trash, restores it, and checks it is back under Parent and gone from Trash.
-Every drive also ends with Trash's Delete, which removes its project for good.
+- `npm run drive -- trash`: deletes Child B with ⌘/Ctrl+Backspace, opens
+  Trash, restores it, and checks it is back under Parent and gone from Trash.
+- `ios/build.sh drive trash` (~70s, simulator): by thumb, a full left
+  swipe deletes the task; in Trash, a left swipe asks and Cancel leaves the row in
+  place, a right swipe from the screen's edge goes Back without restoring, and a
+  right swipe restores. Each step is read on screen and on the Worker.
 
-`ios/build.sh drive trash` (~70s, simulator) does it by thumb: a full left
-swipe deletes the task; in Trash, a left swipe asks and Cancel leaves the row in
-place, a right swipe from the screen's edge goes Back without restoring, and a
-right swipe restores. Each step is read on screen and on the Worker.
+Every drive also ends with Trash's Delete, which removes its project for good.
 
 Last driven 2026-10-06, web; 2026-10-09, iOS: ✓, and ✗ against builds whose
 swipe didn't delete, whose Restore never reached the Worker, whose Trash rows

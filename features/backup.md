@@ -17,10 +17,10 @@ Export the whole account as JSON, or replace it from a file. Web only.
 
 Preconditions: `./build.sh web --no-auth` running.
 
-`npm run drive -- backup` exports (Playwright saves the download), imports
-that same file through the confirm, exports again, and checks the two describe
-the same tree. They differ only in key order and in `"pinned": false` written
-out where the first left it implicit.
+- `npm run drive -- backup`: exports (Playwright saves the download), imports
+  that same file through the confirm, exports again, and checks the two describe
+  the same tree. They differ only in key order and in `"pinned": false` written
+  out where the first left it implicit.
 
 Last driven 2026-10-06. The import replaces the local `dev` tree; the
 round trip leaves it as it was.
