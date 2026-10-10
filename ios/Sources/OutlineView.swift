@@ -839,7 +839,7 @@ struct OutlineView: View {
                         // `interactive` too: the copy drawn behind the swipe must
                         // not take the gesture either, the same as an outline's.
                         TrashView(
-                            store: store, backing: interactive && backPull > 0,
+                            store: store,
                             backHolding: backHolding,
                             onSwipingChanged: { if interactive { rowSwiping = $0 } },
                             screenWidth: slabWidth,
@@ -855,6 +855,23 @@ struct OutlineView: View {
                                 restoring: restoring)
                     }
                 }
+                // On the page, not on each list, so Home, a project and Trash all
+                // keep it and a new screen cannot forget it (Home once did).
+                // laws/row-gestures.sh holds it to this one place.
+                //
+                // The directional lock the platform does not hand you. Every gesture
+                // here is recognised simultaneously, so none of them takes the touch
+                // away from the list — without this a swipe carrying any vertical drift
+                // slid the screen and scrolled the rows at once.
+                //
+                // Also while a row is in the air: the drag reads the frames it
+                // measured, so a list scrolling under it moves the answer out from
+                // under the finger. Edge-scrolling is the controller's own tick.
+                //
+                // `rowSwiping` is set once the pull clears 20pt, the point the gesture
+                // has proved it is horizontal — before that a drifting scroll must
+                // still be able to scroll.
+                .scrollDisabled(interactive && (backPull > 0 || drag.isActive || rowSwiping))
                 .overlay {
                     if let search {
                         searchLayer(
@@ -1091,19 +1108,6 @@ struct OutlineView: View {
             // Nothing else reaches it, since this list has no edit mode.
         }
         .listStyle(.plain)
-        // The directional lock the platform does not hand you. Every gesture
-        // here is recognised simultaneously, so none of them takes the touch
-        // away from the list — without this a swipe carrying any vertical drift
-        // slid the screen and scrolled the rows at once.
-        //
-        // Also while a row is in the air: the drag reads the frames it
-        // measured, so a list scrolling under it moves the answer out from
-        // under the finger. Edge-scrolling is the controller's own tick.
-        //
-        // `rowSwiping` is set once the pull clears 20pt, the point the gesture
-        // has proved it is horizontal — before that a drifting scroll must
-        // still be able to scroll.
-        .scrollDisabled(interactive && (backPull > 0 || drag.isActive || rowSwiping))
         // Put the list back where it was when this scope was last left.
         //
         // Unanimated, so the position is already right on the first frame

@@ -13,13 +13,6 @@ import SwiftUI
 struct TrashView: View {
     let store: OutlineStore
 
-    /// Whether a back swipe is currently carrying this screen aside.
-    ///
-    /// Only to lock the scroll while it is — see the `List` below. The swipe
-    /// itself belongs to the view that draws this one, which is also where the
-    /// pull it reads is measured.
-    let backing: Bool
-
     /// Whether a back swipe has the touch, from its first point. A row's
     /// restore travels the same way, so the row stands down while this is set
     /// — the same exclusion an outline row has.
@@ -28,9 +21,6 @@ struct TrashView: View {
     /// so the back swipe stands down in turn.
     let onSwipingChanged: (Bool) -> Void
     let screenWidth: CGFloat
-
-    /// Whether a row is being swiped, to lock the list's scroll while it is.
-    @State private var rowSwiping = false
 
     /// What Search was asking when its trash line opened this, so the list
     /// shows only what matches it. Nil when opened from Home.
@@ -132,10 +122,7 @@ struct TrashView: View {
                                     name: "Restore", glyph: "arrow.up.bin",
                                     tint: .accentColor, leaves: true,
                                     run: { Task { await restore(entry) } }),
-                                onSwipingChanged: {
-                                    rowSwiping = $0
-                                    onSwipingChanged($0)
-                                }
+                                onSwipingChanged: onSwipingChanged
                             ) { _ in
                                 TrashRow(entry: entry, query: query)
                                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -162,14 +149,9 @@ struct TrashView: View {
                         .disabled(busy)
                     }
                 }
-                // While the back swipe carries this screen aside, so one finger
-                // cannot scroll and slide at once. The list's own recogniser is
-                // not something the swipe can outrank, so the lock has to be
-                // this.
+                // Held still during a back swipe or a row's swipe by the page
+                // this is drawn in (OutlineView's one `.scrollDisabled`).
                 .listStyle(.plain)
-                // And while a row is swiped, like the outline: a swipe with any
-                // vertical drift otherwise scrolled the list too.
-                .scrollDisabled(backing || rowSwiping)
             }
         } else {
             ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
