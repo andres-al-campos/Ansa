@@ -50,7 +50,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { parseFrame, type Frame } from '@shared/frame'
-import type { Op } from '@shared/ops'
+import { applyOp, type Op } from '@shared/ops'
 import { fingerprint, type Tree } from '@shared/tree'
 import { eventsUrl, fetchTree, ORIGIN, sendOp } from './api'
 import { loadQueue, saveQueue } from './storage'
@@ -120,6 +120,22 @@ function isForAPerson(reason: string): boolean {
   return reason.includes('which is the limit')
 }
 
+/**
+ * A server tree with this tab's unsent ops put back on top.
+ *
+ * The server's tree does not hold what is still queued here, so adopting it
+ * bare takes those edits off the screen while they are still on their way out.
+ * An add whose node the tree already has is skipped: that op reached the server
+ * and only its acknowledgement was lost.
+ */
+export function withUnsent(tree: Tree, ops: Op[]): Tree {
+  return ops.reduce((t, op) => {
+    const ids = op.op === 'addChild' ? [op.id] : op.op === 'addSubtree' ? op.ids : []
+    if (ids.some((id) => t.some((n) => n.id === id))) return t
+    return applyOp(t, op).tree
+  }, tree)
+}
+
 export function useOutlinerSync({
   busy,
   tree,
@@ -130,7 +146,10 @@ export function useOutlinerSync({
   busy: boolean
   /** The tree as this tab currently holds it, for the fingerprint check. */
   tree: Tree
-  /** Called with a server tree that should replace local state. */
+  /**
+   * Called with a tree that should replace local state: the server's, with
+   * this tab's queued ops already replayed on it.
+   */
   onAdopt: (tree: Tree) => void
   /**
    * Called with an op made elsewhere that should be applied to local state.
@@ -203,11 +222,13 @@ export function useOutlinerSync({
   const onApplyRef = useRef(onApply)
   onApplyRef.current = onApply
 
-  // Adopting is not a local change, so it must not enqueue anything: the tree we
-  // just took *is* the server's.
+  // Adopting is not a local change, so it must not enqueue anything. What is
+  // already queued goes back on top: the first tree lands even mid-edit, and a
+  // person who started typing before it arrived would otherwise watch their
+  // rows vanish while the ops that made them were still waiting to be sent.
   const adopt = useCallback((next: Tree) => {
     synced.current = true
-    onAdoptRef.current(next)
+    onAdoptRef.current(withUnsent(next, queue.current))
   }, [])
 
   // Take one frame now. Callers have already decided the user is not busy.

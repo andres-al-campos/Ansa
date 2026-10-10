@@ -11,7 +11,7 @@ import {
   type Edit,
 } from './edits'
 import { useFoldAnimation } from './useFoldAnimation'
-import { useOutlinerSync } from './useOutlinerSync'
+import { useOutlinerSync, withUnsent } from './useOutlinerSync'
 import { useRipple } from './useRipple'
 import TrashPanel from './TrashPanel'
 import WhoAmIPanel from './WhoAmI'
@@ -547,7 +547,11 @@ export default function Outliner({ initial }: { initial: Tree }) {
     onApply: (op) => {
       setHistory((h) => ({ ...h, present: applyOp(h.present, op).tree }))
     },
-    onAdopt: (next) => {
+    onAdopt: (server) => {
+      // A row still being named is held off the wire (pendingCreate), so no
+      // tree from the server has it. Put those back too, or the first tree
+      // landing mid-name removes the row from under the caret.
+      const next = withUnsent(server, [...pendingCreate.current.values()].flat())
       setHistory((h) => ({ ...h, present: next }))
       // Re-resume against the authoritative tree. The mount-time guess came
       // from the localStorage cache, which is empty on a new device and can be
