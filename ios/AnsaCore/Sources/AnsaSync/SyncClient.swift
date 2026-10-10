@@ -348,10 +348,33 @@ public final class SyncClient {
     }
 
     /// Adopting is not a local change, so it must not enqueue anything: the
-    /// tree being taken *is* the server's.
+    /// tree being taken *is* the server's — with whatever is still queued put
+    /// back on top. The server has not seen those ops, so its tree lacks them;
+    /// taken bare, a tick made before the first tree was sent and stored while
+    /// its box sat unticked until something else changed.
     private func adopt(_ tree: Tree) {
         synced = true
-        onAdopt(tree)
+        onAdopt(Self.withUnsent(tree, queue.all))
+    }
+
+    /// The server's tree as this device should show it: with its unsent ops
+    /// replayed, oldest first. Mirrors `withUnsent` in `src/useOutlinerSync.ts`.
+    ///
+    /// An add whose node the tree already has is skipped: that op reached the
+    /// server and only its answer was lost, and `addChild` appends
+    /// unconditionally. The other ops have no such tell. An indent or a fold
+    /// the server already holds is applied twice here, and stays wrong on
+    /// screen until its echo's fingerprint disagrees and the tree is refetched.
+    static func withUnsent(_ tree: Tree, _ ops: [Op]) -> Tree {
+        ops.reduce(tree) { tree, op in
+            let adds: [NodeId] = switch op {
+            case .addChild(let id, _, _, _): [id]
+            case .addSubtree(let ids, _, _, _): ids
+            default: []
+            }
+            if adds.contains(where: { id in tree.contains { $0.id == id } }) { return tree }
+            return TreeOps.applyOp(tree, op).tree
+        }
     }
 
     /// Take one frame now. Callers have already decided the user is not busy.

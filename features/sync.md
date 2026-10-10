@@ -29,8 +29,15 @@ Preconditions: `./build.sh web --no-auth` running.
 mid-edit: a ticked box stays ticked, and a project being named keeps its name
 field and is created with the name.
 
-Last driven 2026-10-06, web. Not driven: the offline queue, drift reload, the
-toast, iOS.
+`ios/build.sh test` covers the same on iOS (the sync client's "unsent edits on
+screen" tests): a tick and an add made before the first tree stay on screen,
+as do edits left unsent by the last launch and edits waiting out a reconnect.
+
+Last driven 2026-10-06, web. On iOS, run once by hand on 2026-10-10 in the
+simulator with the local Worker frozen until after a tick and a delete: before
+the fix the box flipped back and stayed unticked for 40s over a server that
+had it done; after, both held. Not driven: the offline queue, drift reload, the
+toast.
 
 ## Gotchas
 
@@ -40,6 +47,7 @@ toast, iOS.
 - A blocked WebSocket (an ad-blocker rule against workers.dev did it once)
   leaves the app looking healthy while missing every remote edit; the toast is
   the only sign.
-- On iOS, edits queued before a kill disappear from the screen after relaunch
-  until the drift check reloads the tree (traced in code, not run).
 - An edit replayed after a crash can apply twice; a repeated fold flips back.
+  The same goes for the screen when a tree lands while a sent op is still
+  queued: an add is recognised and skipped, an indent or a fold is not, and
+  shows doubled until the drift check reloads the tree.

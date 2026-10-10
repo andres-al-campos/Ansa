@@ -485,6 +485,92 @@ struct SyncClientTests {
         #expect(state.value.map(\.text) == ["cached"])
     }
 
+    // ------------------------------------------------- unsent edits on screen
+
+    /// A store as the app's is: an edit applies to the tree and is queued.
+    private func edit(_ op: Op, _ client: SyncClient, _ state: Box<Tree>) {
+        state.value = TreeOps.applyOp(state.value, op).tree
+        client.send(op)
+    }
+
+    @Test("an edit made before the first tree is still on screen after it lands")
+    func earlyEditStaysOnScreen() async {
+        // First paint is from cache, so a tick can land before the server's
+        // tree does. The tree replaced the screen bare, the tick was sent, and
+        // the box sat unticked over a server that had it done.
+        let server: Tree = [node("a", "task")]
+        let api = FakeBackend(tree: server)
+        let state = Box<Tree>(server)
+        let (client, _) = makeClient(api, state: state)
+
+        edit(.setDone(id: "a", done: true), client, state)
+        edit(.addChild(id: "b", parentId: nil, text: "added early", at: 1), client, state)
+        client.adoptInitial(server)
+
+        #expect(state.value.first { $0.id == "a" }?.done == true)
+        #expect(state.value.map(\.id) == ["a", "b"])
+    }
+
+    @Test("an add the server already has is not put back a second time")
+    func addAlreadyStoredIsNotDoubled() async {
+        // The op reached the server and only its answer was lost, so it is
+        // still queued. `addChild` appends unconditionally: replayed, it would
+        // leave two rows sharing one id.
+        let api = FakeBackend()
+        let state = Box<Tree>([])
+        let (client, _) = makeClient(api, state: state)
+
+        edit(.addChild(id: "b", parentId: nil, text: "stored", at: 1), client, state)
+        client.adoptInitial([node("b", "stored")])
+
+        #expect(state.value.map(\.id) == ["b"])
+    }
+
+    @Test("an unsent edit to a row deleted elsewhere changes nothing")
+    func editToADeletedRowIsDropped() async {
+        let api = FakeBackend()
+        let state = Box<Tree>([node("a", "one"), node("gone", "two")])
+        let (client, _) = makeClient(api, state: state)
+
+        edit(.setText(id: "gone", text: "renamed"), client, state)
+        edit(.indent(id: "gone"), client, state)
+        client.adoptInitial([node("a", "one")])
+
+        #expect(state.value == [node("a", "one")])
+    }
+
+    @Test("edits left unsent by the last launch are on screen after the first tree")
+    func restoredEditsStayOnScreen() async {
+        let url = tempURL()
+        let first = SyncClient(api: FakeBackend(), queueURL: url, current: { [] }, onApply: { _ in }) { _ in }
+        first.send(.setText(id: "a", text: "unsent"))
+
+        let state = Box<Tree>([node("a", "unsent")])
+        let second = SyncClient(
+            api: FakeBackend(), queueURL: url, current: { state.value }, onApply: { _ in }
+        ) { state.value = $0 }
+        second.adoptInitial([node("a", "old")])
+
+        #expect(state.value == [node("a", "unsent")])
+    }
+
+    @Test("a later tree keeps what is still waiting to be sent")
+    func laterTreeKeepsTheQueue() async {
+        // Offline after syncing: the edit is queued, and a tree arriving from
+        // a reconnect must not take it off the screen either.
+        let api = FakeBackend()
+        await api.willAnswer([], thereafter: .unreachable)
+        let state = Box<Tree>([])
+        let (client, _) = makeClient(api, state: state)
+        client.adoptInitial([node("a", "start")])
+
+        edit(.setText(id: "a", text: "offline"), client, state)
+        await settle(api, expecting: 1)
+        client.deliverForTesting(tree: [node("a", "start")], origin: "other")
+
+        #expect(state.value == [node("a", "offline")])
+    }
+
     // -------------------------------------------------------- the fingerprint
 
     @Test("a fingerprint that disagrees refetches the tree")

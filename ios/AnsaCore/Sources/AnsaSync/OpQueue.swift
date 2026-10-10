@@ -33,6 +33,9 @@ final class OpQueue {
     var isEmpty: Bool { ops.isEmpty }
     var count: Int { ops.count }
     var head: Op? { ops.first }
+    /// Everything still waiting, oldest first, for putting back onto a tree
+    /// the server sent without it.
+    var all: [Op] { ops }
 
     func append(_ incoming: [Op]) {
         guard !incoming.isEmpty else { return }
