@@ -13,6 +13,9 @@ back out.
 - Desktop app: back / forward buttons and a sidebar toggle
 - iOS: Back and the edge swipe both go to where you came from, like a
   browser, not to the tree's parent. Home's Back greys out with nowhere to go
+- iOS: during the edge swipe only the list moves, one-to-one with the finger.
+  The header and the bottom buttons stay put, and the title and progress line
+  fade into the previous screen's, crossing at half the screen's width
 - iOS: tapping a nested place's title (marked ⌃⌄) shows the places above it.
   A top-level project's title is plain text: there's nothing above it
 - Dormant on web: "leaves only" and "hide completed" views, wired through the
@@ -38,7 +41,8 @@ Preconditions: `./build.sh web --no-auth` running.
 
 Last driven 2026-10-06, web; 2026-10-09, iOS: ✓, and ✗ against a build whose
 bullet didn't fold and one that reopened on Home. Not driven: fold on web,
-the desktop back/forward, iOS edge swipe and title jump.
+the desktop back/forward, iOS edge swipe and title jump. The edge swipe's
+look and feel is checked by thumb on the phone (2026-10-10), not by a drive.
 
 ## Gotchas
 

@@ -235,11 +235,10 @@ struct OutlineView: View {
 
     var body: some View {
         NavigationStack {
-            // Three layers, and the order is the point: the screen being
-            // returned to, a shade over it, and the screen being lifted away.
-            // Only the top one takes the offset — the shade and the ground
-            // below it stay put, which is what makes the front slab read as
-            // moving rather than the whole stack sliding together.
+            // Two screens, the one being returned to under the one being left.
+            // Neither moves as a whole: only the list of the top one takes the
+            // offset (`slides`), while its header and bottom buttons stay and
+            // its words fade into the ones behind (`headerFade`).
             ZStack {
             // The screen the swipe is going back to, rendered for real behind
             // the one being lifted off it. It is the same view as the front
@@ -268,9 +267,6 @@ struct OutlineView: View {
                     slab(for: layer.scope, interactive: layer.live,
                          trash: layer.trash, search: layer.search,
                          restoring: layer.restoring, homeBack: layer.homeBack)
-                    // Over the revealed screen, under the one being lifted
-                    // off it.
-                    if !layer.live { backdrop }
                 }
             }
             .background {
@@ -408,8 +404,8 @@ struct OutlineView: View {
             // touch path never makes the recognisers contend.
             .simultaneousGesture(zoomOutSwipe)
             // No *navigation* `.toolbar`. That bar belongs to the
-            // `NavigationStack` and renders outside this view, so `backPull`'s
-            // offset moved the whole screen except its header. The header is
+            // `NavigationStack` and renders outside this view, where the back
+            // swipe cannot fade one screen's title into the next. The header is
             // drawn inside the slab.
             //
             // `.keyboard` placement is a different surface — it rides the
@@ -506,12 +502,11 @@ struct OutlineView: View {
 
     /// The title band, drawn inside the slab rather than as a `.toolbar`.
     ///
-    /// It has to live here for the back swipe to work: the offset that slides a
-    /// screen aside is on the slab, and a `NavigationStack` toolbar is rendered
-    /// outside it — so a system bar stayed pinned while the page moved under
-    /// it. Drawn here it slides with the page, and the copy behind the swipe
-    /// gets its own header revealed underneath, which is what the gesture is
-    /// supposed to show.
+    /// It has to live here for the back swipe to work: the two screens on
+    /// screen during a swipe each draw their own, in the same place, and
+    /// `fade` takes the words from one to the other while the band stays put.
+    /// A `NavigationStack` toolbar is rendered outside the slab and knows
+    /// nothing of the pull.
     ///
     /// Parameterised on scope and trash for the same reason `slab` is: the two
     /// copies on screen during a swipe are different screens and must not share
@@ -520,16 +515,19 @@ struct OutlineView: View {
     /// `veiled` is Search up over the page: the words go soft and pale, the
     /// band stays, so the header still says where closing Search goes.
     @ViewBuilder private func header(
-        for scope: NodeId?, interactive: Bool, trash: Bool, veiled: Bool = false
+        for scope: NodeId?, interactive: Bool, trash: Bool, veiled: Bool = false,
+        fade: HeaderFade = HeaderFade()
     ) -> some View {
         // No band with no scope: that is Home, which draws its own top row.
         if trash || scope != nil {
             HStack(spacing: Space.row) {
                 backButton(for: scope, interactive: interactive, trash: trash)
+                    .opacity(fade.back)
 
                 Spacer(minLength: 0)
 
                 // The name, and the way up: a tap lists the ancestors.
+                Group {
                 if trash {
                     // A plain name. `ScopeTitle` carries the rename field and
                     // the drop target, and the trash has neither.
@@ -548,6 +546,8 @@ struct OutlineView: View {
                         // already is, so a project's title stays a name.
                         onShowPath: pathAction(for: scope, interactive: interactive))
                 }
+                }
+                .opacity(fade.words)
 
                 Spacer(minLength: 0)
 
@@ -555,7 +555,7 @@ struct OutlineView: View {
                 if trash {
                     Image(systemName: "ellipsis").opacity(0)
                 } else {
-                    scopeMenu.disabled(!interactive)
+                    scopeMenu.disabled(!interactive).opacity(fade.menu)
                 }
             }
             .veiled(veiled)
@@ -570,7 +570,9 @@ struct OutlineView: View {
             // under the header blur through it instead of vanishing at a hard
             // edge, which is the one thing that gave away that this is a view
             // in the page rather than the bar it replaced.
-            .background(.bar)
+            .background {
+                Rectangle().fill(.bar).ignoresSafeArea(edges: .top).opacity(fade.ground)
+            }
         }
     }
 
@@ -785,6 +787,7 @@ struct OutlineView: View {
             // Search is up and grown, not just tucked into its circle on its way
             // in or out. What the header's veil and the frost follow.
             let veiled = search != nil && (!interactive || searchSpot != .tucked)
+            let fade = headerFade(live: interactive)
             VStack(spacing: 0) {
                 // Under Search the header stays, veiled, and is one target
                 // that closes it: it is the page you go back to.
@@ -792,11 +795,11 @@ struct OutlineView: View {
                     if home(scope, trash: trash) {
                         homeTopRow(
                             interactive: interactive && search == nil, back: homeBack,
-                            veiled: veiled)
+                            veiled: veiled, fade: fade)
                     } else {
                         header(
                             for: scope, interactive: interactive && search == nil,
-                            trash: trash, veiled: veiled)
+                            trash: trash, veiled: veiled, fade: fade)
                     }
                 }
                 .overlay {
@@ -838,21 +841,30 @@ struct OutlineView: View {
                     if trash {
                         // `interactive` too: the copy drawn behind the swipe must
                         // not take the gesture either, the same as an outline's.
-                        TrashView(
-                            store: store,
-                            backHolding: backHolding,
-                            onSwipingChanged: { if interactive { rowSwiping = $0 } },
-                            screenWidth: slabWidth,
-                            query: trashOverSearch)
+                        slides(
+                            TrashView(
+                                store: store,
+                                backHolding: backHolding,
+                                onSwipingChanged: { if interactive { rowSwiping = $0 } },
+                                screenWidth: slabWidth,
+                                query: trashOverSearch),
+                            live: interactive, shaded: search == nil)
                     } else if scope == nil {
-                        homePage(interactive: pageLive)
+                        slides(
+                            homePage(interactive: pageLive),
+                            live: interactive, shaded: search == nil)
                     } else {
                         // Under the bar, above the list: the figure the title used
                         // to carry as a caption. Only here — the grid and the trash
                         // have no scope to be a fraction of.
+                        //
+                        // Part of the header as far as a back swipe goes: it
+                        // stays and fades with the title.
                         ScopeProgress(progress: TreeOps.scopeProgress(tree, scope))
-                        outline(for: scope, interactive: pageLive,
-                                restoring: restoring)
+                            .opacity(fade.words)
+                        slides(
+                            outline(for: scope, interactive: pageLive, restoring: restoring),
+                            live: interactive, shaded: search == nil)
                     }
                 }
                 // On the page, not on each list, so Home, a project and Trash all
@@ -874,9 +886,11 @@ struct OutlineView: View {
                 .scrollDisabled(interactive && (backPull > 0 || drag.isActive || rowSwiping))
                 .overlay {
                     if let search {
-                        searchLayer(
-                            query: search, scope: scope, trash: trash,
-                            interactive: interactive, shown: veiled)
+                        slides(
+                            searchLayer(
+                                query: search, scope: scope, trash: trash,
+                                interactive: interactive, shown: veiled),
+                            live: interactive, shaded: true, ground: false)
                     }
                 }
             }
@@ -969,16 +983,74 @@ struct OutlineView: View {
                     .ignoresSafeArea(.keyboard)
             }
         }
-        // Opaque, so the rows behind cannot show through the slab as it
-        // moves. A `VStack` paints only what its children paint, and the
-        // list's own background does not cover the whole stack.
-        .background(Color(.systemBackground))
-        // Only the front slab moves and casts. The one behind is the ground
-        // being revealed, so it sits where it will still be once the swipe
-        // finishes — sliding it too would just be the old dark-panel problem
-        // with more steps.
-        .shadow(color: .black.opacity(interactive && backPull > 0 ? 0.18 : 0), radius: 8, x: -3)
-        .offset(x: interactive ? backPull : 0)
+        // Opaque at rest: a `VStack` paints only what its children paint. Clear
+        // on the front screen during a back swipe, so the header behind shows
+        // through as this one's words fade; the list carries its own ground
+        // with it (`slides`).
+        .background(Color(.systemBackground).opacity(interactive && backPull > 0 ? 0 : 1))
+    }
+
+    /// The part of a screen a back swipe moves: the list, and Search over it.
+    ///
+    /// The header and the bottom buttons are the same from screen to screen,
+    /// so they stay where they are and only this travels with the finger.
+    ///
+    /// Only the front copy moves and casts. The one behind is the ground being
+    /// revealed, so it sits where it will still be once the swipe finishes,
+    /// under the shade.
+    ///
+    /// `ground` is the opaque fill that keeps the list behind from showing
+    /// through this one as it goes; Search brings its own.
+    private func slides(
+        _ content: some View, live: Bool, shaded: Bool, ground: Bool = true
+    ) -> some View {
+        content
+            .background {
+                if ground {
+                    Color(.systemBackground)
+                        .shadow(
+                            color: .black.opacity(live && backPull > 0 ? 0.18 : 0),
+                            radius: 8, x: -3)
+                        .ignoresSafeArea(.container, edges: .bottom)
+                }
+            }
+            .overlay { if !live && shaded { backdrop } }
+            .offset(x: live ? backPull : 0)
+    }
+
+    /// How much of each part of a header shows during a back swipe.
+    struct HeaderFade {
+        /// The title, and the progress line under it.
+        var words: Double = 1
+        var back: Double = 1
+        var menu: Double = 1
+        /// The band behind them.
+        var ground: Double = 1
+    }
+
+    /// The front header's words are gone by the time the list is halfway
+    /// across the screen and the ones behind arrive from there, so the two
+    /// never sit on each other. Back and `...` hold still wherever both
+    /// screens have them.
+    ///
+    /// Measured against the whole width, as the system's back swipe does, not
+    /// against the commit point: at a quarter of the screen the title had
+    /// changed before the thumb had gone anywhere, which drew the eye.
+    private func headerFade(live: Bool) -> HeaderFade {
+        let layers = slabLayers
+        guard backPull > 0, layers.count == 2, slabWidth > 0 else { return HeaderFade() }
+        let p = min(1, Double(backPull) / Double(slabWidth))
+        let (mine, other) = live ? (layers[1], layers[0]) : (layers[0], layers[1])
+        // Leaving Search lands on the page it was over: one title, so it
+        // clears rather than dipping out and back.
+        let same = mine.scope == other.scope && mine.trash == other.trash
+        let words = same ? (live ? 1 - p : 1) : (live ? max(0, 1 - 2 * p) : max(0, 2 * p - 1))
+        let otherBand = !home(other.scope, trash: other.trash)
+        return HeaderFade(
+            words: words,
+            back: otherBand ? 1 : words,
+            menu: otherBand && !other.trash ? 1 : words,
+            ground: live ? 1 - p : 1)
     }
 
     /// The rows themselves. Only drawn inside a project — the root shows the
@@ -1489,7 +1561,9 @@ struct OutlineView: View {
     /// Home's header: the account and the gear, and Back when you came from
     /// somewhere. Apart from the lists so Search can draw below it, the same
     /// as a project's header.
-    private func homeTopRow(interactive: Bool, back: Bool, veiled: Bool) -> some View {
+    private func homeTopRow(
+        interactive: Bool, back: Bool, veiled: Bool, fade: HeaderFade = HeaderFade()
+    ) -> some View {
         HStack(spacing: Space.row) {
             // Back to where you were, greyed when you came from nowhere —
             // there, not hidden, so the row does not shift sideways the moment
@@ -1522,10 +1596,12 @@ struct OutlineView: View {
                 .accessibilityAddTraits(.isButton)
         }
         .veiled(veiled)
+        .opacity(fade.words)
         .padding(.leading, Space.gutter)
         .padding(.trailing, Space.row)
         .frame(minHeight: 52)
-        .background(Color(.systemGroupedBackground).ignoresSafeArea(edges: .top))
+        .background(
+            Color(.systemGroupedBackground).ignoresSafeArea(edges: .top).opacity(fade.ground))
     }
 
     /// The pinned and project lists at full width.
@@ -3131,8 +3207,10 @@ struct OutlineView: View {
     /// Drawn only during the swipe: at rest it is covered anyway, and keeping
     /// it out of the tree the rest of the time means it can never leak around
     /// the edges of a view that is exactly where it belongs.
-    /// The shade the revealed screen sits under. At full brightness it reads
-    /// as sitting *beside* the screen being moved rather than behind it.
+    /// The shade the revealed list sits under. At full brightness it reads
+    /// as sitting *beside* the list being moved rather than behind it. Over
+    /// the list only (`slides`): the header and bottom buttons do not move, so
+    /// there is nothing for them to be behind.
     @ViewBuilder private var backdrop: some View {
         // Gated on the pull, not just dimmed by it. The shade is drawn at
         // `1 - t`, so at rest it is at *full* strength — left in the tree
@@ -3160,11 +3238,8 @@ struct OutlineView: View {
         }
     }
 
-    /// The fraction of the slab's width its edge must cross to zoom out.
-    ///
-    /// The edge you can see, not the finger: the pull is damped to 0.35, so a
-    /// threshold on the finger costs far more thumb travel than it looks, and
-    /// pulling back to cancel barely moves the edge.
+    /// The fraction of the screen's width the list must be pulled to zoom out.
+    /// The list tracks the finger one-to-one, so this is thumb travel too.
     ///
     /// Shares the row delete's `commitFraction` because the two gestures live
     /// on the same rows and should not commit at visibly different distances.
@@ -3172,8 +3247,8 @@ struct OutlineView: View {
 
     /// How far the view must travel before letting go zooms out.
     ///
-    /// Derived, so it is 35% of whatever is actually on screen rather than 35%
-    /// of the phone this was written on.
+    /// Derived, so it is a quarter of whatever is actually on screen rather
+    /// than a quarter of the phone this was written on.
     private var backThreshold: CGFloat { slabWidth * backFraction }
 
     /// Far enough right to be clear of the screen on any phone.
