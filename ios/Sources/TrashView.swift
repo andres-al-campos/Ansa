@@ -59,18 +59,20 @@ struct TrashView: View {
         // to wake this device — watching `tree` would correctly see no change
         // and leave the row offering a Restore and a Delete that both fail.
         .onChange(of: store.adopted) { Task { await load() } }
-        .confirmationDialog(
-            confirming.map { $0.text.isEmpty ? "Untitled" : $0.text } ?? "",
+        // An alert, as deleting a project asks: centred and modal, with a
+        // labelled Cancel. A confirmation dialog pointed at the row like a
+        // menu of things to do next.
+        .alert(
+            confirming.map { "Delete \($0.text.isEmpty ? "Untitled" : $0.text)?" } ?? "",
             isPresented: Binding(
                 get: { confirming != nil }, set: { if !$0 { confirming = nil } }),
-            titleVisibility: .visible
-        ) {
-            Button("Delete for good", role: .destructive) {
-                if let entry = confirming {
-                    Task { await forget(entry) }
-                }
+            presenting: confirming
+        ) { entry in
+            Button("Cancel", role: .cancel) { confirming = nil }
+            Button("Delete", role: .destructive) {
+                Task { await forget(entry) }
             }
-        } message: {
+        } message: { _ in
             Text(deleteWarning)
         }
     }
@@ -120,13 +122,15 @@ struct TrashView: View {
                                 vPadding: OutlineRow.rowPadding / 2,
                                 screenWidth: screenWidth,
                                 inert: backHolding,
-                                // Springs home: the dialog asks first, and a
+                                // Springs home: the alert asks first, and a
                                 // cancel has to find the row where it was.
                                 left: RowSwipeAction(
-                                    glyph: "trash.fill", tint: .red, leaves: false,
+                                    name: "Delete", glyph: "trash.fill", tint: .red,
+                                    leaves: false,
                                     run: { confirming = entry }),
                                 right: RowSwipeAction(
-                                    glyph: "arrow.up.bin", tint: .accentColor, leaves: true,
+                                    name: "Restore", glyph: "arrow.up.bin",
+                                    tint: .accentColor, leaves: true,
                                     run: { Task { await restore(entry) } }),
                                 onSwipingChanged: {
                                     rowSwiping = $0

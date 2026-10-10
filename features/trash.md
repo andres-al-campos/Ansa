@@ -6,7 +6,7 @@ Deleted tasks wait 30 days in the trash, where they can be put back.
 
 - Restore puts a subtree back under its old parent, or as a project if that
   parent is gone too
-- Delete for good, now
+- Delete for good, now. On iOS a centred alert asks first, with Cancel
 - Shows days left; a daily sweep empties entries older than 30 days
 - Paged list, loaded only when opened
 
@@ -32,7 +32,8 @@ Every drive also ends with Trash's Delete, which removes its project for good.
 
 Last driven 2026-10-06, web; 2026-10-09, iOS: ✓, and ✗ against builds whose
 swipe didn't delete, whose Restore never reached the Worker, whose Trash rows
-ignored the back swipe, and whose delete swipe rode out before asking. Not
+ignored the back swipe, whose delete swipe rode out before asking, and whose
+delete asked in a dialog at the row rather than an alert. Not
 driven: the daily sweep, paging, iOS Delete for good.
 
 ## Gotchas
@@ -42,8 +43,9 @@ driven: the daily sweep, paging, iOS Delete for good.
   action, and its leading edge raced the back swipe.
 - A right swipe that starts in the screen's left 64pt is Back, on Trash rows
   as on project rows (`backClaim`).
-- The row's delete swipe has no VoiceOver action, so VoiceOver can't delete a
-  task on iOS.
+- The row swipe is hand-built, so its actions are also offered to VoiceOver
+  by name (Delete and Zoom in on a task, Delete and Restore in Trash). No
+  check covers this: XCUITest can't run a named action.
 
 - Only deliberate deletes go to the trash. Emptying a row or merging rows with
   Backspace removes without trashing, on purpose.

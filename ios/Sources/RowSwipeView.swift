@@ -3,6 +3,9 @@ import AnsaCore
 
 /// What a full swipe one way does.
 struct RowSwipeAction {
+    /// What VoiceOver calls it. A swipe is no use to it, so each action is
+    /// also offered by name, as `swipeActions` did before this was hand-built.
+    let name: String
     /// The glyph on the band the row uncovers.
     let glyph: String
     /// The band's colour.
@@ -77,6 +80,8 @@ struct RowSwipeView<Content: View>: View {
                 }
             }
             .simultaneousGesture(gesture)
+            .accessibilityAction(named: Text(left.name)) { left.run() }
+            .accessibilityAction(named: Text(right.name)) { right.run() }
             .onDisappear {
                 motion.stopReturn()
                 if direction != nil { onSwipingChanged(false) }

@@ -63,22 +63,21 @@ final class TrashTests: XCTestCase {
 
         // Left asks before deleting for good; Cancel leaves it be.
         entry.fullSwipe(left: true, in: app)
-        let forGood = app.buttons["Delete for good"]
-        try need(forGood.waitForExistence(timeout: 5),
-            "A full left swipe on \"\(text)\" in Trash didn't ask before deleting for good. Check the left RowSwipeAction and confirmationDialog in TrashView.swift.")
-        // The dialog has no Cancel button for a test to find; a tap on the
-        // dimmed screen above it dismisses it, as a thumb would.
-        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.15)).tap()
+        // An alert, not a dialog pointing at the row: centred, with a Cancel.
+        let ask = app.alerts.firstMatch
+        try need(ask.waitForExistence(timeout: 5) && ask.buttons["Delete"].exists,
+            "A full left swipe on \"\(text)\" in Trash didn't ask in an alert before deleting for good. Check the left RowSwipeAction and the alert in TrashView.swift.")
+        ask.buttons["Cancel"].tap()
         // The label, not the cell: a row parked off screen keeps its cell's
         // frame, and only the content inside it moves.
-        try need(forGood.waitForNonExistence(timeout: 5),
-            "The delete dialog didn't close. Check confirmationDialog in TrashView.swift.")
+        try need(ask.waitForNonExistence(timeout: 5),
+            "Cancel didn't close the delete alert. Check the alert in TrashView.swift.")
         sleep(1)
         let label = entry.staticTexts[text].frame
         try need(label.minX >= 0 && label.maxX <= app.frame.maxX,
             "After Cancel, \"\(text)\" sits off screen at x=\(Int(label.minX)) rather than back in place. The left RowSwipeAction in TrashView.swift must not ride out (leaves: false).")
         let stillThere = try await LocalAPI.trashEntry(holding: task)
-        try need(stillThere != nil, "Cancelling the delete still emptied \"\(text)\" from Trash. Check confirmationDialog in TrashView.swift.")
+        try need(stillThere != nil, "Cancelling the delete still emptied \"\(text)\" from Trash. Check the alert in TrashView.swift.")
 
         // Right from the screen's edge is Back, not Restore.
         let edge = app.coordinate(withNormalizedOffset: CGVector(dx: 0, dy: 0))

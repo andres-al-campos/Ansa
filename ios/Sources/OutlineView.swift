@@ -4175,9 +4175,10 @@ struct OutlineRow: View {
             // A carry or a back swipe owns the touch outright; this one stands
             // down rather than competing for it.
             inert: isDragging || backHolding,
-            left: RowSwipeAction(glyph: "trash.fill", tint: .red, leaves: true, run: onDelete),
+            left: RowSwipeAction(
+                name: "Delete", glyph: "trash.fill", tint: .red, leaves: true, run: onDelete),
             right: RowSwipeAction(
-                glyph: "chevron.right", tint: .accentColor, leaves: false, run: onZoom),
+                name: "Zoom in", glyph: "chevron.right", tint: .accentColor, leaves: false, run: onZoom),
             onSwipingChanged: onSwipingChanged
         ) { justSwiped in
             rowContent(justSwiped: justSwiped)
