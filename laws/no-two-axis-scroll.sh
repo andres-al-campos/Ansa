@@ -3,8 +3,9 @@
 # broken; a view that seems to need it gets a different layout instead. The
 # web half is no-two-axis-scroll.mjs.
 #
-# Catches SwiftUI's ScrollView([.horizontal, .vertical]). A UIKit scroll view
-# whose content outgrows it both ways is not caught.
+# Catches SwiftUI's ScrollView([.horizontal, .vertical]) as written. A screen
+# that pans sideways by accident, from content wider than it, is caught on the
+# running app by ios/UITests/NoTwoAxisScrollTests.swift.
 #
 #   laws/no-two-axis-scroll.sh [dir]     (default: ios/Sources)
 dir=${1:-"$(dirname "$0")/../ios/Sources"}
