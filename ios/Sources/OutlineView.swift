@@ -840,6 +840,9 @@ struct OutlineView: View {
                         // not take the gesture either, the same as an outline's.
                         TrashView(
                             store: store, backing: interactive && backPull > 0,
+                            backHolding: backHolding,
+                            onSwipingChanged: { if interactive { rowSwiping = $0 } },
+                            screenWidth: slabWidth,
                             query: trashOverSearch)
                     } else if scope == nil {
                         homePage(interactive: pageLive)
@@ -3835,7 +3838,7 @@ enum Space {
     static let corner: CGFloat = 24
 }
 
-private struct OutlineRow: View {
+struct OutlineRow: View {
     let node: Node
     let depth: Int
     let hasChildren: Bool
@@ -4170,8 +4173,9 @@ private struct OutlineRow: View {
             // A carry or a back swipe owns the touch outright; this one stands
             // down rather than competing for it.
             inert: isDragging || backHolding,
-            onDelete: onDelete,
-            onZoom: onZoom,
+            left: RowSwipeAction(glyph: "trash.fill", tint: .red, leaves: true, run: onDelete),
+            right: RowSwipeAction(
+                glyph: "chevron.right", tint: .accentColor, leaves: false, run: onZoom),
             onSwipingChanged: onSwipingChanged
         ) { justSwiped in
             rowContent(justSwiped: justSwiped)

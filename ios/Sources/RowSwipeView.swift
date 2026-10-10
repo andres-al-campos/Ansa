@@ -1,6 +1,20 @@
 import SwiftUI
 import AnsaCore
 
+/// What a full swipe one way does.
+struct RowSwipeAction {
+    /// The glyph on the band the row uncovers.
+    let glyph: String
+    /// The band's colour.
+    let tint: Color
+    /// Whether the row rides out past the edge on release. Only for an action
+    /// that takes the row away then and there: one that keeps it (a zoom) or
+    /// asks first (a delete for good) springs it home, or a cancelled question
+    /// would leave a live row parked off screen.
+    let leaves: Bool
+    let run: () -> Void
+}
+
 /// The horizontal swipe on an outline row: the gesture, the offset it drives,
 /// and the two layers under the row that the offset uncovers. Thresholds and
 /// curves live in `AnsaCore.RowSwipe`, where they're testable without a device.
@@ -16,8 +30,10 @@ struct RowSwipeView<Content: View>: View {
     /// True while some *other* interaction owns this touch. The swipe stands
     /// down rather than competing with a carry or a back swipe.
     let inert: Bool
-    let onDelete: () -> Void
-    let onZoom: () -> Void
+    /// Finger travelling left, and right. An outline row deletes and zooms; a
+    /// Trash row deletes for good and restores.
+    let left: RowSwipeAction
+    let right: RowSwipeAction
     let onSwipingChanged: (Bool) -> Void
     /// The content, told whether a tap arriving now is a swipe's tail. A Button
     /// in a List keeps its tap through a sibling DragGesture, so without this
@@ -93,13 +109,13 @@ struct RowSwipeView<Content: View>: View {
         if let settling {
             ZStack(alignment: settling == .left ? .trailing : .leading) {
                 HStack(spacing: 0) {
-                    Color.accentColor
+                    right.tint
                         .opacity(settling == .right && armed ? 1 : 0.5)
-                    Color.red
+                    left.tint
                         .opacity(settling == .left && armed ? 1 : 0.5)
                 }
                 if let action {
-                    Image(systemName: action.label)
+                    Image(systemName: action.glyph)
                         .foregroundStyle(.white.opacity(armed ? 1 : 0.85))
                         .font(.system(size: armed ? 24 : 21, weight: .medium))
                         .frame(width: abs(offset))
@@ -121,10 +137,10 @@ struct RowSwipeView<Content: View>: View {
         RowSwipe.isArmed(offset, screenWidth: screenWidth)
     }
 
-    private var action: (label: String, run: () -> Void)? {
+    private var action: RowSwipeAction? {
         switch direction {
-        case .left: return ("trash.fill", onDelete)
-        case .right: return ("chevron.right", onZoom)
+        case .left: return left
+        case .right: return right
         case nil: return nil
         }
     }
@@ -181,11 +197,12 @@ struct RowSwipeView<Content: View>: View {
                     springBack()
                     return
                 }
-                // Only a delete rides out; that row is leaving. A zoom keeps
-                // the row, so sliding it off would park a live row off screen.
-                if direction == .left {
+                // Only an action that takes the row away rides out; see
+                // `RowSwipeAction.leaves`.
+                if action.leaves {
                     motion.stopReturn()
-                    withAnimation(.easeIn(duration: 0.16)) { motion.offset = -width }
+                    let out = direction == .left ? -width : width
+                    withAnimation(.easeIn(duration: 0.16)) { motion.offset = out }
                 } else {
                     // Stop the return before writing `offset`, like every
                     // other writer. Without it a tick already scheduled lands

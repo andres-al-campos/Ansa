@@ -20,6 +20,18 @@ struct TrashView: View {
     /// pull it reads is measured.
     let backing: Bool
 
+    /// Whether a back swipe has the touch, from its first point. A row's
+    /// restore travels the same way, so the row stands down while this is set
+    /// — the same exclusion an outline row has.
+    let backHolding: Bool
+    /// The mirror of `backHolding`: told when a row's swipe takes the touch,
+    /// so the back swipe stands down in turn.
+    let onSwipingChanged: (Bool) -> Void
+    let screenWidth: CGFloat
+
+    /// Whether a row is being swiped, to lock the list's scroll while it is.
+    @State private var rowSwiping = false
+
     /// What Search was asking when its trash line opened this, so the list
     /// shows only what matches it. Nil when opened from Home.
     var query: String? = nil
@@ -31,7 +43,7 @@ struct TrashView: View {
     @State private var busy = false
     @State private var error: String?
 
-    /// The entry a "Delete" swipe is asking about. This delete is the one with
+    /// The entry a delete swipe is asking about. This delete is the one with
     /// nothing behind it — a full swipe would otherwise destroy a subtree
     /// outright, which is the reason deleting a project asks too.
     @State private var confirming: TrashEntry?
@@ -98,32 +110,37 @@ struct TrashView: View {
 
                     Section {
                         ForEach(entries) { entry in
-                            TrashRow(entry: entry, query: query)
-                                // Words, no glyphs. A swipe button given a
-                                // title *and* an image shows only the image when
-                                // the row is too short for both, so "Restore"
-                                // appeared as a bare undo arrow — which means
-                                // "undo the last thing", not "put this back".
-                                //
-                                // Both on the trailing edge. On the leading
-                                // edge, Restore's full swipe was the same
-                                // motion as the back swipe, so going back from
-                                // over a row also restored it.
-                                .swipeActions(edge: .trailing) {
-                                    // First, so a full swipe restores.
-                                    Button("Restore") {
-                                        Task { await restore(entry) }
-                                    }
-                                    .tint(.blue)
-                                    // No `role: .destructive`: that styles the
-                                    // button red *and* makes a full swipe fire
-                                    // it. `tint` keeps the red without the
-                                    // gesture that skips the question.
-                                    Button("Delete") {
-                                        confirming = entry
-                                    }
-                                    .tint(.red)
+                            // An outline row's swipe, so the two lists feel the
+                            // same: left deletes, right puts back where zoom
+                            // would go in. Not `swipeActions`: its full swipe
+                            // and its buttons fought the back swipe and a UI
+                            // test's taps, and its threshold isn't the outline's.
+                            RowSwipeView(
+                                rowId: entry.id,
+                                vPadding: OutlineRow.rowPadding / 2,
+                                screenWidth: screenWidth,
+                                inert: backHolding,
+                                // Springs home: the dialog asks first, and a
+                                // cancel has to find the row where it was.
+                                left: RowSwipeAction(
+                                    glyph: "trash.fill", tint: .red, leaves: false,
+                                    run: { confirming = entry }),
+                                right: RowSwipeAction(
+                                    glyph: "arrow.up.bin", tint: .accentColor, leaves: true,
+                                    run: { Task { await restore(entry) } }),
+                                onSwipingChanged: {
+                                    rowSwiping = $0
+                                    onSwipingChanged($0)
                                 }
+                            ) { _ in
+                                TrashRow(entry: entry, query: query)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .padding(.horizontal, Space.gutter)
+                                    .contentShape(Rectangle())
+                            }
+                            .padding(.vertical, OutlineRow.rowPadding / 2)
+                            .listRowInsets(EdgeInsets())
+                            .listRowSeparator(.hidden)
                         }
                     } header: {
                         Text(
@@ -145,7 +162,10 @@ struct TrashView: View {
                 // cannot scroll and slide at once. The list's own recogniser is
                 // not something the swipe can outrank, so the lock has to be
                 // this.
-                .scrollDisabled(backing)
+                .listStyle(.plain)
+                // And while a row is swiped, like the outline: a swipe with any
+                // vertical drift otherwise scrolled the list too.
+                .scrollDisabled(backing || rowSwiping)
             }
         } else {
             ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)

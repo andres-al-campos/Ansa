@@ -1,7 +1,8 @@
 import XCTest
 
-/// features/trash.md: swipe a task left and it goes to Trash; restore it from
-/// Trash and it is back under its project. Read on screen and on the Worker.
+/// features/trash.md: swipe a task left and it goes to Trash. In Trash, the
+/// same swipe: left asks before deleting for good, right restores, and right
+/// from the screen's edge is still Back. Read on screen and on the Worker.
 @MainActor
 final class TrashTests: XCTestCase {
     private var project: String?
@@ -59,17 +60,48 @@ final class TrashTests: XCTestCase {
         let entry = app.cells.containing(NSPredicate(format: "label CONTAINS %@", text)).firstMatch
         try need(entry.waitForExistence(timeout: 5),
             "Trash doesn't list \"\(text)\". Check TrashView.load in TrashView.swift.")
-        // A full swipe fires the first action, Restore. Tapping the revealed
-        // button doesn't reach a SwiftUI swipe action from a UI test: the
-        // row stays open and the action never runs.
-        entry.fullSwipe(left: true, in: app)
 
+        // Left asks before deleting for good; Cancel leaves it be.
+        entry.fullSwipe(left: true, in: app)
+        let forGood = app.buttons["Delete for good"]
+        try need(forGood.waitForExistence(timeout: 5),
+            "A full left swipe on \"\(text)\" in Trash didn't ask before deleting for good. Check the left RowSwipeAction and confirmationDialog in TrashView.swift.")
+        // The dialog has no Cancel button for a test to find; a tap on the
+        // dimmed screen above it dismisses it, as a thumb would.
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.15)).tap()
+        // The label, not the cell: a row parked off screen keeps its cell's
+        // frame, and only the content inside it moves.
+        try need(forGood.waitForNonExistence(timeout: 5),
+            "The delete dialog didn't close. Check confirmationDialog in TrashView.swift.")
+        sleep(1)
+        let label = entry.staticTexts[text].frame
+        try need(label.minX >= 0 && label.maxX <= app.frame.maxX,
+            "After Cancel, \"\(text)\" sits off screen at x=\(Int(label.minX)) rather than back in place. The left RowSwipeAction in TrashView.swift must not ride out (leaves: false).")
+        let stillThere = try await LocalAPI.trashEntry(holding: task)
+        try need(stillThere != nil, "Cancelling the delete still emptied \"\(text)\" from Trash. Check confirmationDialog in TrashView.swift.")
+
+        // Right from the screen's edge is Back, not Restore.
+        let edge = app.coordinate(withNormalizedOffset: CGVector(dx: 0, dy: 0))
+            .withOffset(CGVector(dx: 8, dy: entry.frame.midY))
+        let across = app.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0))
+            .withOffset(CGVector(dx: 0, dy: entry.frame.midY))
+        edge.press(forDuration: 0.05, thenDragTo: across, withVelocity: .default, thenHoldForDuration: 0.1)
+        try need(trash.waitForExistence(timeout: 5),
+            "A right swipe from the screen's edge over \"\(text)\" didn't go back to Home. Check backHolding and zoomOutSwipe in OutlineView.swift.")
+        let notRestored = try await LocalAPI.trashEntry(holding: task)
+        try need(notRestored != nil,
+            "Going back by the edge over \"\(text)\" also restored it. The row has to stand down while backHolding is set; check TrashView's inert.")
+        trash.tap()
+        try need(entry.waitForExistence(timeout: 5), "Reopening Trash lost \"\(text)\". Check TrashView.load in TrashView.swift.")
+
+        // Right restores.
+        entry.fullSwipe(left: false, in: app)
         try need(entry.waitForNonExistence(timeout: 5),
-            "Restore left \"\(text)\" in Trash. Check restore(_:) in TrashView.swift.")
+            "A full right swipe left \"\(text)\" in Trash. Check the right RowSwipeAction and restore(_:) in TrashView.swift.")
         let back = try await LocalAPI.node(task)
         try need(back?["parentId"] as? String == project,
             "After Restore the Worker has \"\(text)\" \(back == nil ? "nowhere" : "under \(back?["parentId"] ?? "nothing")"), not under \(name). Check restoreTrash in OutlineStore.swift, then restore in worker/src/treeStore.ts.")
 
-        print("✓ a full swipe sent \"\(text)\" to Trash, and Restore put it back under \(name)")
+        print("✓ a left swipe sent \"\(text)\" to Trash; there, left asked first, the edge went Back, and right put it back under \(name)")
     }
 }
