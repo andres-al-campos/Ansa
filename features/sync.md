@@ -8,7 +8,8 @@ without a reload, and edits made offline go out on reconnect.
 - Sign in with Clerk; sign out from the account menu
 - Live updates over a WebSocket on web and iOS
 - Offline edits are queued and survive the app being closed or killed
-- First paint comes from a local copy, then the server's tree replaces it
+- First paint comes from a local copy, then the server's tree replaces it.
+  On web, edits made before it arrives stay on screen and are sent after it
 - A client that has drifted from the server notices and reloads the tree
 - Web: a floating toast when the live connection is down, or an edit was
   refused; iOS: a banner
@@ -23,6 +24,10 @@ Preconditions: `./build.sh web --no-auth` running.
 
 - `npm run drive -- sync`: opens the project in two tabs, renames Child A in
   one, and checks the other shows the new name without a reload.
+
+`npx vitest run src/Outliner.sync.test.tsx` covers the first tree landing
+mid-edit: a ticked box stays ticked, and a project being named keeps its name
+field and is created with the name.
 
 Last driven 2026-10-06, web. Not driven: the offline queue, drift reload, the
 toast, iOS.

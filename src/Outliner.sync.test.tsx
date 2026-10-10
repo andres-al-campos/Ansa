@@ -150,6 +150,59 @@ test('an edit before the first sync is held, then sent once the server tree land
   expect(sentOps()).toEqual(['markOpened', 'setDone', 'setDone'])
 })
 
+test('an edit made before the first tree stays on screen when the tree lands', async () => {
+  // The first tree is adopted even mid-edit, and it cannot hold what this tab
+  // has not sent yet. Adopted bare, it unticks the box the user just ticked
+  // while the setDone that ticked it is still in the queue.
+  const { default: Outliner } = await import('./Outliner')
+  const seed = seedTree()
+  const { container } = render(<Outliner initial={seed} />)
+  const stream = await streamOpen()
+  scopeIntoProject(container)
+  toggleFirstTask(container)
+  const box = () => container.querySelector('[role="checkbox"]') as HTMLElement
+  expect(box().getAttribute('aria-checked')).toBe('true')
+
+  await act(async () => {
+    stream.emit(seed)
+  })
+
+  expect(box().getAttribute('aria-checked')).toBe('true')
+  expect(sentOps()).toEqual(['markOpened', 'setDone'])
+})
+
+test('a project being named when the first tree lands is kept, and is created with its name', async () => {
+  // The drive flake this pins: "+ New project" is on screen from the cache
+  // before the socket's first frame, so a fast hand (or a slow server) is
+  // typing the name when the tree arrives. The unnamed project is held off the
+  // wire, so the server's tree has no trace of it.
+  const { default: Outliner } = await import('./Outliner')
+  const seed = seedTree()
+  const { container } = render(<Outliner initial={seed} />)
+  const stream = await streamOpen()
+  const add = [...container.querySelectorAll('button')].find((b) => /New project/.test(b.textContent ?? ''))!
+  act(() => add.click())
+  const title = () => container.querySelector('h1.scope-title') as HTMLElement
+  expect(title().isContentEditable || title().getAttribute('contenteditable') === 'true').toBe(true)
+  title().textContent = 'Half a na'
+
+  await act(async () => {
+    stream.emit(seed)
+  })
+
+  expect(
+    title().getAttribute('contenteditable'),
+    'adopting the first tree closed the name being typed',
+  ).toBe('true')
+  title().textContent = 'Half a name, finished'
+  await act(async () => {
+    fireEvent.keyDown(title(), { key: 'Enter' })
+  })
+  const added = sendOp.mock.calls.map(([op]) => op).filter((op) => op.op === 'addChild')
+  expect(added.map((op) => ('text' in op ? op.text : ''))).toEqual(['Half a name, finished'])
+  expect(title().textContent).toBe('Half a name, finished')
+})
+
 test('the socket is receive-only', async () => {
   // Nothing may travel client-to-server here. The socket handshake is the only
   // place a Clerk token is checked, so a write accepted over an already-open
