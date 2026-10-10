@@ -27,17 +27,20 @@ Preconditions: `./build.sh web --no-auth` running.
 
 `npx vitest run src/Outliner.sync.test.tsx` covers the first tree landing
 mid-edit: a ticked box stays ticked, and a project being named keeps its name
-field and is created with the name.
+field and is created with the name. It also covers a tree landing while an
+edit waits out an unreachable server, and a refused edit coming off screen
+without taking the edit queued behind it.
 
 `ios/build.sh test` covers the same on iOS (the sync client's "unsent edits on
 screen" tests): a tick and an add made before the first tree stay on screen,
 as do edits left unsent by the last launch and edits waiting out a reconnect.
+A fold doubled by a tree that already had it is set right by the drift reload
+once its echo arrives.
 
 Last driven 2026-10-06, web. On iOS, run once by hand on 2026-10-10 in the
 simulator with the local Worker frozen until after a tick and a delete: before
 the fix the box flipped back and stayed unticked for 40s over a server that
-had it done; after, both held. Not driven: the offline queue, drift reload, the
-toast.
+had it done; after, both held. Not driven: the offline queue, the toast.
 
 ## Gotchas
 
@@ -50,4 +53,5 @@ toast.
 - An edit replayed after a crash can apply twice; a repeated fold flips back.
   The same goes for the screen when a tree lands while a sent op is still
   queued: an add is recognised and skipped, an indent or a fold is not, and
-  shows doubled until the drift check reloads the tree.
+  shows doubled until the drift check reloads the tree (tested on iOS, not on
+web).

@@ -203,6 +203,67 @@ test('a project being named when the first tree lands is kept, and is created wi
   expect(title().textContent).toBe('Half a name, finished')
 })
 
+test('an edit waiting out an unreachable server stays on screen when a later tree lands', async () => {
+  // The same replay as the first tree, on the path a reconnect takes: a new
+  // socket's first frame is the whole tree, and it cannot hold what this tab
+  // has not managed to send.
+  const { default: Outliner } = await import('./Outliner')
+  const seed = seedTree()
+  const { container } = render(<Outliner initial={seed} />)
+  const stream = await streamOpen()
+  scopeIntoProject(container)
+  await act(async () => {
+    stream.emit(seed)
+  })
+  const box = () => container.querySelector('[role="checkbox"]') as HTMLElement
+  const before = box().getAttribute('aria-checked')
+
+  sendOp.mockResolvedValue({ status: 'unreachable' })
+  await act(async () => {
+    toggleFirstTask(container)
+  })
+  expect(box().getAttribute('aria-checked')).not.toBe(before)
+  await act(async () => {
+    stream.emit(seed, 'someone-else')
+  })
+
+  expect(box().getAttribute('aria-checked')).not.toBe(before)
+})
+
+test('a refused edit is taken off screen without taking the edit queued behind it', async () => {
+  // The refetch after a refusal adopts the server's tree while the next op is
+  // still waiting its turn.
+  vi.spyOn(console, 'error').mockImplementation(() => {})
+  vi.spyOn(console, 'warn').mockImplementation(() => {})
+  const { default: Outliner } = await import('./Outliner')
+  const seed = seedTree()
+  const { container } = render(<Outliner initial={seed} />)
+  const stream = await streamOpen()
+  scopeIntoProject(container)
+  await act(async () => {
+    stream.emit(seed)
+  })
+  fetchTree.mockResolvedValue(seed)
+  let refuse!: (r: WriteResult) => void
+  sendOp.mockReset()
+  sendOp.mockImplementationOnce(() => new Promise<WriteResult>((r) => (refuse = r)))
+  sendOp.mockResolvedValue({ status: 'unreachable' })
+
+  const boxes = () => [...container.querySelectorAll('[role="checkbox"]')] as HTMLElement[]
+  const before = boxes().slice(0, 2).map((b) => b.getAttribute('aria-checked'))
+  act(() => boxes()[0].click())
+  act(() => boxes()[1].click())
+  await act(async () => {
+    refuse({ status: 'rejected', reason: 'No node with id x in this tree.' })
+  })
+  await act(async () => {})
+
+  expect(fetchTree).toHaveBeenCalledTimes(1)
+  expect(boxes()[0].getAttribute('aria-checked')).toBe(before[0])
+  expect(boxes()[1].getAttribute('aria-checked')).not.toBe(before[1])
+  vi.restoreAllMocks()
+})
+
 test('the socket is receive-only', async () => {
   // Nothing may travel client-to-server here. The socket handshake is the only
   // place a Clerk token is checked, so a write accepted over an already-open

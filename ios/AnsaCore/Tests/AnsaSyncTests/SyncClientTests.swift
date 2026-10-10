@@ -62,8 +62,14 @@ private actor FakeBackend: SyncBackend {
         return tree
     }
 
+    /// While set, a send has reached the server but its answer has not come
+    /// back: the op is stored there and still queued here.
+    private var holding = false
+    func holdAnswers(_ value: Bool) { holding = value }
+
     func send(_ op: Op) async -> WriteResult {
         sent.append(op)
+        while holding { try? await Task.sleep(for: .milliseconds(1)) }
         return results.isEmpty ? defaultResult : results.removeFirst()
     }
 
@@ -569,6 +575,37 @@ struct SyncClientTests {
         client.deliverForTesting(tree: [node("a", "start")], origin: "other")
 
         #expect(state.value == [node("a", "offline")])
+    }
+
+    @Test("a fold put back on a tree that already had it is set right by its echo")
+    func doubledFoldIsCorrected() async {
+        // What `withUnsent` cannot tell apart: the fold reached the server, and
+        // a tree holding it lands before the answer does. Replayed, the fold
+        // flips back on screen. The echo's fingerprint then disagrees with the
+        // screen, and the refetch is what puts it right.
+        var folded = node("a", "branch")
+        folded.collapsed = true
+        let api = FakeBackend(origin: "this-device", tree: [folded])
+        let state = Box<Tree>([])
+        let (client, _) = makeClient(api, state: state)
+        client.adoptInitial([node("a", "branch")])
+
+        await api.holdAnswers(true)
+        edit(.toggleCollapsed(id: "a"), client, state)
+        await settle(api, expecting: 1)
+        client.deliverForTesting(tree: [folded], origin: "other", hash: TreeOps.fingerprint([folded]))
+        #expect(state.value.first?.collapsed == false, "the doubled fold this test is about didn't happen")
+
+        await api.holdAnswers(false)
+        try? await Task.sleep(for: .milliseconds(20))
+        client.deliverForTesting(
+            .op(.toggleCollapsed(id: "a"), origin: "this-device", hash: TreeOps.fingerprint([folded])))
+        for _ in 0..<500 where state.value.first?.collapsed != true {
+            try? await Task.sleep(for: .milliseconds(1))
+        }
+
+        #expect(state.value.first?.collapsed == true)
+        #expect(await api.loadTreeCalls == 1)
     }
 
     // -------------------------------------------------------- the fingerprint
