@@ -1651,7 +1651,7 @@ export default function Outliner({ initial }: { initial: Tree }) {
                         className="proj-card-confirm-yes"
                         onClick={() => deleteProject(p.id)}
                         aria-label={`Confirm delete ${p.text || 'this project'}`}
-                        title="Delete for good"
+                        title="Delete"
                       >
                         ✓
                       </button>

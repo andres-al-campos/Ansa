@@ -49,6 +49,4 @@ driven: the daily sweep, paging, iOS Delete for good.
 
 - Only deliberate deletes go to the trash. Emptying a row or merging rows with
   Backspace removes without trashing, on purpose.
-- The project delete's confirm button is titled "Delete for good", but it goes
-  to the trash.
 - A restored project lands after the last project, not at its old position.
