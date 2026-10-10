@@ -645,7 +645,7 @@ check() {
   echo "Checking the laws …"
   ANSA_APP="$APP_URL" node laws/no-two-axis-scroll.mjs
   laws/no-two-axis-scroll.sh
-  laws/bullet-gesture-high-priority.sh
+  laws/row-gestures.sh
   node laws/feature-map.mjs
   if command -v xcodebuild >/dev/null 2>&1; then
     echo "Running the iOS drives …"

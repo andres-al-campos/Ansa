@@ -35,8 +35,9 @@ reordering; iOS indent steps and edge scrolling.
 The iOS drive can't see a drag that loses to the List's scroll: injected
 touches skip that arbitration (see the row's `armGesture` in OutlineView.swift), and
 that is how a past bug passed in the simulator. Check a change to the drag's
-gestures by hand on a phone. `laws/bullet-gesture-high-priority.sh` fails if the
-bullet's gesture stops being high priority.
+gestures by hand on a phone. `laws/row-gestures.sh` fails if the row's
+`armGesture` stops being simultaneous or the bullet's fold tap stops being
+high priority.
 
 ## Gotchas
 
