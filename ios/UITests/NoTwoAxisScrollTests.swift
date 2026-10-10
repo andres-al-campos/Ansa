@@ -42,9 +42,12 @@ final class NoTwoAxisScrollTests: XCTestCase {
         let card = app.buttons.containing(NSPredicate(format: "label CONTAINS %@", name)).firstMatch
         try need(card.waitForExistence(timeout: 10),
             "Home doesn't show \"\(name)\". Check that the app reached the local Worker (ios/build/drive.log), then HomeCard in OutlineView.swift.")
-        // No drag on Home: its cards are plain buttons, and an injected drag
-        // that ends on one presses it.
-        try hold(app, on: "Home", drag: false)
+        // Home's cards are plain buttons, and an injected drag that ends on
+        // one presses it, so the drag starts in a gap between them.
+        let gap = try gapBetweenButtons(app)
+        try need(gap != nil, "Home has no gap between its buttons to drag from. Give the drag in NoTwoAxisScrollTests another place to start.")
+        try hold(app, on: "Home", dragAt: gap)
+        try need(card.exists, "A short drag from a gap on Home left Home. Check what sits at y \(Int(gap! * app.frame.height)) there.")
 
         card.tap()
         // By prefix: XCUITest aborts the runner on a lookup by a name over
@@ -104,13 +107,34 @@ final class NoTwoAxisScrollTests: XCTestCase {
     /// Fails with what on this screen reaches past its sides or moves
     /// sideways under a drag. Per screen, so a wide row is reported as that
     /// and not as the next step it breaks.
-    private func hold(_ app: XCUIApplication, on screen: String, drag: Bool = true) throws {
-        let problems = try sideways(app, on: screen, drag: drag)
+    private func hold(_ app: XCUIApplication, on screen: String, drag: Bool = true, dragAt y: CGFloat? = nil) throws {
+        let problems = try sideways(app, on: screen, drag: drag, y: y ?? 0.5)
         try need(problems.isEmpty, "A screen moves sideways:\n" + problems.joined(separator: "\n")
             + "\nWrap or truncate the wide element; don't clip its parent.")
     }
 
-    private func sideways(_ app: XCUIApplication, on screen: String, drag: Bool = true) throws -> [String] {
+    /// The middle of the tallest band in the list that no button covers, as
+    /// a fraction of the screen's height, or nil if none is 12pt tall.
+    private func gapBetweenButtons(_ app: XCUIApplication) throws -> CGFloat? {
+        sleep(1)
+        var list = CGRect.zero
+        var buttons: [CGRect] = []
+        func walk(_ el: XCUIElementSnapshot) {
+            if el.elementType == .collectionView, list == .zero { list = el.frame }
+            if el.elementType == .button || el.elementType == .textField { buttons.append(el.frame) }
+            el.children.forEach(walk)
+        }
+        walk(try app.snapshot())
+        var best: (height: CGFloat, mid: CGFloat)?
+        var top = list.minY
+        for b in buttons.filter({ $0.maxY > list.minY && $0.minY < list.maxY }).sorted(by: { $0.minY < $1.minY }) + [CGRect(x: 0, y: list.maxY, width: 0, height: 0)] {
+            if b.minY - top >= 12, b.minY - top > (best?.height ?? 0) { best = (b.minY - top, (top + b.minY) / 2) }
+            top = max(top, b.maxY)
+        }
+        return best.map { $0.mid / app.frame.height }
+    }
+
+    private func sideways(_ app: XCUIApplication, on screen: String, drag: Bool = true, y: CGFloat = 0.5) throws -> [String] {
         sleep(1)
         let width = app.frame.width, height = app.frame.height
         // Every element between the screen's top and bottom, not only text: a
@@ -150,8 +174,8 @@ final class NoTwoAxisScrollTests: XCTestCase {
         let at = { (x: CGFloat, y: CGFloat) in
             app.coordinate(withNormalizedOffset: CGVector(dx: x, dy: y))
         }
-        for (kind, to) in [("sideways", at(0.65, 0.5)), ("diagonal", at(0.65, 0.4))] {
-            at(0.8, 0.5).press(forDuration: 0.05, thenDragTo: to, withVelocity: .slow, thenHoldForDuration: 0.3)
+        for (kind, to) in [("sideways", at(0.65, y)), ("diagonal", at(0.65, y - 0.1))] {
+            at(0.8, y).press(forDuration: 0.05, thenDragTo: to, withVelocity: .slow, thenHoldForDuration: 0.3)
             sleep(1)
             let now = xs(try elements())
             problems += was.filter { name, x in now[name].map { abs($0 - x) > 1 } ?? false }.prefix(3).map {

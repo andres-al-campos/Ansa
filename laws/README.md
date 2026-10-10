@@ -11,6 +11,6 @@ rather than this checkout.
 |---|---|
 | `no-two-axis-scroll.mjs` | the web app never scrolls sideways and nothing in it scrolls both ways, on Home and a long project, at phone and desktop widths |
 | `no-two-axis-scroll.sh` | no SwiftUI `ScrollView` in `ios/Sources` is written to scroll on both axes. Source text only; the next row measures |
-| `ios/build.sh drive no-two-axis-scroll` | on the running iOS app, holding a 136-letter word alone and eight levels deep: nothing on Home, a project, a row being edited, Search or Trash reaches past the screen's sides, and a sideways or diagonal drag leaves a project and Trash where they were. Runs with the iOS drives |
+| `ios/build.sh drive no-two-axis-scroll` | on the running iOS app, holding a 136-letter word alone and eight levels deep: nothing on Home, a project, a row being edited, Search or Trash reaches past the screen's sides, and a sideways or diagonal drag leaves Home, a project and Trash where they were. Runs with the iOS drives |
 | `feature-map.mjs` | every row in `features/README.md` has a file and every file a row; every file's Driving it leads each check with a command, and each named drive (`scripts/drive.mjs`) and iOS UI test (`ios/UITests/`) exists |
 | `row-gestures.sh` | the iOS row arms its drag with `.simultaneousGesture(armGesture)` and the bullet's fold tap stays `.highPriorityGesture(bulletGesture)`, which no UI test can check |
