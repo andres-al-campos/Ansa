@@ -3081,20 +3081,11 @@ struct OutlineView: View {
                 // which cannot be known yet and so cannot gate the claim.
                 if claims(g) { backHolding = true }
                 guard armed(g) else { return }
-                // One-to-one all the way to the threshold, damped only past
-                // it. The damping used to start at 60pt, well short of where
-                // the gesture commits, so for most of the pull the edge you
-                // watch and the finger you move were different distances —
-                // which is what made the commit point unreadable and a cancel
-                // feel impossible: retreating moved the edge back at a third
-                // the rate it went out.
-                //
-                // Past the commit point it is overscroll and nothing depends
-                // on it, so the pull can slow there without hiding anything.
-                let d = g.translation.width
-                backPull = d <= backThreshold
-                    ? d
-                    : backThreshold + (d - backThreshold) * 0.35
+                // One-to-one the whole way, like the system's own back swipe:
+                // the page stays under the finger. It was once damped past the
+                // commit point (and before that from 60pt), and both read as
+                // the page falling behind the thumb mid-swipe.
+                backPull = max(0, g.translation.width)
                 // No haptic at the crossing, deliberately. The row swipe taps
                 // at its threshold and this used to match it for consistency,
                 // but the system's own interactive pop is silent — and this
