@@ -40,7 +40,14 @@ once its echo arrives.
 Last driven 2026-10-06, web. On iOS, run once by hand on 2026-10-10 in the
 simulator with the local Worker frozen until after a tick and a delete: before
 the fix the box flipped back and stayed unticked for 40s over a server that
-had it done; after, both held. Not driven: the offline queue, the toast.
+had it done; after, both held. Not driven: the toast.
+
+The offline queue has no drive; tests cover it. Web
+(`src/Outliner.sync.test.tsx`, `src/storage.test.ts`): a stalled queue retries
+without another edit, a queue left by a killed run is sent on the next one,
+and a refused edit doesn't take the one behind it. iOS (`ios/build.sh test`,
+the op queue and sync client suites): the queue survives a relaunch, stops at
+an unreachable server and discards a rejected op.
 
 ## Gotchas
 

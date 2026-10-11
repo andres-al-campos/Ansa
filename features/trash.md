@@ -34,7 +34,12 @@ Last driven 2026-10-06, web; 2026-10-09, iOS: ✓, and ✗ against builds whose
 swipe didn't delete, whose Restore never reached the Worker, whose Trash rows
 ignored the back swipe, whose delete swipe rode out before asking, and whose
 delete asked in a dialog at the row rather than an alert. Not
-driven: the daily sweep, paging, iOS Delete for good.
+driven: paging, iOS Delete for good.
+
+The daily sweep has no drive, since it runs on a 24-hour alarm. The Worker's
+tests cover it (`worker/src/ansaTree.test.ts`): the first delete arms it and
+later ones don't push it out, it drops what is past 30 days, keeps what is
+younger, and stops waking once the trash is empty.
 
 ## Gotchas
 
