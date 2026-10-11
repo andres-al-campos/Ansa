@@ -18,6 +18,16 @@ const APP = process.env.ANSA_APP ?? 'http://localhost:5173'
 const API = process.env.ANSA_API ?? 'http://127.0.0.1:8787'
 const OUT = process.env.DRIVE_OUT ?? `${ROOT}drive-out`
 const only = process.argv.slice(2)
+
+// A mistyped name would otherwise filter out every drive and pass. Names are
+// read from this file's own text, the way laws/feature-map.mjs reads them.
+const known = [...readFileSync(fileURLToPath(import.meta.url), 'utf8').matchAll(/^await drive\('([^']+)'/gm)].map((m) => m[1])
+const unknown = only.filter((name) => name !== '--clean' && !known.includes(name))
+if (unknown.length) {
+  console.error(`No drive named ${unknown.map((name) => `"${name}"`).join(', ')}. Fix the name and rerun.`)
+  console.error(`The ones there: ${known.join(', ')}`)
+  process.exit(1)
+}
 mkdirSync(OUT, { recursive: true })
 
 const health = await fetch(`${API}/api/health`).then((r) => r.json()).catch(() => null)
@@ -36,6 +46,7 @@ try {
 }
 const context = await browser.newContext({ viewport: { width: 1280, height: 800 }, acceptDownloads: true })
 let failed = 0
+let ran = 0
 
 async function newPage() {
   const page = await context.newPage()
@@ -104,6 +115,7 @@ async function drive(name, fn) {
   if (only.length && !only.includes(name)) return
   const project = `drive ${name} ${Date.now()}`
   const page = await newPage()
+  ran++
   try {
     await fn(page, project)
     if (page.errors.length) throw new Error(`page threw: ${page.errors.join('; ')}`)
@@ -311,5 +323,9 @@ await drive('mcp', async (page, project) => {
 })
 
 await browser.close()
+if (!ran) {
+  console.error('No drives ran, so nothing was checked. Run `npm run drive` for all of them, or name one.')
+  process.exit(1)
+}
 console.log(failed ? `${failed} failed` : 'all passed')
 process.exit(failed ? 1 : 0)

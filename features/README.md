@@ -52,7 +52,8 @@ are left out on purpose; read the code when a task needs them.
 - Doctor: `curl http://127.0.0.1:8787/api/health` should answer
   `{"ok":true,"auth":"dev"}` before driving. `npm run drive` checks this first.
 - `npm run drive` runs every web and MCP drive in a headless Chromium; name
-  drives to run a few (`npm run drive -- trash sync`). Each makes its own
+  drives to run a few (`npm run drive -- trash sync`); a name that isn't a
+  drive stops the run before it starts. Each makes its own
   project and deletes it for good, and leaves screenshots in `drive-out/`.
   `npm run drive -- --clean` removes projects an interrupted run left behind.
 - `ios/build.sh sim --no-auth` runs the iOS app in a simulator against that
