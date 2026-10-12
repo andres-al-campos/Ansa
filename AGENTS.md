@@ -4,35 +4,31 @@ A Workflowy-style outliner: a React web app, a Cloudflare Worker, an iOS app
 and an MCP server over one tree. `./build.sh` is the entry point; `ios/` has
 its own `AGENTS.md`.
 
-## Why this project is worked the way it is
+## How this project is worked
 
-I want to build bigger things, faster. What stops me is being the one who
-checks everything and getting pulled into details. So the aim is to need me
-once per question, not once per change.
-
-How much to build before I look:
+How much to build before the owner looks:
 
 - Logic that has a check: as much as the task needs. The check is the sensor.
-- Look and feel: one visible change at a time, in front of me (on the phone
-  for iOS, not the simulator), then stop. I'm the sensor, and I'm picky.
-- At the end of each batch, list what you decided that I didn't tell you,
-  each with what it was based on, or the word "guess".
+- Look and feel: one visible change at a time, shown to the owner (on the
+  phone for iOS, not the simulator), then stop. No check can judge it.
+- At the end of each batch, list what was decided without being told, each
+  with what it was based on, or the word "guess".
 
 It's a personal app: look, feel and correct logic are the bar, and small
-leftovers are fine. A problem you notice in another project gets its own
-task, not a tangent.
+leftovers are fine.
 
 ## Principles
 
-What I've decided and why, so I decide it once. When I step in with a call or
-a correction, add a line here with the why and the date. A rule a machine can
-check becomes a law instead; a fact about one feature goes in its file.
+What has been decided and why, so each question is decided once. When the
+owner makes a call or a correction, add a line here with the why and the
+date. A rule a machine can check becomes a law instead; a fact about one
+feature goes in its file.
 
 0. Good code solves the problem it was meant to solve and is consistent with
    itself.
    - Something clearly broken or missing in this project: fix it, in its own
-     commit, and tell me after. Don't ask whether to. Ask first only when the
-     fix changes behaviour I may be relying on.
+     commit, and report it after. Don't ask whether to. Ask first only when
+     the fix changes behaviour a user may be relying on.
    - Two places that decide the same thing differently is a defect. Give the
      rule one home.
 
