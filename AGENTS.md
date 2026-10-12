@@ -6,23 +6,31 @@ its own `AGENTS.md`.
 
 ## How this project is worked
 
-How much to build before the owner looks:
+The aim is that each question gets decided once, and that a wrong path is
+cheap to back out of.
 
-- Logic that has a check: as much as the task needs. The check is the sensor.
-- Look and feel: one visible change at a time, shown to the owner (on the
-  phone for iOS, not the simulator), then stop. No check can judge it.
+- Size a batch of work by what can judge it. Where a check can, build as much
+  as the task needs: the check is the sensor. Where only a person using it
+  can (how it looks, how a gesture feels), make one visible change, put it in
+  front of them on the real device, and stop. A wrong guess then costs one
+  batch.
 - At the end of each batch, list what was decided without being told, each
-  with what it was based on, or the word "guess".
+  with what it was based on, or the word "guess". A choice nobody recorded
+  hardens into the code and reads later as if it had been made on purpose.
+- When a call or a correction is made, write its why where the next session
+  reads it: a law if a machine can check it, the feature's file, or the
+  Principles below.
+- A problem noticed in another project gets its own task. A session holds one
+  project's context, and a tangent spends it.
 
-It's a personal app: look, feel and correct logic are the bar, and small
+The bar here is look, feel and correct logic. It's a personal app, and small
 leftovers are fine.
 
 ## Principles
 
-What has been decided and why, so each question is decided once. When the
-owner makes a call or a correction, add a line here with the why and the
-date. A rule a machine can check becomes a law instead; a fact about one
-feature goes in its file.
+What has been decided and why. Add a line with the why and the date when a
+call is made. A rule a machine can check becomes a law instead; a fact about
+one feature goes in its file.
 
 0. Good code solves the problem it was meant to solve and is consistent with
    itself.
