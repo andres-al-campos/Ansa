@@ -86,7 +86,10 @@ targets:
         # "cannot be registered to your development team". Hence the personal
         # prefix rather than the tidier product-shaped one.
         PRODUCT_BUNDLE_IDENTIFIER: com.id3arium.ansa
-        TARGETED_DEVICE_FAMILY: "1,2"
+        # iPhone only. On iPad it runs as a scaled iPhone app, which is enough;
+        # as a real iPad app it would have to support upside-down portrait for
+        # multitasking, and Xcode warns until it does. (2026-10-19)
+        TARGETED_DEVICE_FAMILY: "1"
         GENERATE_INFOPLIST_FILE: false
 
   # One test per feature, each driving the app the way a person would. Run one
