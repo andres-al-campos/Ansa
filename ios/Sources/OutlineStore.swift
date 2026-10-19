@@ -99,13 +99,6 @@ final class OutlineStore {
         }
     }
 
-    /// Every edit goes through here, so there is one path from a gesture to
-    /// both the screen and the server.
-    ///
-    /// Hands back the ids of any parents that flipped to done — discarded by
-    /// most callers, but how the ripple knows a branch finished rather than a
-    /// single task being ticked.
-    @discardableResult
     /// Dismiss the refusal banner. The edit is already gone either way; this
     /// only stops the message being permanent furniture.
     func clearRejected() {
@@ -114,6 +107,13 @@ final class OutlineStore {
         rejectedReason = nil
     }
 
+    /// Every edit goes through here, so there is one path from a gesture to
+    /// both the screen and the server.
+    ///
+    /// Hands back the ids of any parents that flipped to done — discarded by
+    /// most callers, but how the ripple knows a branch finished rather than a
+    /// single task being ticked.
+    @discardableResult
     func apply(_ op: Op) -> [NodeId] {
         let result = TreeOps.applyOp(tree, op)
         tree = result.tree
