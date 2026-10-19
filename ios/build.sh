@@ -271,11 +271,23 @@ has your Apple ID, and that the bundle id is one your team can claim.")
     # routine, reporting a transient "Connection interrupted" (CoreDeviceError
     # 3002). The identical command usually succeeds on the next attempt, so
     # failing on the first drop would send you back to the terminal for nothing.
+    #
+    # A locked phone is not transient: iOS will not mount the developer disk
+    # image until it is unlocked, so it is named and not retried. It used to
+    # fall through to the Wi-Fi advice below, which sent you looking at the
+    # network while the phone was simply locked.
     installed=0
     for attempt in 1 2 3; do
-      if xcrun devicectl device install app --device "$device_id" "$app" >/dev/null 2>&1; then
+      if install_log=$(xcrun devicectl device install app --device "$device_id" "$app" 2>&1); then
         installed=1
         break
+      fi
+      if grep -q 'DeviceLocked' <<<"$install_log"; then
+        die "Install failed: the iPhone is locked.
+
+Unlock it and keep it unlocked until the install finishes, then run this again.
+
+The signed app is at ${app} if you would rather install it from Xcode."
       fi
       [ "$attempt" -lt 3 ] && echo "  link dropped, retrying ($attempt/3)…" && sleep 2
     done
