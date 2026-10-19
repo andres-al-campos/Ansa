@@ -5040,7 +5040,7 @@ private struct SearchPage: View {
         .task { await loadTrash() }
     }
 
-    private static let space = "searchPage"
+    nonisolated private static let space = "searchPage"
 
     @ViewBuilder private var recent: some View {
         let places = TreeOps.recentlyVisited(tree, excluding: from)
