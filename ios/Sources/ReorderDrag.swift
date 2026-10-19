@@ -51,7 +51,7 @@ final class ReorderDrag {
         return Date().timeIntervalSince(endedAt) < 0.3
     }
 
-    private var scroller: Timer?
+    private var scroller: Task<Void, Never>?
     /// How far the edge-scroll has walked, across ticks. See `startScrolling`.
     private var scrollCursor: Int?
 
@@ -97,7 +97,7 @@ final class ReorderDrag {
 
     /// Start the edge-scroll tick for the life of this drag.
     ///
-    /// A timer rather than work inside the move handler, because the gesture
+    /// A loop of its own rather than work inside the move handler, because the gesture
     /// only reports when the finger *moves* — and holding still at the edge is
     /// exactly how this is used. Driving it from move events would mean the
     /// list scrolled only while the finger jittered.
@@ -120,19 +120,19 @@ final class ReorderDrag {
         onScroll: @escaping () -> Void
     ) {
         stopScrolling()
-        // Held on the instance rather than captured: a `var` in scope would be
-        // mutated from inside a `@Sendable` closure, which is a data race the
-        // compiler is right to complain about even when the timer only ever
-        // fires on the main thread.
+        // Held on the instance rather than captured, so each tick reads where
+        // the last one left off.
         scrollCursor = nil
         // ~7 rows a second at a full hold. Fast enough to cross a long tree
         // without the drag feeling stuck, slow enough to stop on a chosen row.
-        scroller = Timer.scheduledTimer(withTimeInterval: 0.14, repeats: true) { [weak self] _ in
-            // The timer fires on the main run loop already; `assumeIsolated`
-            // states that rather than bouncing through another hop, which would
-            // put the tick a frame behind the finger it is following.
-            MainActor.assumeIsolated {
-                guard let self, self.isActive else { return }
+        //
+        // A main-actor task, not a `Timer`: the timer's callback is `@Sendable`,
+        // so the proxy and closures it captured were warnings the compiler
+        // could not see past, though it only ever fired on the main thread.
+        scroller = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .milliseconds(140))
+                guard !Task.isCancelled, let self, self.isActive else { return }
                 self.tick(proxy, order: order, onScroll: onScroll)
             }
         }
@@ -175,7 +175,7 @@ final class ReorderDrag {
     }
 
     func stopScrolling() {
-        scroller?.invalidate()
+        scroller?.cancel()
         scroller = nil
     }
 }
