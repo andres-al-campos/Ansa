@@ -3694,19 +3694,25 @@ private struct ScopeTitle: View {
                     if was, !now { onCommit() }
                 }
         }
-        .frame(maxWidth: max(titleWidth, 0))
+        .containerRelativeFrame(.horizontal) { width, _ in titleWidth(in: width) }
         .padding(.vertical, Space.tight)
     }
 
     /// How wide the title may be: the screen less the space the leading and
     /// trailing buttons occupy. Back is a chevron and the exit is a house, so
     /// the reserve is the same on both sides and the title stays centred.
-    private var titleWidth: CGFloat {
+    ///
+    /// Given the window's width by `containerRelativeFrame`, not read from
+    /// `UIScreen`: SwiftUI does not watch the screen, so after turning back
+    /// from landscape the title kept the landscape width and pushed the whole
+    /// column off both edges. Not the measured `slabWidth` either — a header
+    /// too wide widens the stack that is measured, and the width holds itself.
+    private func titleWidth(in width: CGFloat) -> CGFloat {
         // Less the header's four stack gaps too (button, spacer, title, spacer,
         // button). Leaving them out made the header 32pt wider than the
         // screen, which pushed the whole column 16pt past each edge — the
         // progress bar's gutter was there, just off screen.
-        UIScreen.main.bounds.width - buttonZone * 2 - Space.row * 4
+        max(width - buttonZone * 2 - Space.row * 4, 0)
     }
 
     /// A header button's 44pt target. The glyph sits 8pt from the screen edge
@@ -3763,7 +3769,8 @@ private struct ScopeTitle: View {
         // already only as wide as the frame it was given. This demands the
         // width instead, which is the one thing that makes the box a function
         // of the bar rather than of the name.
-        .frame(width: max(titleWidth, 0), height: buttonHeight)
+        .frame(height: buttonHeight)
+        .containerRelativeFrame(.horizontal) { width, _ in titleWidth(in: width) }
         .background {
             // Only under a drop. At rest the header is a title, and a box
             // drawn around it all the time reads as a permanently half-pressed

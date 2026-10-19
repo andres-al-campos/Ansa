@@ -57,6 +57,13 @@ final class NoTwoAxisScrollTests: XCTestCase {
             "\"\(name)\" opened without its long task. Check the row's text Button in OutlineView.swift.")
         try hold(app, on: "a project", drag: false)
 
+        // Turned to landscape and back. The header once kept its landscape
+        // width after the turn, and pushed the whole column off both sides.
+        XCUIDevice.shared.orientation = .landscapeLeft
+        sleep(1)
+        XCUIDevice.shared.orientation = .portrait
+        try hold(app, on: "a project, turned to landscape and back", drag: false)
+
         // Into Trash, so Trash holds a long row too. Before the drags below,
         // which scroll it out of reach.
         row.fullSwipe(left: true, in: app)
@@ -101,7 +108,7 @@ final class NoTwoAxisScrollTests: XCTestCase {
             "Tapping the long task didn't open it for editing. Check the row's text Button in OutlineView.swift.")
         try hold(app, on: "a project, editing a row", drag: false)
 
-        print("✓ Home, a project, a row being edited, Search and Trash hold a 136-letter word without moving sideways")
+        print("✓ Home, a project (also turned to landscape and back), a row being edited, Search and Trash hold a 136-letter word without moving sideways")
     }
 
     /// Fails with what on this screen reaches past its sides or moves
