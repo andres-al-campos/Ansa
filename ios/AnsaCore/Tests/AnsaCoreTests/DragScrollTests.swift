@@ -92,3 +92,53 @@ struct DragScrollTests {
             == .up("n0"))
     }
 }
+
+@Suite("Edge-scroll pace")
+struct EdgeScrollPaceTests {
+
+    /// Steps taken over `seconds` of ticks every 10ms in the band.
+    private func steps(_ pace: inout EdgeScrollPace, from start: Double, for seconds: Double) -> Int {
+        var count = 0
+        var now = start
+        while now < start + seconds - 1e-9 {
+            if pace.step(.down("n5"), at: now) != nil { count += 1 }
+            now += 0.01
+        }
+        return count
+    }
+
+    @Test("a drag that starts in the band does not scroll")
+    func startsInside() {
+        var pace = EdgeScrollPace()
+        #expect(steps(&pace, from: 0, for: 2) == 0)
+    }
+
+    @Test("after leaving the band, entering it scrolls")
+    func reenters() {
+        var pace = EdgeScrollPace()
+        #expect(pace.step(.down("n5"), at: 0) == nil)
+        #expect(pace.step(.none, at: 0.1) == nil)
+        #expect(pace.step(.down("n5"), at: 0.2) != nil)
+    }
+
+    @Test("the first second is slower than the next")
+    func ramps() {
+        var pace = EdgeScrollPace()
+        _ = pace.step(.none, at: 0)
+        let first = steps(&pace, from: 0.01, for: 1)
+        let second = steps(&pace, from: 1.01, for: 1)
+        // About 2→7 rows a second averages ~4.5 over the ramp, then 7 flat.
+        #expect((3...6).contains(first))
+        #expect((6...8).contains(second))
+        #expect(first < second)
+    }
+
+    @Test("leaving the band restarts the ramp")
+    func restarts() {
+        var pace = EdgeScrollPace()
+        _ = pace.step(.none, at: 0)
+        _ = steps(&pace, from: 0.01, for: 2)
+        _ = pace.step(.none, at: 2.05)
+        #expect(steps(&pace, from: 2.1, for: 0.5) <= 3)
+    }
+}

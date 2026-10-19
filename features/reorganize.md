@@ -41,6 +41,12 @@ high priority.
 
 ## Gotchas
 
+- iOS edge scrolling starts only once the finger has been outside the 24pt
+  band since the lift, then ramps from 2 to 7 rows a second over a second
+  (`EdgeScrollPace` in AnsaCore). A 64pt band with no such rule scrolled a row
+  picked up near the bottom all the way to the end before the finger moved.
+  (2026-10-19)
+
 - On web, a pointer that moves after pressing a bullet starts a drag at once;
   a press without moving arms only after a hold longer than a click. On touch,
   moving cancels and only the hold arms, because moving means scrolling.

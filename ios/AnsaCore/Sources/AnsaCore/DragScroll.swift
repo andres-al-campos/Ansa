@@ -13,6 +13,11 @@ import Foundation
 
 extension TreeOps {
 
+    /// How deep the edge band reaches, in points. Small, because the band is
+    /// where a held row can start scrolling the list, and at 64 a row picked
+    /// up above the bottom buttons was already in it. (2026-10-19)
+    public static let edgeBand: Double = 24
+
     /// Which way the list should move, and how urgently.
     public enum ScrollStep: Equatable, Sendable {
         case none
@@ -47,7 +52,7 @@ extension TreeOps {
         bottom: Double,
         order: [NodeId],
         boxes: [RowBox],
-        zone: Double = 64
+        zone: Double = edgeBand
     ) -> ScrollStep {
         guard !boxes.isEmpty, !order.isEmpty else { return .none }
 
@@ -64,5 +69,56 @@ extension TreeOps {
             return .down(order[i + 1])
         }
         return .none
+    }
+}
+
+/// When a drag in the edge band may scroll, and how fast.
+///
+/// Two rules, both so the list never moves before you mean it to:
+///
+/// - Enter-only. A drag that starts in the band does not scroll until the
+///   finger has been outside it. Picking a row up near the bottom used to set
+///   the list running to the end, with the finger never having moved.
+/// - A ramp. Each entry starts at `slowest` rows a second and reaches `fastest`
+///   after `rampSeconds`, so a finger that brushes the band nudges the list
+///   rather than sending it off.
+///
+/// Fed every tick of a fast clock; `step` says whether to scroll on this one.
+public struct EdgeScrollPace: Sendable {
+    public static let slowest = 2.0
+    public static let fastest = 7.0
+    public static let rampSeconds = 1.0
+
+    private var armed = false
+    private var enteredAt: Double?
+    private var lastStep: Double?
+
+    public init() {}
+
+    /// Rows a second, this long after entering the band.
+    public static func rate(after seconds: Double) -> Double {
+        let t = min(max(seconds / rampSeconds, 0), 1)
+        return slowest + (fastest - slowest) * t
+    }
+
+    /// For a tick at `now` (seconds) where `dragScroll` said `step`: the
+    /// duration to animate a one-row scroll over, or nil for no scroll now.
+    public mutating func step(_ step: TreeOps.ScrollStep, at now: Double) -> Double? {
+        guard step != .none else {
+            armed = true
+            enteredAt = nil
+            lastStep = nil
+            return nil
+        }
+        guard armed else { return nil }
+        guard let entered = enteredAt, let last = lastStep else {
+            enteredAt = now
+            lastStep = now
+            return 1 / Self.slowest
+        }
+        let interval = 1 / Self.rate(after: now - entered)
+        guard now - last >= interval else { return nil }
+        lastStep = now
+        return interval
     }
 }

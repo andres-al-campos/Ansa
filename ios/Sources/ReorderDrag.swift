@@ -54,6 +54,8 @@ final class ReorderDrag {
     private var scroller: Task<Void, Never>?
     /// How far the edge-scroll has walked, across ticks. See `startScrolling`.
     private var scrollCursor: Int?
+    /// Enter-only and the ramp. See `EdgeScrollPace`.
+    private var pace = EdgeScrollPace()
 
     /// Whether a drag is live. Cheaper to read than unwrapping `dragging`, and
     /// it is what the busy flag and the row's fade both actually ask.
@@ -123,15 +125,17 @@ final class ReorderDrag {
         // Held on the instance rather than captured, so each tick reads where
         // the last one left off.
         scrollCursor = nil
-        // ~7 rows a second at a full hold. Fast enough to cross a long tree
-        // without the drag feeling stuck, slow enough to stop on a chosen row.
+        pace = EdgeScrollPace()
+        // A fast clock; `pace` decides which ticks scroll, ramping from 2 to 7
+        // rows a second. 7 is fast enough to cross a long tree without the
+        // drag feeling stuck, slow enough to stop on a chosen row.
         //
         // A main-actor task, not a `Timer`: the timer's callback is `@Sendable`,
         // so the proxy and closures it captured were warnings the compiler
         // could not see past, though it only ever fired on the main thread.
         scroller = Task { [weak self] in
             while !Task.isCancelled {
-                try? await Task.sleep(for: .milliseconds(140))
+                try? await Task.sleep(for: .milliseconds(10))
                 guard !Task.isCancelled, let self, self.isActive else { return }
                 self.tick(proxy, order: order, onScroll: onScroll)
             }
@@ -153,6 +157,10 @@ final class ReorderDrag {
                 order: order,
                 boxes: self.boxes(order: order))
 
+            guard let duration = pace.step(step, at: Date().timeIntervalSinceReferenceDate) else {
+                if step == .none { scrollCursor = nil }
+                return
+            }
             switch step {
             case .none:
                 // Out of the edge band: the next entry starts fresh from
@@ -167,7 +175,7 @@ final class ReorderDrag {
                 let next = goingUp ? from - 1 : from + 1
                 guard order.indices.contains(next) else { return }
                 scrollCursor = next
-                withAnimation(.linear(duration: 0.14)) {
+                withAnimation(.linear(duration: duration)) {
                     proxy.scrollTo(order[next], anchor: goingUp ? .top : .bottom)
                 }
                 onScroll()
