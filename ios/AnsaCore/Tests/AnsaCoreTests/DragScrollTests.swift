@@ -127,7 +127,7 @@ struct EdgeScrollPaceTests {
         _ = pace.step(.none, at: 0)
         let first = steps(&pace, from: 0.01, for: 1)
         let second = steps(&pace, from: 1.01, for: 1)
-        // About 1→7 rows a second averages ~4 over the ramp, then 7 flat.
+        // About 2→7 rows a second averages ~4.5 over the ramp, then 7 flat.
         #expect((3...6).contains(first))
         #expect((6...8).contains(second))
         #expect(first < second)

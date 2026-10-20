@@ -85,7 +85,7 @@ extension TreeOps {
 ///
 /// Fed every tick of a fast clock; `step` says whether to scroll on this one.
 public struct EdgeScrollPace: Sendable {
-    public static let slowest = 1.0
+    public static let slowest = 2.0
     public static let fastest = 7.0
     public static let rampSeconds = 1.0
 
