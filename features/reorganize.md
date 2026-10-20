@@ -42,7 +42,7 @@ high priority.
 ## Gotchas
 
 - iOS edge scrolling starts only once the finger has been outside the 24pt
-  band since the lift, then ramps from 2 to 7 rows a second over a second
+  band since the lift, then ramps from 1 to 7 rows a second over a second
   (`EdgeScrollPace` in AnsaCore). A 64pt band with no such rule scrolled a row
   picked up near the bottom all the way to the end before the finger moved.
   (2026-10-19)
