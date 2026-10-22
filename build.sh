@@ -648,6 +648,7 @@ check() {
   laws/row-gestures.sh
   laws/no-ios-warnings.sh
   node laws/feature-map.mjs
+  node laws/doc-stamps.mjs
   if command -v xcodebuild >/dev/null 2>&1; then
     echo "Running the iOS drives …"
     ios/build.sh drive
@@ -657,7 +658,8 @@ check() {
   echo "All checks passed."
 }
 
-# Point git at the repo's hooks (.githooks/pre-push runs the fast tests). A git
+# Point git at the repo's hooks (.githooks/pre-push runs the fast tests;
+# .githooks/pre-commit stamps the docs a commit changes). A git
 # setting rather than a committed file, so every entry point sets it.
 git -C "$(dirname "$0")" config core.hooksPath .githooks 2>/dev/null || true
 

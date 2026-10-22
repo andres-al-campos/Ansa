@@ -1,5 +1,7 @@
 # Let a Claude work on it
 
+Updated 2026-10-09 19:32, at 0.1.0.
+
 A Claude reads and edits the same tree through an MCP server, live alongside
 the person.
 

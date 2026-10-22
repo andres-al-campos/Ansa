@@ -11,21 +11,15 @@ its own `AGENTS.md`.
 
 ## Principles
 
-What has been decided about Ansa and why. Add a line with the why and the
-date when a call is made. A rule a machine can check becomes a law instead; a
-fact about one feature goes in its file.
+How Ansa ought to be, so a session can decide a case nobody has met yet. Each
+earns its place by deciding Calls, the rulings in `features/`, which end by
+naming the principle they apply. Listed in the order they were written; when
+two disagree on a case, the owner decides and the winner moves up. The hook in
+`.githooks/` starts each with the time and version it was made or reworded at.
+A rule a machine can check becomes a law instead.
 
 The bar is look, feel and correct logic. It's a personal app, and small
 leftovers are fine.
-
-Look and feel:
-
-- What is the same from screen to screen doesn't move. On an iOS back swipe
-  only the list slides; the header and bottom buttons stay, and the titles
-  cross-fade at half the screen's width, as iOS does. Why: less distraction.
-  (2026-10-10)
-- A back swipe tracks the finger one-to-one, so the page always feels like
-  it is in the same place under the thumb. (2026-10-10)
 
 What matters a lot, a little, and not at all in Ansa isn't answered yet.
 

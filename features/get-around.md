@@ -1,5 +1,7 @@
 # Get around
 
+Updated 2026-10-10 15:08, at 0.1.0.
+
 Find your way through the outline: Home, projects, zooming into any task, and
 back out.
 
@@ -43,6 +45,14 @@ Last driven 2026-10-06, web; 2026-10-09, iOS: ✓, and ✗ against a build whose
 bullet didn't fold and one that reopened on Home. Not driven: fold on web,
 the desktop back/forward, iOS edge swipe and title jump. The edge swipe's
 look and feel is checked by thumb on the phone (2026-10-10), not by a drive.
+
+## Calls
+
+- 2026-10-11 19:23, 0.1.0. What is the same from screen to screen doesn't move. On an iOS back swipe
+  only the list slides; the header and bottom buttons stay, and the titles
+  cross-fade at half the screen's width, as iOS does. Why: less distraction.
+- 2026-10-11 19:23, 0.1.0. A back swipe tracks the finger one-to-one, so the page always feels like
+  it is in the same place under the thumb.
 
 ## Gotchas
 

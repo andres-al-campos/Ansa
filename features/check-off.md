@@ -1,5 +1,7 @@
 # Check things off
 
+Updated 2026-10-22 18:52, at 0.1.0.
+
 Mark tasks done and see how far along a project is.
 
 ## Sub-features
@@ -30,16 +32,18 @@ Preconditions: `./build.sh web --no-auth` running (the iOS drive needs only its 
 Last driven 2026-10-06, web; 2026-10-09, iOS: ✓, and ✗ against a build whose
 checkbox did nothing and one that never synced a tick.
 
+## Calls
+
+- 2026-10-06 13:36, 0.1.0. A task's own tick isn't kept while it has children. Tab a finished task
+  under an open one and the open one ticks; Shift-Tab it back out and it stays
+  ticked. The mirror case unticks a finished task the same way. Accepted: keeping the tick needs a stored field in both apps, and the
+  cheaper "untick when the last child leaves" rule reopens finished projects
+  when their last task is deleted.
+
 ## Gotchas
 
 - A parent's done state is derived, not stored independently. Any change that
   moves, adds or removes children re-derives it, so a parent can flip to done
   or back without anyone ticking it.
-- A task's own tick isn't kept while it has children. Tab a finished task
-  under an open one and the open one ticks; Shift-Tab it back out and it stays
-  ticked. The mirror case unticks a finished task the same way. Accepted
-  (2026-10-06): keeping the tick needs a stored field in both apps, and the
-  cheaper "untick when the last child leaves" rule reopens finished projects
-  when their last task is deleted.
 - "Hide completed" exists in the web code with no toggle (see
   [Get around](get-around.md)); re-adding it is a markup change.

@@ -1,5 +1,7 @@
 # Ansa
 
+Updated 2026-10-06 18:04, at 0.1.0.
+
 A Workflowy-style outliner for breaking tasks down until the leaves are small
 enough to actually do. *Ansa* is Latin for the handle of a thing.
 

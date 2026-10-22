@@ -1,5 +1,7 @@
 # Ansa features
 
+Updated 2026-10-22 18:52, at 0.1.0.
+
 What a user can do with Ansa, how to reach it, and how to drive it. Read this
 before adding anything: if it's already here, extend it instead of building it
 again. Several features exist on one platform only; the file says which.
@@ -25,11 +27,19 @@ separate rather than merging them.
 
 ## Each file has
 
+- **A stamp** under the title: `Updated 2026-10-22 19:00, at 0.1.0.` When the
+  description last changed, and Ansa's version (`package.json`) then. The
+  pre-commit hook in `.githooks/` writes it; a change only to the Calls leaves
+  it alone.
 - **Sub-features**: the selling points; the README's feature list comes from these.
 - **How to get to it**: the user's path, per platform.
 - **Driving it**: preconditions, then one bullet per check, each led by its
   command: `npm run drive -- <scenario>` or `ios/build.sh drive <name>`. A
   feature with no check writes "No check yet" and why.
+- **Calls**: what the owner found in one case on this feature, with their why,
+  ending with the Principle in `AGENTS.md` it applies (`Applies *Name*.`) or
+  none. The hook starts each with the time and version it was made or
+  reworded at.
 - **Gotchas**: what has bitten us, or will.
 
 ## Keeping it current
@@ -37,6 +47,14 @@ separate rather than merging them.
 Update a feature's file in the same commit that changes the feature. Write
 only what a user can do and observe: paths, commands, results. Code locations
 are left out on purpose; read the code when a task needs them.
+
+Before acting on a file, run `git log --since="<stamp time>"` on the code
+you're about to touch. Where it moved after the stamp, read the file against
+it and fix what's no longer true; the fix moves the stamp. A Call made before
+its subject changed goes to the owner, with the case in hand. `./build.sh`
+turns the hook on. `laws/doc-stamps.mjs` fails when a feature file or the
+README has no stamp, a stamp, Principle or Call lacks a time and a version
+Ansa has had, or a Call cites a Principle that doesn't exist.
 
 ## Driving conventions
 

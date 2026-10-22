@@ -1,5 +1,7 @@
 # Reorganize
 
+Updated 2026-10-19 19:11, at 0.1.0.
+
 Move tasks around: reorder siblings, nest or un-nest them, move them to
 another branch, and reorder projects and pins.
 
