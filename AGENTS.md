@@ -21,6 +21,10 @@ A rule a machine can check becomes a law instead.
 The bar is look, feel and correct logic. It's a personal app, and small
 leftovers are fine.
 
+- 2026-10-22 19:10, 0.1.0. **Stays under the thumb.** What the user is touching moves with them
+  one-to-one, and what's the same from screen to screen doesn't move, so the
+  page always feels like it is in the same place under the thumb.
+
 What matters a lot, a little, and not at all in Ansa isn't answered yet.
 
 ## Where things are written

@@ -50,9 +50,9 @@ look and feel is checked by thumb on the phone (2026-10-10), not by a drive.
 
 - 2026-10-11 19:23, 0.1.0. What is the same from screen to screen doesn't move. On an iOS back swipe
   only the list slides; the header and bottom buttons stay, and the titles
-  cross-fade at half the screen's width, as iOS does. Why: less distraction.
+  cross-fade at half the screen's width, as iOS does. Why: less distraction. Applies *Stays under the thumb*.
 - 2026-10-11 19:23, 0.1.0. A back swipe tracks the finger one-to-one, so the page always feels like
-  it is in the same place under the thumb.
+  it is in the same place under the thumb. Applies *Stays under the thumb*.
 
 ## Gotchas
 
