@@ -373,12 +373,18 @@ The ones there: $(ls UITests | sed -n 's/Tests\.swift$//p' | sed -E 's/([a-z0-9]
     # does not move a running keyboard. So the restart is conditional — the
     # common case is a rebuild against a simulator that is already correct, and
     # that case must not pay for one.
-    if [ "$(defaults read com.apple.iphonesimulator ConnectHardwareKeyboard 2>/dev/null)" != "0" ]; then
+    #
+    # Xcode 27's Device Hub has no such preference and can't be scripted, so
+    # there it's Device → Keyboard → Simulate Hardware Keyboard, unticked by
+    # hand. The drives that type fail when no on-screen keyboard comes up, and
+    # say so.
+    if open -Ra Simulator 2>/dev/null &&
+       [ "$(defaults read com.apple.iphonesimulator ConnectHardwareKeyboard 2>/dev/null)" != "0" ]; then
       echo "Switching the simulator to the software keyboard…"
       defaults write com.apple.iphonesimulator ConnectHardwareKeyboard -bool false
       # Only if it is up: quitting one that is not running is a no-op that still
       # costs a second, and `open` below starts it either way.
-      { pgrep -q -x Simulator && osascript -e 'quit app "Simulator"'; } || { pgrep -q -x DeviceHub && osascript -e 'quit app id "com.apple.dt.Devices"'; } || true
+      pgrep -q -x Simulator && osascript -e 'quit app "Simulator"'
     fi
     open_simulator
 
