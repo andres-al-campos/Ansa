@@ -32,8 +32,9 @@ export default defineConfig({
     // checkout of this repo, nested inside it. Without this, every test file is
     // collected twice: once here and once from a copy pinned to whatever commit
     // that task branched from. The duplicates are stale by construction, and a
-    // failure in one reads as a failure here.
-    exclude: ['**/node_modules/**', '**/dist/**', '.claude/worktrees/**'],
+    // failure in one reads as a failure here. ios/build holds the iOS
+    // packages' checkouts, and clerk-ios ships tests of its own.
+    exclude: ['**/node_modules/**', '**/dist/**', '.claude/worktrees/**', 'ios/build/**'],
   },
   resolve: {
     alias: {
