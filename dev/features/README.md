@@ -1,6 +1,6 @@
 # Ansa features
 
-Updated 2026-10-25 00:34, at 0.1.0.
+Updated 2026-10-25 12:08, at 0.1.0.
 
 What a user can do with Ansa, how to reach it, and how to drive it. Read this
 before adding anything: if it's already here, extend it instead of building it
@@ -52,8 +52,8 @@ Before acting on a file, run `git log --since="<stamp time>"` on the code
 you're about to touch. Where it moved after the stamp, read the file against
 it and fix what's no longer true; the fix moves the stamp. A Call made before
 its subject changed goes to the owner, with the case in hand. `./build.sh`
-turns the hook on. `tests/doc-stamps.mjs` fails when a feature file or the
-README has no stamp, a stamp, Principle or Call lacks a time and a version
+turns the hook on. `tests/doc-stamps.mjs` fails when a feature file or this
+index has no stamp, a stamp, Principle or Call lacks a time and a version
 Ansa has had, or a Call cites a Principle that doesn't exist.
 
 ## Driving conventions
