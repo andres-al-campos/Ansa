@@ -46,7 +46,7 @@ if [ "$status" -ne 0 ]; then
 fi
 
 warnings=$(grep -E 'warning:' "$log" \
-  | grep -v 'Metadata extraction skipped. No AppIntents.framework dependency found' \
+  | grep -viE 'Metadata extraction skipped[.,] no AppIntents.framework dependency found' \
   | sed -E 's|^/.*/ios/|ios/|' | sort -u)
 
 if [ -n "$warnings" ]; then
