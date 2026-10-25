@@ -169,6 +169,12 @@ Check it with:  xcrun devicectl list devices"
 }
 
 # A booted simulator's id, booting ${DEFAULT_SIM} if none is.
+# Xcode 27 replaced Simulator.app with Device Hub (com.apple.dt.Devices); open
+# whichever this Xcode has.
+open_simulator() {
+  open -a Simulator 2>/dev/null || open -b com.apple.dt.Devices
+}
+
 booted_sim() {
   # Reuse whatever is already booted; the simulator takes far longer to start
   # than the build does, and a rebuild-and-relaunch loop should not pay it.
@@ -333,7 +339,7 @@ The ones there: $(ls UITests | sed -n 's/Tests\.swift$//p' | sed -E 's/([a-z0-9]
     NO_AUTH=1
     prepare
     udid=$(booted_sim) || exit 1
-    open -a Simulator
+    open_simulator
 
     mkdir -p build
     log=build/drive.log
@@ -372,9 +378,9 @@ The ones there: $(ls UITests | sed -n 's/Tests\.swift$//p' | sed -E 's/([a-z0-9]
       defaults write com.apple.iphonesimulator ConnectHardwareKeyboard -bool false
       # Only if it is up: quitting one that is not running is a no-op that still
       # costs a second, and `open` below starts it either way.
-      pgrep -q -x Simulator && osascript -e 'quit app "Simulator"'
+      { pgrep -q -x Simulator && osascript -e 'quit app "Simulator"'; } || { pgrep -q -x DeviceHub && osascript -e 'quit app id "com.apple.dt.Devices"'; } || true
     fi
-    open -a Simulator
+    open_simulator
 
     xcodebuild \
       -project Ansa.xcodeproj \
