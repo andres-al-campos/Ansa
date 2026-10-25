@@ -147,11 +147,16 @@ final class NoTwoAxisScrollTests: XCTestCase {
         // Every element between the screen's top and bottom, not only text: a
         // scroll view's content is one, and content wider than the screen is
         // what pans. A List keeps rows it has scrolled away, and the keyboard
-        // and the scroll bars are the system's.
+        // and the scroll bars are the system's. iOS 27 reports the vertical
+        // bar as `.other` labelled "Vertical scroll bar, 4 pages", and after a
+        // turn to landscape and back leaves it hidden at x -103 on a 402pt
+        // screen, so it's also skipped by label. Only the vertical one: a
+        // horizontal bar means the screen scrolls sideways.
         func elements() throws -> [(name: String, frame: CGRect)] {
             var found: [(String, CGRect)] = []
             func walk(_ el: XCUIElementSnapshot) {
-                if el.elementType == .keyboard || el.elementType == .scrollBar { return }
+                if el.elementType == .keyboard || el.elementType == .scrollBar
+                    || el.label.hasPrefix("Vertical scroll bar") { return }
                 let f = el.frame
                 if f.width > 0, f.maxY > 0, f.minY < height {
                     let name = el.label.isEmpty ? el.identifier : el.label
