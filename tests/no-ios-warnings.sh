@@ -11,7 +11,7 @@
 # skipped a framework Ansa does not use. It comes from Apple's tooling, not
 # from Ansa's code, and no build setting turns it off.
 #
-#   laws/no-ios-warnings.sh
+#   tests/no-ios-warnings.sh
 cd "$(dirname "$0")/../ios" || exit 1
 
 command -v xcodebuild >/dev/null 2>&1 || {

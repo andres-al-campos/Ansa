@@ -1,6 +1,6 @@
 # Outline a project
 
-Updated 2026-10-09 19:32, at 0.1.0.
+Updated 2026-10-25 00:34, at 0.1.0.
 
 Write a project's tasks and break them down until the leaves are small enough
 to do. Projects are the top-level rows; everything else nests under them.

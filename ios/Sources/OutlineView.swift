@@ -869,7 +869,7 @@ struct OutlineView: View {
                 }
                 // On the page, not on each list, so Home, a project and Trash all
                 // keep it and a new screen cannot forget it (Home once did).
-                // laws/row-gestures.sh holds it to this one place.
+                // tests/row-gestures.sh holds it to this one place.
                 //
                 // The directional lock the platform does not hand you. Every gesture
                 // here is recognised simultaneously, so none of them takes the touch

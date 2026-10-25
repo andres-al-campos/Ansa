@@ -1,6 +1,6 @@
 import XCTest
 
-/// features/outline.md: make a project from Home's +, name it, and Return flows
+/// dev/features/outline.md: make a project from Home's +, name it, and Return flows
 /// into its first task; Return asks for another row, Indent nests it. The
 /// shape is read back from the Worker.
 @MainActor

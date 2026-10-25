@@ -9,7 +9,7 @@ import XCTest
 /// On each screen nothing may reach past the screen's sides, and a sideways
 /// and a diagonal drag must leave everything at the x it had. Fix a failure at
 /// the wide element (wrap or truncate it), not by clipping its parent.
-/// laws/no-two-axis-scroll.sh is the source-text half.
+/// tests/no-two-axis-scroll.sh is the source-text half.
 @MainActor
 final class NoTwoAxisScrollTests: XCTestCase {
     private var project: String?

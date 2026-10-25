@@ -1,6 +1,6 @@
 import XCTest
 
-/// features/trash.md: swipe a task left and it goes to Trash. In Trash, the
+/// dev/features/trash.md: swipe a task left and it goes to Trash. In Trash, the
 /// same swipe: left asks before deleting for good, right restores, and right
 /// from the screen's edge is still Back. Read on screen and on the Worker.
 @MainActor

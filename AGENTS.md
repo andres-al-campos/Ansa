@@ -12,10 +12,10 @@ its own `AGENTS.md`.
 ## Principles
 
 How Ansa ought to be, so a session can decide a case nobody has met yet. Each
-earns its place by deciding Calls, the rulings in `features/`, which end by
+earns its place by deciding Calls, the rulings in `dev/features/`, which end by
 naming the principle they apply. Listed in the order they were written; when
 two disagree on a case, the owner decides and the winner moves up. The hook in
-`.githooks/` starts each with the time and version it was made or reworded at.
+`dev/hooks/` starts each with the time and version it was made or reworded at.
 A rule a machine can check becomes a law instead.
 
 The bar is look, feel and correct logic. It's a personal app, and small
@@ -29,7 +29,7 @@ What matters a lot, a little, and not at all in Ansa isn't answered yet.
 
 ## Where things are written
 
-- `features/README.md`: what a user can do and the check for each feature.
+- `dev/features/README.md`: what a user can do and the check for each feature.
   Read it before adding or changing one; run the feature's check after.
-- `laws/README.md`: rules `./build.sh check` holds the code to.
+- `tests/README.md`: rules `./build.sh check` holds the code to.
 - `designs/`: mockups, kept on this machine and out of the repo.

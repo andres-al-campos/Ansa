@@ -1,6 +1,6 @@
 import XCTest
 
-/// features/search.md: type part of a task's text, see it under the results
+/// dev/features/search.md: type part of a task's text, see it under the results
 /// with its project beneath, tap it and land in that project.
 @MainActor
 final class SearchTests: XCTestCase {

@@ -20,9 +20,9 @@
 #
 # Source text, because nothing else can see it: XCUITest's injected touches
 # skip the List's scroll arbitration, so the UI tests pass with the wrong
-# priority and the bug shows only on a device (features/reorganize.md).
+# priority and the bug shows only on a device (dev/features/reorganize.md).
 #
-#   laws/row-gestures.sh
+#   tests/row-gestures.sh
 cd "$(dirname "$0")/.." || exit 1
 file=ios/Sources/OutlineView.swift
 problems=()

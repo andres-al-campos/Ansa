@@ -1,6 +1,6 @@
 import XCTest
 
-/// features/reorganize.md: long-press a row's bullet and drag it, and the row
+/// dev/features/reorganize.md: long-press a row's bullet and drag it, and the row
 /// moves there. Three goes above One; the order is read back from the Worker.
 @MainActor
 final class ReorganizeTests: XCTestCase {

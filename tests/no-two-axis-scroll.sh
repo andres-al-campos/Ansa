@@ -7,7 +7,7 @@
 # that pans sideways by accident, from content wider than it, is caught on the
 # running app by ios/UITests/NoTwoAxisScrollTests.swift.
 #
-#   laws/no-two-axis-scroll.sh [dir]     (default: ios/Sources)
+#   tests/no-two-axis-scroll.sh [dir]     (default: ios/Sources)
 dir=${1:-"$(dirname "$0")/../ios/Sources"}
 hits=$(grep -rnE 'ScrollView *\( *(axes: *)?\[ *\.(horizontal|vertical) *, *\.(horizontal|vertical) *\]' "$dir" || true)
 if [ -z "$hits" ]; then

@@ -1,6 +1,6 @@
 # Backup & transfer
 
-Updated 2026-10-09 19:32, at 0.1.0.
+Updated 2026-10-25 00:34, at 0.1.0.
 
 Export the whole account as JSON, or replace it from a file. Web only.
 

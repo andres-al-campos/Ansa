@@ -1,6 +1,6 @@
 # Sign in and sync
 
-Updated 2026-10-10 20:08, at 0.1.0.
+Updated 2026-10-25 00:34, at 0.1.0.
 
 One account, every device. An edit on any device shows up on the others
 without a reload, and edits made offline go out on reconnect.

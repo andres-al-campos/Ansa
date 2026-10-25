@@ -82,7 +82,7 @@ typecheck, the TypeScript and Swift suites, the Swift-to-server wire and agreeme
 `npm run drive`, which works the web app and the MCP in a headless browser. It
 uses a `./build.sh web --no-auth` you already have running, or starts one and
 stops it when done. `npm test` runs just the TypeScript suite. Before each
-push, `.githooks/pre-push` runs the tests the push could affect and the laws,
+push, `dev/hooks/pre-push` runs the tests the push could affect and the laws,
 plus the Swift/TypeScript agreement check when the push changes an op;
 `./build.sh` turns the hook on. `npm run build`
 type-checks and builds the app into `dist/`.
@@ -100,7 +100,7 @@ The API goes first on purpose. If it fails, the old app is still talking to the
 old API — whereas shipping the app first can leave a new client calling an API
 that never updated.
 
-[HOSTING.md](HOSTING.md) is the plan behind the hosted setup: what each phase
+[docs/HOSTING.md](docs/HOSTING.md) is the plan behind the hosted setup: what each phase
 was for, which are done, and what the remaining ones still need.
 
 Cloudflare does **not** build this project: the Pages project has no git

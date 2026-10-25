@@ -83,7 +83,7 @@ describe('applyOp laws', () => {
 
   // Position only. Done is not restored: tabbing a finished task under an open
   // one ticks the open one, and Shift-Tab leaves it ticked, because a task's
-  // own done isn't kept while it has children. Accepted; see features/check-off.md.
+  // own done isn't kept while it has children. Accepted; see dev/features/check-off.md.
   test('law 3: outdent puts an indented task back where it was', () => {
     fc.assert(
       fc.property(treeArb, fc.nat(9), (tree, i) => {

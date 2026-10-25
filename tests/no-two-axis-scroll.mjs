@@ -6,7 +6,7 @@
 // Don't fix a failure with a global `overflow-x: hidden`; that hides the
 // overflow and breaks sticky positioning. Fix the wide element.
 //
-//   node laws/no-two-axis-scroll.mjs
+//   node tests/no-two-axis-scroll.mjs
 import { chromium } from 'playwright'
 
 const APP = process.env.ANSA_APP ?? 'http://localhost:5173'

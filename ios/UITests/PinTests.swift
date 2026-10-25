@@ -1,6 +1,6 @@
 import XCTest
 
-/// features/pin.md: pin a task from its ⋯ menu and it shows on Home's shelf;
+/// dev/features/pin.md: pin a task from its ⋯ menu and it shows on Home's shelf;
 /// open it from there and unpin it, and the shelf lets it go. Read on screen
 /// and on the Worker.
 @MainActor

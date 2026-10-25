@@ -5,5 +5,5 @@
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
-const hook = fileURLToPath(new URL('../.githooks/stamp-docs.mjs', import.meta.url));
+const hook = fileURLToPath(new URL('../dev/hooks/stamp-docs.mjs', import.meta.url));
 process.exit(spawnSync(process.execPath, [hook, '--check', 'package.json'], { stdio: 'inherit' }).status ?? 1);

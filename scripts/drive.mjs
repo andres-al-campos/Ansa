@@ -20,7 +20,7 @@ const OUT = process.env.DRIVE_OUT ?? `${ROOT}drive-out`
 const only = process.argv.slice(2)
 
 // A mistyped name would otherwise filter out every drive and pass. Names are
-// read from this file's own text, the way laws/feature-map.mjs reads them.
+// read from this file's own text, the way tests/feature-map.mjs reads them.
 const known = [...readFileSync(fileURLToPath(import.meta.url), 'utf8').matchAll(/^await drive\('([^']+)'/gm)].map((m) => m[1])
 const unknown = only.filter((name) => name !== '--clean' && !known.includes(name))
 if (unknown.length) {

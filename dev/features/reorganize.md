@@ -1,6 +1,6 @@
 # Reorganize
 
-Updated 2026-10-19 19:11, at 0.1.0.
+Updated 2026-10-25 00:34, at 0.1.0.
 
 Move tasks around: reorder siblings, nest or un-nest them, move them to
 another branch, and reorder projects and pins.
@@ -37,7 +37,7 @@ reordering; iOS indent steps and edge scrolling.
 The iOS drive can't see a drag that loses to the List's scroll: injected
 touches skip that arbitration (see the row's `armGesture` in OutlineView.swift), and
 that is how a past bug passed in the simulator. Check a change to the drag's
-gestures by hand on a phone. `laws/row-gestures.sh` fails if the row's
+gestures by hand on a phone. `tests/row-gestures.sh` fails if the row's
 `armGesture` stops being simultaneous or the bullet's fold tap stops being
 high priority.
 

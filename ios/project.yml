@@ -93,7 +93,7 @@ targets:
         GENERATE_INFOPLIST_FILE: false
 
   # One test per feature, each driving the app the way a person would. Run one
-  # with `./build.sh drive <name>`; features/ names each feature's test.
+  # with `./build.sh drive <name>`; dev/features/ names each feature's test.
   AnsaUITests:
     type: bundle.ui-testing
     platform: iOS

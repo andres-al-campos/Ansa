@@ -1,6 +1,6 @@
 import XCTest
 
-/// features/get-around.md: fold a branch with its bullet and unfold it, zoom
+/// dev/features/get-around.md: fold a branch with its bullet and unfold it, zoom
 /// into a task with a right swipe and come back with Back, and reopen the app
 /// on the project you were in.
 @MainActor

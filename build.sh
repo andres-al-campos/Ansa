@@ -643,12 +643,12 @@ check() {
   echo "Running the drives …"
   ANSA_APP="$APP_URL" npm run drive
   echo "Checking the laws …"
-  ANSA_APP="$APP_URL" node laws/no-two-axis-scroll.mjs
-  laws/no-two-axis-scroll.sh
-  laws/row-gestures.sh
-  laws/no-ios-warnings.sh
-  node laws/feature-map.mjs
-  node laws/doc-stamps.mjs
+  ANSA_APP="$APP_URL" node tests/no-two-axis-scroll.mjs
+  tests/no-two-axis-scroll.sh
+  tests/row-gestures.sh
+  tests/no-ios-warnings.sh
+  node tests/feature-map.mjs
+  node tests/doc-stamps.mjs
   if command -v xcodebuild >/dev/null 2>&1; then
     echo "Running the iOS drives …"
     ios/build.sh drive
@@ -658,10 +658,10 @@ check() {
   echo "All checks passed."
 }
 
-# Point git at the repo's hooks (.githooks/pre-push runs the fast tests;
-# .githooks/pre-commit stamps the docs a commit changes). A git
+# Point git at the repo's hooks (dev/hooks/pre-push runs the fast tests;
+# dev/hooks/pre-commit stamps the docs a commit changes). A git
 # setting rather than a committed file, so every entry point sets it.
-git -C "$(dirname "$0")" config core.hooksPath .githooks 2>/dev/null || true
+git -C "$(dirname "$0")" config core.hooksPath dev/hooks 2>/dev/null || true
 
 # The bare default packages and installs the desktop app; everything else is an
 # explicit argument. `web` is the only one that falls through to the run-stack

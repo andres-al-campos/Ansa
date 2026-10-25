@@ -1,6 +1,6 @@
 import XCTest
 
-/// features/check-off.md: a project is done exactly when all its tasks are.
+/// dev/features/check-off.md: a project is done exactly when all its tasks are.
 /// Ticking one of two leaves it open, ticking both completes it, unticking one
 /// reopens it. Each step is read twice: on the box, and on the Worker, so a
 /// tick that draws but never syncs fails too.

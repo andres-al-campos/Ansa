@@ -314,7 +314,7 @@ The signed app is at ${app} if you would rather install it from Xcode."
 
   drive)
     # Each feature's UI test (UITests/<Name>Tests.swift), or one by its name in
-    # features/: `drive search` runs SearchTests. On a simulator, against the
+    # dev/features/: `drive search` runs SearchTests. On a simulator, against the
     # local Worker, which the tests seed and clean up through.
     curl -fsS http://127.0.0.1:8787/api/health 2>/dev/null | grep -q '"auth":"dev"' || die \
       "The local Worker isn't up without sign-in, and the UI tests seed through it.
