@@ -13,6 +13,50 @@ final class OutlineTests: XCTestCase {
         }
     }
 
+    /// Why the simulator runs the on-screen keyboard: with a hardware one
+    /// nothing covers the bottom of the screen, so a strip that doesn't ride
+    /// the keyboard, or a run that doesn't scroll the typed row clear of it,
+    /// looks right here and is broken on a phone.
+    func testTheTypedRowAndTheStripStayAboveTheKeyboard() async throws {
+        let name = "drive keyboard " + String(UUID().uuidString.prefix(6)).lowercased()
+        projectName = name
+
+        let app = XCUIApplication()
+        app.launch()
+        app.buttons["Home"].tap()
+        app.descendants(matching: .any)["New project"].firstMatch.tap()
+        let keyboard = app.keyboards.firstMatch
+        try need(keyboard.waitForExistence(timeout: 5),
+            "No keyboard up to name the project. Untick Device Hub's Device → Keyboard → Simulate Hardware Keyboard; this drive is about the on-screen one.")
+        app.typeText(name + "\n")
+        // More rows than fit above the keyboard, so the last only stays in
+        // view if the run scrolls.
+        for i in 1...14 { app.typeText("Row \(i)\n") }
+
+        // The keyboard reports where it is mid-slide; wait for it to stop.
+        var top = keyboard.frame.minY
+        for _ in 0..<20 {
+            try await Task.sleep(for: .milliseconds(150))
+            let now = keyboard.frame.minY
+            if now == top && now < app.frame.height { break }
+            top = now
+        }
+        try need(top < app.frame.height,
+            "The keyboard never settled on screen (its top read \(Int(top)) on a \(Int(app.frame.height))pt screen). Untick Device Hub's Device → Keyboard → Simulate Hardware Keyboard.")
+
+        let strip = app.buttons["Indent"].frame
+        // The gap allows for the suggestions bar, which sits above the keys
+        // but outside the keyboard's frame.
+        try need(strip.maxY <= top && top - strip.maxY < 80,
+            "The Indent strip ends at y \(Int(strip.maxY)) with the keyboard's top at \(Int(top)): it should ride just above it. Check the bottom safeAreaInset in OutlineView.swift.")
+        let row = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "hasKeyboardFocus == 1")).firstMatch.frame
+        try need(row.height > 0 && row.minY >= 0 && row.maxY <= strip.minY,
+            "The row being typed spans y \(Int(row.minY))…\(Int(row.maxY)), not clear above the strip at \(Int(strip.minY)). Check that the strip is the list's bottom safeAreaInset in OutlineView.swift (an overlay lets rows run under it), then scrollInto.")
+
+        print("✓ after 14 rows, the typed row (y \(Int(row.maxY))) stays above the strip (\(Int(strip.minY))…\(Int(strip.maxY))), which rides the keyboard (\(Int(top)))")
+    }
+
     func testANewProjectTakesNestedTasksByKeyboard() async throws {
         let name = "drive outline " + String(UUID().uuidString.prefix(6)).lowercased()
         projectName = name

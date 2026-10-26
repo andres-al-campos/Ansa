@@ -1,6 +1,6 @@
 # Outline a project
 
-Updated 2026-10-25 20:38, at 0.1.0.
+Updated 2026-10-25 21:26, at 0.1.0.
 
 Write a project's tasks and break them down until the leaves are small enough
 to do. Projects are the top-level rows; everything else nests under them.
@@ -36,7 +36,10 @@ Preconditions: `./build.sh web --no-auth` running.
   Child B under it with Tab, and checks the nesting survives a reload.
 - `ios/build.sh drive outline` (~60s, simulator): makes a project from Home's +,
   names it, types Parent, then Child A with Indent and Child B, and checks that
-  shape on the Worker.
+  shape on the Worker. A second case types 14 rows and checks, against the
+  on-screen keyboard's frame, that the strip rides just above the keyboard and
+  the typed row stays above the strip. ✗ against a build with the strip as an
+  overlay rather than the list's inset: the row slid under it.
 
 Last driven 2026-10-06 by the script; by hand 2026-10-04, which also showed the
 first gotcha below. iOS 2026-10-09: ✓, and ✗ against a build whose Indent did
