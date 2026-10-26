@@ -1,6 +1,6 @@
 # Outline a project
 
-Updated 2026-10-25 00:34, at 0.1.0.
+Updated 2026-10-25 20:38, at 0.1.0.
 
 Write a project's tasks and break them down until the leaves are small enough
 to do. Projects are the top-level rows; everything else nests under them.
@@ -51,3 +51,9 @@ nothing.
   deletes it. Those deletes skip the trash on purpose.
 - The leaf-only view still exists in the web code with no toggle; Tab is
   disabled in it. See [Get around](get-around.md).
+- On iOS, keys typed within about 100ms of Return are lost or land in the row
+  just left: the new row's field takes focus a beat after Return. XCUITest on
+  the on-screen keyboard types that fast; a person doesn't, and a hardware
+  keyboard queues its keys. So drives end a `typeText` at each Return rather
+  than typing past it. Closing the gap would take one field that stays focused
+  across rows.
