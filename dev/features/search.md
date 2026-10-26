@@ -40,3 +40,10 @@ Last driven 2026-10-08: ✓, and ✗ against a build whose matching was broken.
   ground and draws black; either cut a black stripe across the frost. So the
   headings are plain rows, and the mark that finds the list's end sits inside
   the last row's background.
+
+## Calls
+
+- 2026-10-25 22:59, 0.1.0. Search lies on one seamless frost that blurs the page behind it. No band,
+  header ground or row ground of its own cuts across it; the headings and
+  cards sit on the frost. Alejandro, on the black stripes: "it should just be
+  one seamless background." Applies none.
