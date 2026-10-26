@@ -297,7 +297,8 @@ The signed app is at ${app} if you would rather install it from Xcode."
       fi
       [ "$attempt" -lt 3 ] && echo "  link dropped, retrying ($attempt/3)…" && sleep 2
     done
-    [ "$installed" = 1 ] || die "Install failed after 3 attempts.
+    [ "$installed" = 1 ] || die "Install failed after 3 attempts. devicectl's last error:
+$(grep -iE 'error|interrupted|failed' <<<"$install_log" | head -3)
 
 Wake the phone and check it is on the same network as this Mac — a sleeping
 phone on Wi-Fi is the usual cause. Then run this again.
