@@ -4751,6 +4751,9 @@ private struct ProjectGrid: View {
 private struct SectionHeader: View {
     let title: String
     var open: Binding<Bool>? = nil
+    /// Whether it pins over the list, and so needs a ground of its own.
+    /// Search's headings are plain rows on the frost.
+    var pinned = true
 
     var body: some View {
         Button {
@@ -4780,7 +4783,7 @@ private struct SectionHeader: View {
         // scrolling under read through the title. `.listRowBackground` does not
         // reach a header.
         .background(
-            Color(.systemGroupedBackground)
+            (pinned ? Color(.systemGroupedBackground) : .clear)
                 .padding(
                     EdgeInsets(
                         top: -Space.sectionBreak, leading: -Space.gutter,
@@ -5017,16 +5020,6 @@ private struct SearchPage: View {
             } else {
                 results
             }
-            // Marks the end of the list, for telling a tap on a row from a
-            // tap on the frost below them.
-            Color.clear
-                .frame(height: 1)
-                .listRowBackground(Color.clear)
-                .listRowSeparator(.hidden)
-                .onGeometryChange(for: CGFloat.self) {
-                    $0.frame(in: .named(Self.space)).minY
-                } action: { end = $0 }
-                .onDisappear { end = .infinity }
         }
         .listStyle(.plain)
         // Clear: the frost under it is the ground.
@@ -5046,16 +5039,14 @@ private struct SearchPage: View {
         let places = TreeOps.recentlyVisited(tree, excluding: from)
         // The heading alone when there is nothing yet: an empty state
         // explaining visits would be longer than the list it stands for.
-        Section {
-            ForEach(Array(places.enumerated()), id: \.element.id) { i, node in
-                PlaceRow(
-                    name: Text(node.text.isEmpty ? "Untitled" : node.text),
-                    trail: trail(of: node), finished: finished(node), struck: false,
-                    onOpen: { onOpen(node.id) })
-                    .modifier(SearchCard(i: i, of: places.count))
-            }
-        } header: {
-            SectionHeader(title: "Recently visited")
+        heading("Recently visited", last: places.isEmpty)
+        ForEach(Array(places.enumerated()), id: \.element.id) { i, node in
+            PlaceRow(
+                name: Text(node.text.isEmpty ? "Untitled" : node.text),
+                trail: trail(of: node), finished: finished(node), struck: false,
+                onOpen: { onOpen(node.id) })
+                .modifier(EndMark(on: i == places.count - 1, end: $end))
+                .modifier(SearchCard(i: i, of: places.count))
         }
     }
 
@@ -5063,23 +5054,24 @@ private struct SearchPage: View {
         let found = TreeOps.search(tree, query, from: from)
         let binned = trash.filter { !TreeOps.matchRanges($0.text, query).isEmpty }.count
         if found.here.isEmpty && found.elsewhere.isEmpty {
-            Section {
-                Text("Nothing matches \u{201C}\(query.trimmingCharacters(in: .whitespaces))\u{201D}")
-                    .foregroundStyle(.secondary)
-                    .listRowInsets(EdgeInsets(top: Space.inner, leading: Space.gutter, bottom: Space.inner, trailing: Space.gutter))
-                    .listRowBackground(Color.clear)
-                    .listRowSeparator(.hidden)
-            }
+            Text("Nothing matches \u{201C}\(query.trimmingCharacters(in: .whitespaces))\u{201D}")
+                .foregroundStyle(.secondary)
+                .modifier(EndMark(on: true, end: $end))
+                .listRowInsets(EdgeInsets(top: Space.inner, leading: Space.gutter, bottom: Space.inner, trailing: Space.gutter))
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
         }
         if !found.here.isEmpty {
-            group(found.here, finished: found.finished, title: "In \(projectName)")
+            group(
+                found.here, finished: found.finished, title: "In \(projectName)",
+                last: found.elsewhere.isEmpty && binned == 0)
         }
         if !found.elsewhere.isEmpty {
             // "Other projects" only means something after an "In" group. Opened
             // from Home there is one list, and it is just the results.
             group(
                 found.elsewhere, finished: found.finished,
-                title: from == nil ? "Results" : "Other projects")
+                title: from == nil ? "Results" : "Other projects", last: binned == 0)
         }
         if binned > 0 {
             // One line rather than the deleted tasks themselves: they cannot
@@ -5098,25 +5090,56 @@ private struct SearchPage: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .modifier(EndMark(on: true, end: $end))
             .listRowInsets(EdgeInsets(top: 0, leading: Space.gutter + Space.inner, bottom: 0, trailing: Space.gutter + Space.inner))
             .listRowBackground(Color.clear)
             .listRowSeparator(.hidden)
         }
     }
 
-    private func group(_ nodes: [Node], finished: Set<NodeId>, title: String) -> some View {
-        Section {
-            ForEach(Array(nodes.enumerated()), id: \.element.id) { i, node in
-                let done = finished.contains(node.id)
-                PlaceRow(
-                    name: Text(FoundPalette.marked(node.text.isEmpty ? "Untitled" : node.text, query, dim: done)),
-                    trail: trail(of: node), finished: false, struck: done, matched: true,
-                    onOpen: { onFind(node.id) })
-                    .modifier(SearchCard(i: i, of: nodes.count))
-            }
-        } header: {
-            SectionHeader(title: title)
+    /// `last`: whether this group ends the list.
+    @ViewBuilder
+    private func group(_ nodes: [Node], finished: Set<NodeId>, title: String, last: Bool) -> some View {
+        heading(title)
+        ForEach(Array(nodes.enumerated()), id: \.element.id) { i, node in
+            let done = finished.contains(node.id)
+            PlaceRow(
+                name: Text(FoundPalette.marked(node.text.isEmpty ? "Untitled" : node.text, query, dim: done)),
+                trail: trail(of: node), finished: false, struck: done, matched: true,
+                onOpen: { onFind(node.id) })
+                .modifier(EndMark(on: last && i == nodes.count - 1, end: $end))
+                .modifier(SearchCard(i: i, of: nodes.count))
         }
+    }
+
+    /// On the list's last row, keeps `end` at its foot, for telling a tap on
+    /// a row from a tap on the frost below them. Goes inside the row's
+    /// listRowBackground: outside it, the row loses its clear ground and
+    /// draws black.
+    private struct EndMark: ViewModifier {
+        let on: Bool
+        @Binding var end: CGFloat
+        func body(content: Content) -> some View {
+            if on {
+                content
+                    .onGeometryChange(for: CGFloat.self) {
+                        $0.frame(in: .named(SearchPage.space)).maxY
+                    } action: { end = $0 }
+                    .onDisappear { end = .infinity }
+            } else {
+                content
+            }
+        }
+    }
+
+    /// A group's heading, as a row rather than the Section's header, so it
+    /// scrolls with the list and needs no ground of its own: a pinned one's
+    /// cut a black stripe through the frost.
+    private func heading(_ title: String, last: Bool = false) -> some View {
+        SectionHeader(title: title, pinned: false)
+            .modifier(EndMark(on: last, end: $end))
+            .listRowBackground(Color.clear)
+            .listRowSeparator(.hidden)
     }
 
     private var projectName: String {
