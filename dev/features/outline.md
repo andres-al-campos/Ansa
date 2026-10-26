@@ -45,6 +45,16 @@ Last driven 2026-10-06 by the script; by hand 2026-10-04, which also showed the
 first gotcha below. iOS 2026-10-09: ✓, and ✗ against a build whose Indent did
 nothing.
 
+## Calls
+
+- 2026-10-25 22:08, 0.1.0. Keys typed within about 100ms of Return on iOS are lost or land in the row
+  just left (see Gotchas). Accepted: only a test robot types that fast, and a
+  bug only a robot hits isn't worth the rework unless it breaks the app or
+  something you can see. The drives type around it instead. Applies none.
+- 2026-10-25 22:08, 0.1.0. Pasting several lines into a row joins them into one row. Kept: there's no
+  telling where a paste should break into rows, and one row is easy to split
+  by hand. Applies none.
+
 ## Gotchas
 
 - Undo is web only and covers your own edits. An edit from another device or a
