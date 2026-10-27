@@ -624,6 +624,21 @@ check() {
   fi
 
   local health="http://127.0.0.1:${API_PORT}/api/health"
+  # A stack already up is reused, so it has to be serving this checkout: one
+  # started in the main checkout or another worktree would pass the drives on
+  # that tree's code.
+  local port pid cwd here
+  here=$(git rev-parse --show-toplevel)
+  for port in "$API_PORT" "$APP_PORT"; do
+    pid=$(lsof -nP -iTCP:"$port" -sTCP:LISTEN -t 2>/dev/null | head -1)
+    [ -n "$pid" ] || continue
+    cwd=$(lsof -a -p "$pid" -d cwd -Fn 2>/dev/null | sed -n 's/^n//p')
+    if [ "$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null)" != "$here" ]; then
+      echo "Port ${port} is served from ${cwd:-another folder}, not this checkout, so the drives would test that code." >&2
+      echo "Stop that ./build.sh web (kill ${pid}) and re-run; check starts one here." >&2
+      exit 1
+    fi
+  done
   if ! curl -fsS "$health" 2>/dev/null | grep -q '"auth":"dev"'; then
     if curl -fsS "$health" >/dev/null 2>&1; then
       echo "The API on :${API_PORT} is running with sign-in, and the drives need it off." >&2
