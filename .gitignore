@@ -57,3 +57,6 @@ desktop/icon/layer-ring.png
 desktop/icon/layer-dot.png
 desktop/icon/Ansa-glass-preview.png
 drive-out/
+
+# Process, not product: mockups and per-quest plans stay on disk, off the remote
+plans/
