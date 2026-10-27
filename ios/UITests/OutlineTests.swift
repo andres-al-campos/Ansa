@@ -27,7 +27,7 @@ final class OutlineTests: XCTestCase {
         app.descendants(matching: .any)["New project"].firstMatch.tap()
         let keyboard = app.keyboards.firstMatch
         try need(keyboard.waitForExistence(timeout: 5),
-            "No keyboard up to name the project. Untick Device Hub's Device → Keyboard → Simulate Hardware Keyboard; this drive is about the on-screen one.")
+            "No keyboard up to name the project. Untick \"Simulate hardware keyboard by default\" in Device Hub's Settings, and Device → Keyboard → Simulate Hardware Keyboard on the device already running; this drive is about the on-screen one.")
         app.typeText(name + "\n")
         // More rows than fit above the keyboard, so the last only stays in
         // view if the run scrolls.
@@ -42,7 +42,7 @@ final class OutlineTests: XCTestCase {
             top = now
         }
         try need(top < app.frame.height,
-            "The keyboard never settled on screen (its top read \(Int(top)) on a \(Int(app.frame.height))pt screen). Untick Device Hub's Device → Keyboard → Simulate Hardware Keyboard.")
+            "The keyboard never settled on screen (its top read \(Int(top)) on a \(Int(app.frame.height))pt screen). Untick \"Simulate hardware keyboard by default\" in Device Hub's Settings, and Device → Keyboard → Simulate Hardware Keyboard on the device already running.")
 
         let strip = app.buttons["Indent"].frame
         // The gap allows for the suggestions bar, which sits above the keys
@@ -73,7 +73,7 @@ final class OutlineTests: XCTestCase {
         // keyboard is the failure.
         func type(_ text: String) throws {
             try need(app.keyboards.firstMatch.waitForExistence(timeout: 5),
-                "No keyboard up to type \"\(text)\". Check that the new row takes focus in EditController.swift, or, if the row is focused, untick Device Hub's Device → Keyboard → Simulate Hardware Keyboard.")
+                "No keyboard up to type \"\(text)\". Check that the new row takes focus in EditController.swift, or, if the row is focused, untick \"Simulate hardware keyboard by default\" in Device Hub's Settings, and Device → Keyboard → Simulate Hardware Keyboard on the device already running.")
             app.typeText(text)
         }
         try type(name + "\n")
