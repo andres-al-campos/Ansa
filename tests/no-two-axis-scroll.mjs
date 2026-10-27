@@ -2,7 +2,7 @@
 // sideways. On a phone either one always looks broken.
 //
 // Measured on the rendered app at a phone and a desktop width, on Home and on
-// an open project, against the no-sign-in stack (./build.sh check starts it).
+// an open project, against the no-sign-in stack (./build.sh check --drives starts it).
 // Don't fix a failure with a global `overflow-x: hidden`; that hides the
 // overflow and breaks sticky positioning. Fix the wide element.
 //

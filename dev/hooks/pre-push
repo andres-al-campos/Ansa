@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # Before a push, the tests this push could affect; before a release,
-# `./build.sh deploy` runs everything (./build.sh check).
+# `./build.sh deploy` runs everything (./build.sh check --drives).
 #
 #  - Tests that import a changed file (vitest related).
 #  - Tests that read a changed file from disk instead of importing it, found by
