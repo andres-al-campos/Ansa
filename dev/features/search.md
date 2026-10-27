@@ -1,6 +1,6 @@
 # Search
 
-Updated 2026-10-25 00:34, at 0.1.0.
+Updated 2026-10-25 22:53, at 0.1.0.
 
 Find a task by its text. iOS only; the web has no search.
 
@@ -34,3 +34,16 @@ Last driven 2026-10-08: ✓, and ✗ against a build whose matching was broken.
 - The simulator tool's screenshot can keep returning the frame from the
   middle of the page's grow animation while the app has moved on. When the
   screen looks frozen, check with `xcrun simctl io booted screenshot`.
+- Search's list has to stay clear for the frost to be its one ground. A
+  pinned Section header paints its own ground, and a row with
+  `onGeometryChange` applied outside its `listRowBackground` loses its clear
+  ground and draws black; either cut a black stripe across the frost. So the
+  headings are plain rows, and the mark that finds the list's end sits inside
+  the last row's background.
+
+## Calls
+
+- 2026-10-25 22:59, 0.1.0. Search lies on one seamless frost that blurs the page behind it. No band,
+  header ground or row ground of its own cuts across it; the headings and
+  cards sit on the frost. Alejandro, on the black stripes: "it should just be
+  one seamless background." Applies none.

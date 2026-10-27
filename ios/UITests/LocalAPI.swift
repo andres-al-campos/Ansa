@@ -56,6 +56,25 @@ enum LocalAPI {
             .compactMap { $0["text"] as? String }
     }
 
+    /// The subtree under the project named `name`, one line per node, indented
+    /// by depth: what a failed shape check prints so it says what was built.
+    static func outline(ofProject name: String) async throws -> String {
+        let data = try await call("GET", "/api/tree")
+        let tree = (try JSONSerialization.jsonObject(with: data) as? [String: Any])?["tree"] as? [[String: Any]] ?? []
+        guard let root = tree.first(where: { $0["parentId"] as? String == nil && $0["text"] as? String == name })?["id"] as? String
+        else { return "no project named \"\(name)\"" }
+        func lines(_ parent: String, _ depth: Int) -> [String] {
+            tree.filter { $0["parentId"] as? String == parent }
+                .sorted { ($0["order"] as? Double ?? 0) < ($1["order"] as? Double ?? 0) }
+                .flatMap { node in
+                    [String(repeating: "  ", count: depth) + "\"\(node["text"] as? String ?? "")\""]
+                        + lines(node["id"] as? String ?? "", depth + 1)
+                }
+        }
+        let body = lines(root, 1)
+        return ([name] + (body.isEmpty ? ["  (nothing under it)"] : body)).joined(separator: "\n")
+    }
+
     /// A node as the Worker has it, or nil if it has none with that id.
     static func node(_ id: String) async throws -> [String: Any]? {
         let data = try await call("GET", "/api/tree")

@@ -1,6 +1,6 @@
 # Outline a project
 
-Updated 2026-10-25 00:34, at 0.1.0.
+Updated 2026-10-25 21:26, at 0.1.0.
 
 Write a project's tasks and break them down until the leaves are small enough
 to do. Projects are the top-level rows; everything else nests under them.
@@ -36,11 +36,24 @@ Preconditions: `./build.sh web --no-auth` running.
   Child B under it with Tab, and checks the nesting survives a reload.
 - `ios/build.sh drive outline` (~60s, simulator): makes a project from Home's +,
   names it, types Parent, then Child A with Indent and Child B, and checks that
-  shape on the Worker.
+  shape on the Worker. A second case types 14 rows and checks, against the
+  on-screen keyboard's frame, that the strip rides just above the keyboard and
+  the typed row stays above the strip. ✗ against a build with the strip as an
+  overlay rather than the list's inset: the row slid under it.
 
 Last driven 2026-10-06 by the script; by hand 2026-10-04, which also showed the
 first gotcha below. iOS 2026-10-09: ✓, and ✗ against a build whose Indent did
 nothing.
+
+## Calls
+
+- 2026-10-25 22:08, 0.1.0. Keys typed within about 100ms of Return on iOS are lost or land in the row
+  just left (see Gotchas). Accepted: only a test robot types that fast, and a
+  bug only a robot hits isn't worth the rework unless it breaks the app or
+  something you can see. The drives type around it instead. Applies none.
+- 2026-10-25 22:08, 0.1.0. Pasting several lines into a row joins them into one row. Kept: there's no
+  telling where a paste should break into rows, and one row is easy to split
+  by hand. Applies none.
 
 ## Gotchas
 
@@ -51,3 +64,9 @@ nothing.
   deletes it. Those deletes skip the trash on purpose.
 - The leaf-only view still exists in the web code with no toggle; Tab is
   disabled in it. See [Get around](get-around.md).
+- On iOS, keys typed within about 100ms of Return are lost or land in the row
+  just left: the new row's field takes focus a beat after Return. XCUITest on
+  the on-screen keyboard types that fast; a person doesn't, and a hardware
+  keyboard queues its keys. So drives end a `typeText` at each Return rather
+  than typing past it. Closing the gap would take one field that stays focused
+  across rows.
