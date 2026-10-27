@@ -375,15 +375,10 @@ The ones there: $(ls UITests | sed -n 's/Tests\.swift$//p' | sed -E 's/([a-z0-9]
     # common case is a rebuild against a simulator that is already correct, and
     # that case must not pay for one.
     #
-    # Xcode 27's Device Hub starts every device it boots with the hardware
-    # keyboard on unless its hidden alwaysSimulateHardwareKeyboard is false
-    # (27.1 has no Settings window for it). The setting lives in Device Hub's
-    # sandbox, which this script can't write, so it's set once by hand in
-    # Terminal.app:
-    #   defaults write com.apple.dt.Devices alwaysSimulateHardwareKeyboard -bool false
-    # then Device Hub reopened. Device → Keyboard → Simulate Hardware Keyboard
-    # turns it off for the running device only. The drives that type fail when
-    # no on-screen keyboard comes up, and say so.
+    # Xcode 27's Device Hub keeps its keyboard setting in its own sandbox,
+    # which this script can't write, so it isn't fixed here: a drive that types
+    # checks that the keyboard came up, and its failure message says how to
+    # turn the hardware keyboard off.
     if open -Ra Simulator 2>/dev/null &&
        [ "$(defaults read com.apple.iphonesimulator ConnectHardwareKeyboard 2>/dev/null)" != "0" ]; then
       echo "Switching the simulator to the software keyboard…"
