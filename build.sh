@@ -666,7 +666,7 @@ check() {
   echo "All checks passed."
 }
 
-# Point git at the repo's hooks (dev/hooks/pre-push runs the fast tests;
+# Point git at the repo's hooks (dev/hooks/pre-push runs ./build.sh check;
 # dev/hooks/pre-commit stamps the docs a commit changes). A git
 # setting rather than a committed file, so every entry point sets it.
 git -C "$(dirname "$0")" config core.hooksPath dev/hooks 2>/dev/null || true

@@ -1,72 +1,11 @@
-#!/usr/bin/env bash
-#
-# Before a push, the tests this push could affect; before a release,
-# `./build.sh deploy` runs everything (./build.sh check --drives).
-#
-#  - Tests that import a changed file (vitest related).
-#  - Tests that read a changed file from disk instead of importing it, found by
-#    the file's name appearing in the test's source. Over-includes; that's fine.
-#  - The laws and the npx law, always: they're cheap, and a fresh seed on every
-#    push is how the random laws build up coverage.
-#  - Law 4 (Swift and TypeScript agree) when the push changes an op.
-#
+#!/bin/sh
+# Runs ./build.sh check before a push: types, tests and laws, no window or simulator.
+# A push is the one place every change passes through, so the suite runs about once a
+# feature instead of once a change. Written by codecraft's stamp-hook/sync.sh.
 # Skip once with: git push --no-verify
-
-set -euo pipefail
-cd "$(git rev-parse --show-toplevel)"
-
-ALWAYS=(shared/ops.laws.test.ts scripts/npx-pinned.test.ts)
-OP_FILES=(
-  shared/ops.ts shared/tree.ts
-  ios/AnsaCore/Sources/AnsaCore/Tree.swift
-  ios/AnsaCore/Sources/AnsaCore/TreeMoves.swift
-  ios/AnsaCore/Sources/AnsaCore/Ops.swift
-  shared/ops.arbitraries.ts
-  ios/AnsaCore/Tools/agreement.ts ios/AnsaCore/Tools/check-agreement.sh
-)
-zero=0000000000000000000000000000000000000000
-
-changed=()
-unknown_base=false
-while read -r _ local_sha _ remote_sha; do
-  [ "$local_sha" = "$zero" ] && continue # deleting a branch
-  if [ "$remote_sha" = "$zero" ]; then
-    # A new branch: compare with what the remote's main already has.
-    base=$(git merge-base "$local_sha" origin/main 2>/dev/null || true)
-  else
-    base=$remote_sha
-  fi
-  if [ -z "$base" ]; then unknown_base=true; continue; fi
-  while IFS= read -r f; do [ -f "$f" ] && changed+=("$f"); done \
-    < <(git diff --name-only "$base" "$local_sha")
-done
-
-if $unknown_base; then
-  echo "pre-push: can't tell what this push changes, so running every TypeScript test …"
-  npm test --silent
-  touches_ops=true
-else
-  readers=()
-  for f in ${changed[@]+"${changed[@]}"}; do
-    name=$(basename "$f")
-    while IFS= read -r t; do readers+=("$t"); done \
-      < <(git grep -l -F "$name" -- '*.test.ts' '*.test.tsx' || true)
-  done
-  echo "pre-push: tests affected by ${#changed[@]} changed files, plus the laws …"
-  npx vitest related --run --passWithNoTests \
-    ${changed[@]+"${changed[@]}"} ${readers[@]+"${readers[@]}"} "${ALWAYS[@]}"
-  touches_ops=false
-  for f in ${changed[@]+"${changed[@]}"}; do
-    for o in "${OP_FILES[@]}"; do [ "$f" = "$o" ] && touches_ops=true; done
-  done
-fi
-
-if $touches_ops; then
-  if command -v swift >/dev/null 2>&1; then
-    echo "pre-push: this push changes an op, so checking Swift and TypeScript agree …"
-    ios/build.sh agree
-  else
-    echo "pre-push: this push changes an op, but swift isn't installed, so law 4 is skipped." >&2
-    echo "Run ios/build.sh agree on a Mac with Xcode before relying on the iOS app." >&2
-  fi
-fi
+cd "$(git rev-parse --show-toplevel)" || exit 1
+[ -x build.sh ] || exit 0
+echo "pre-push: running ./build.sh check (skip once with git push --no-verify) …"
+./build.sh check </dev/null && exit 0
+echo "pre-push: ./build.sh check failed, so nothing was pushed. Fix what it names above, then push again." >&2
+exit 1

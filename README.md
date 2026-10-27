@@ -84,9 +84,8 @@ else that doesn't need a person: `npm run drive`, which works the web app and
 the MCP in a headless browser, and the iOS drives on a simulator. It uses a
 `./build.sh web --no-auth` you already have running, or starts one and stops it
 when done. Run it for a feature in active development and before a release. `npm test` runs just the TypeScript suite. Before each
-push, `dev/hooks/pre-push` runs the tests the push could affect and the laws,
-plus the Swift/TypeScript agreement check when the push changes an op;
-`./build.sh` turns the hook on. `npm run build`
+push, `dev/hooks/pre-push` runs `./build.sh check`; `./build.sh` turns the
+hook on. `npm run build`
 type-checks and builds the app into `dist/`.
 
 ## Deploying
