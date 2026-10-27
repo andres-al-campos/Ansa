@@ -54,7 +54,7 @@ final class NoTwoAxisScrollTests: XCTestCase {
         // 128 characters.
         let row = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Bin \(word)")).firstMatch
         try need(row.waitForExistence(timeout: 5),
-            "\"\(name)\" opened without its long task. Check the row's text Button in OutlineView.swift, or, if the row is open, untick \"Simulate hardware keyboard by default\" in Device Hub's Settings, and Device → Keyboard → Simulate Hardware Keyboard on the device already running.")
+            "\"\(name)\" opened without its long task. Check the row's text Button in OutlineView.swift, or, if the row is open, untick Device → Keyboard → Simulate Hardware Keyboard in Device Hub; to keep it off on every boot, run in Terminal.app: defaults write com.apple.dt.Devices alwaysSimulateHardwareKeyboard -bool false, then reopen Device Hub.")
         try hold(app, on: "a project", drag: false)
 
         // Turned to landscape and back. The header once kept its landscape
@@ -105,7 +105,7 @@ final class NoTwoAxisScrollTests: XCTestCase {
             "\"\(name)\" doesn't show its second long task. Check the row list in OutlineView.swift.")
         wide.tap()
         try need(app.keyboards.firstMatch.waitForExistence(timeout: 5),
-            "Tapping the long task didn't open it for editing. Check the row's text Button in OutlineView.swift, or, if the row is open, untick \"Simulate hardware keyboard by default\" in Device Hub's Settings, and Device → Keyboard → Simulate Hardware Keyboard on the device already running.")
+            "Tapping the long task didn't open it for editing. Check the row's text Button in OutlineView.swift, or, if the row is open, untick Device → Keyboard → Simulate Hardware Keyboard in Device Hub; to keep it off on every boot, run in Terminal.app: defaults write com.apple.dt.Devices alwaysSimulateHardwareKeyboard -bool false, then reopen Device Hub.")
         try hold(app, on: "a project, editing a row", drag: false)
 
         print("✓ Home, a project (also turned to landscape and back), a row being edited, Search and Trash hold a 136-letter word without moving sideways")
