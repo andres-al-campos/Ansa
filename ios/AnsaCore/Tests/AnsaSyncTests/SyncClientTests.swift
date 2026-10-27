@@ -620,6 +620,13 @@ struct SyncClientTests {
         client.deliverForTesting(
             .op(.setText(id: "a", text: "one"), origin: "other",
                 hash: TreeOps.fingerprint([node("a", "something else")])))
+        // The refetch is a detached Task that hops to the backend and back, so
+        // wait for it to land rather than for a fixed few milliseconds: settle()
+        // expecting no sends returns at once, and under load the refetch had
+        // not arrived yet (4 failures in 25 runs on a busy Mac).
+        for _ in 0..<2000 where adopted().last != [node("a", "truth")] {
+            try? await Task.sleep(for: .milliseconds(1))
+        }
         await settle(api, expecting: 0)
 
         #expect(await api.loadTreeCalls == 1)
