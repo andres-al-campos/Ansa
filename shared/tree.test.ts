@@ -679,14 +679,17 @@ describe('newId', () => {
     }
 
     const [a, b] = [await fresh(), await fresh()]
-    const now = Date.now()
-    const batch = (mint: () => string) => Array.from({ length: 500 }, () => mint())
-    const ids = [...batch(a), ...batch(b)]
-
-    // Guard the premise: if this took longer than a millisecond the old scheme
-    // would have passed on timestamp alone and the test would prove nothing.
-    expect(Date.now() - now).toBeLessThan(50)
-    expect(new Set(ids).size).toBe(ids.length)
+    // The clock stands still, so both mint in the same millisecond: the old
+    // scheme can't pass on timestamp alone, however slow the machine is. A
+    // timing guard here failed whenever the Mac was busy.
+    vi.useFakeTimers({ toFake: ['Date'] })
+    try {
+      const batch = (mint: () => string) => Array.from({ length: 500 }, () => mint())
+      const ids = [...batch(a), ...batch(b)]
+      expect(new Set(ids).size).toBe(ids.length)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
 

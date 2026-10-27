@@ -1,6 +1,6 @@
 # Ansa features
 
-Updated 2026-10-25 12:08, at 0.1.0.
+Updated 2026-10-26 20:30, at 0.1.0.
 
 What a user can do with Ansa, how to reach it, and how to drive it. Read this
 before adding anything: if it's already here, extend it instead of building it
@@ -64,9 +64,10 @@ Ansa has had, or a Call cites a Principle that doesn't exist.
   the web app, a local MCP and the simulator all edit one tree. Use it for
   driving. Plain `./build.sh web` shows a sign-in wall on a machine with the
   Clerk secret in the Keychain.
-- `./build.sh check` runs the tests and then every drive below, starting a
-  no-sign-in stack if none is up. Run it before and after changing a feature.
-  If another project holds port 5173, `ANSA_APP_PORT=5174 ./build.sh check`.
+- `./build.sh check --drives` runs the tests and then every drive below,
+  starting a no-sign-in stack if none is up. Run it before and after changing
+  a feature. Plain `./build.sh check` stops before the drives. If another
+  project holds port 5173, `ANSA_APP_PORT=5174 ./build.sh check --drives`.
 - Doctor: `curl http://127.0.0.1:8787/api/health` should answer
   `{"ok":true,"auth":"dev"}` before driving. `npm run drive` checks this first.
 - `npm run drive` runs every web and MCP drive in a headless Chromium; name

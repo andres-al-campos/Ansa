@@ -77,14 +77,15 @@ key unset. If `CLERK_SECRET_KEY` is set in your shell or the Keychain, the key
 gets set too and you'll be asked to sign in; `./build.sh web --no-auth` skips
 both.
 
-`./build.sh check` checks everything that doesn't need a person: the
-typecheck, the TypeScript and Swift suites, the Swift-to-server wire and agreement checks, and
-`npm run drive`, which works the web app and the MCP in a headless browser. It
-uses a `./build.sh web --no-auth` you already have running, or starts one and
-stops it when done. `npm test` runs just the TypeScript suite. Before each
-push, `dev/hooks/pre-push` runs the tests the push could affect and the laws,
-plus the Swift/TypeScript agreement check when the push changes an op;
-`./build.sh` turns the hook on. `npm run build`
+`./build.sh check` runs the typecheck, the TypeScript and Swift suites, the
+Swift-to-server wire and agreement checks and the laws, in about a minute and a
+half with no server or simulator. `./build.sh check --drives` adds everything
+else that doesn't need a person: `npm run drive`, which works the web app and
+the MCP in a headless browser, and the iOS drives on a simulator. It uses a
+`./build.sh web --no-auth` you already have running, or starts one and stops it
+when done. Run it for a feature in active development and before a release. `npm test` runs just the TypeScript suite. Before each
+push, `dev/hooks/pre-push` runs `./build.sh check`; `./build.sh` turns the
+hook on. `npm run build`
 type-checks and builds the app into `dist/`.
 
 ## Deploying
@@ -93,7 +94,7 @@ type-checks and builds the app into `dist/`.
 ./build.sh deploy
 ```
 
-Runs `./build.sh check`, then ships the Worker and the app, checking each live URL before
+Runs `./build.sh check --drives`, then ships the Worker and the app, checking each live URL before
 moving on. `./build.sh deploy api` or `deploy app` when only one changed.
 
 The API goes first on purpose. If it fails, the old app is still talking to the

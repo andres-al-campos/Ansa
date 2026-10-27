@@ -1,6 +1,7 @@
 # Laws
 
-What must never happen, checked by `./build.sh check`. The feature map
+What must never happen, checked by `./build.sh check`; the rows that run on
+the stack or a simulator only with `--drives`. The feature map
 (`dev/features/`) says what must be possible; these say what must not.
 
 Each law fails saying where the rule broke and how to fix it. A new law must be
@@ -9,10 +10,10 @@ rather than this checkout.
 
 | Law | Checks |
 |---|---|
-| `no-two-axis-scroll.mjs` | the web app never scrolls sideways and nothing in it scrolls both ways, on Home and a long project, at phone and desktop widths |
+| `no-two-axis-scroll.mjs` | the web app never scrolls sideways and nothing in it scrolls both ways, on Home and a long project, at phone and desktop widths. Runs with `--drives` |
 | `no-two-axis-scroll.sh` | no SwiftUI `ScrollView` in `ios/Sources` is written to scroll on both axes. Source text only; the next row measures |
 | `ios/build.sh drive no-two-axis-scroll` | on the running iOS app, holding a 136-letter word alone and eight levels deep: nothing on Home, a project (also after turning to landscape and back), a row being edited, Search or Trash reaches past the screen's sides, and a sideways or diagonal drag leaves Home, a project and Trash where they were. Skips the keyboard and the vertical scroll bar, which iOS 27 reports as a plain element (not `.scrollBar`) and leaves hidden off-screen after a turn. Runs with the iOS drives |
-| `no-ios-warnings.sh` | a clean iOS build prints no warnings, apart from App Intents' note that it skipped a framework Ansa does not use |
+| `no-ios-warnings.sh` | an iOS build that recompiles every one of Ansa's files prints no warnings, apart from App Intents' note that it skipped a framework Ansa does not use |
 | `feature-map.mjs` | every row in `dev/features/README.md` has a file and every file a row; every file's Driving it leads each check with a command, and each named drive (`scripts/drive.mjs`) and iOS UI test (`ios/UITests/`) exists |
 | `doc-stamps.mjs` | feature files and their index carry an `Updated` stamp, every Principle and Call starts with a time and a version Ansa has had, and every Principle a Call cites exists |
 | `row-gestures.sh` | the iOS row arms its drag with `.simultaneousGesture(armGesture)` and the bullet's fold tap stays `.highPriorityGesture(bulletGesture)`, which no UI test can check |

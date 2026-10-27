@@ -9,7 +9,8 @@
 #   ./build.sh desktop      dev run of the desktop app (hot-reload window)
 #   ./build.sh web          run the local web stack: API + Vite app together
 #   ./build.sh web --no-auth  the same without sign-in, even with a Keychain secret
-#   ./build.sh check        typecheck, tests, then the drives and laws on a no-sign-in stack
+#   ./build.sh check        typecheck, tests and laws, no stack or simulator
+#   ./build.sh check --drives  all of that, then the web and iOS drives on a no-sign-in stack
 #   ./build.sh deploy       test, then publish the API and the app
 #   ./build.sh deploy api   the Worker only
 #   ./build.sh deploy app   the Pages bundle only
@@ -327,8 +328,8 @@ deploy() {
   # change could affect, so a release is where the whole of check runs. A
   # separate process rather than a call, so check's own set -e and stack trap
   # behave as they do when run directly.
-  echo "Running ./build.sh check before deploying …"
-  "$0" check
+  echo "Running ./build.sh check --drives before deploying …"
+  "$0" check --drives
 
   # Each half is checked immediately after it ships, not both at the end: when
   # the API is broken the app deploy should not go out on top of it.
@@ -589,12 +590,15 @@ desktop_dist() {
   fi
 }
 
-# Everything that can be checked without a person: types, the test suites, then
-# the drives against a no-sign-in stack. A stack already running in dev auth is
-# reused, so check works alongside `./build.sh web --no-auth`; otherwise check
-# starts one and stops it when done.
+# Everything that can be checked without a person. Plain check is types, the
+# test suites and the laws: about a minute and a half, with no stack, ports or
+# simulator, so any number of sessions can run it at once. --drives adds the
+# drives, for a feature in active development and before a release: a stack
+# already running in dev auth is reused, so it works alongside
+# `./build.sh web --no-auth`; otherwise it starts one and stops it when done.
 check() {
   trap - INT TERM EXIT
+  local drives=${1:-}
 
   echo "Typechecking …"
   npm run typecheck
@@ -608,8 +612,33 @@ check() {
   else
     echo "Skipping the AnsaCore, wire and agreement checks: swift isn't installed (needs Xcode on macOS)."
   fi
+  echo "Checking the laws …"
+  tests/no-two-axis-scroll.sh
+  tests/row-gestures.sh
+  tests/no-ios-warnings.sh
+  node tests/feature-map.mjs
+  node tests/doc-stamps.mjs
+  if [ "$drives" != "--drives" ]; then
+    echo "Fast checks passed. The drives didn't run: ./build.sh check --drives runs them."
+    return
+  fi
 
   local health="http://127.0.0.1:${API_PORT}/api/health"
+  # A stack already up is reused, so it has to be serving this checkout: one
+  # started in the main checkout or another worktree would pass the drives on
+  # that tree's code.
+  local port pid cwd here
+  here=$(git rev-parse --show-toplevel)
+  for port in "$API_PORT" "$APP_PORT"; do
+    pid=$(lsof -nP -iTCP:"$port" -sTCP:LISTEN -t 2>/dev/null | head -1)
+    [ -n "$pid" ] || continue
+    cwd=$(lsof -a -p "$pid" -d cwd -Fn 2>/dev/null | sed -n 's/^n//p')
+    if [ "$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null)" != "$here" ]; then
+      echo "Port ${port} is served from ${cwd:-another folder}, not this checkout, so the drives would test that code." >&2
+      echo "Stop that ./build.sh web (kill ${pid}) and re-run; check starts one here." >&2
+      exit 1
+    fi
+  done
   if ! curl -fsS "$health" 2>/dev/null | grep -q '"auth":"dev"'; then
     if curl -fsS "$health" >/dev/null 2>&1; then
       echo "The API on :${API_PORT} is running with sign-in, and the drives need it off." >&2
@@ -642,13 +671,7 @@ check() {
 
   echo "Running the drives …"
   ANSA_APP="$APP_URL" npm run drive
-  echo "Checking the laws …"
   ANSA_APP="$APP_URL" node tests/no-two-axis-scroll.mjs
-  tests/no-two-axis-scroll.sh
-  tests/row-gestures.sh
-  tests/no-ios-warnings.sh
-  node tests/feature-map.mjs
-  node tests/doc-stamps.mjs
   if command -v xcodebuild >/dev/null 2>&1; then
     echo "Running the iOS drives …"
     ios/build.sh drive
@@ -658,7 +681,7 @@ check() {
   echo "All checks passed."
 }
 
-# Point git at the repo's hooks (dev/hooks/pre-push runs the fast tests;
+# Point git at the repo's hooks (dev/hooks/pre-push runs ./build.sh check;
 # dev/hooks/pre-commit stamps the docs a commit changes). A git
 # setting rather than a committed file, so every entry point sets it.
 git -C "$(dirname "$0")" config core.hooksPath dev/hooks 2>/dev/null || true
@@ -676,7 +699,13 @@ case "${1:-}" in
     fi
     desktop; exit 0 ;;
   deploy) deploy "${2:-both}"; exit 0 ;;
-  check) check; exit 0 ;;
+  check)
+    if [ -n "${2:-}" ] && [ "$2" != "--drives" ]; then
+      echo "'check' takes only --drives." >&2
+      echo "Usage: ./build.sh check [--drives]" >&2
+      exit 1
+    fi
+    check "${2:-}"; exit 0 ;;
   web)
     if [ -n "${2:-}" ] && [ "$2" != "--no-auth" ]; then
       echo "'web' takes only --no-auth." >&2
@@ -686,7 +715,7 @@ case "${1:-}" in
     ;;
   *)
     echo "Unknown argument: $1" >&2
-    echo "Usage: ./build.sh [desktop | web | check | deploy [app|api]]" >&2
+    echo "Usage: ./build.sh [desktop | web | check [--drives] | deploy [app|api]]" >&2
     exit 1
     ;;
 esac
