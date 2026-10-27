@@ -907,6 +907,10 @@ private final class Box<T>: @unchecked Sendable {
 /// for a few consecutive turns, meaning no further send has landed. The sleep
 /// is short and the bound is generous, because the failure it guards against is
 /// a flaky suite rather than a slow one.
+///
+/// It waits for sends only. With `expecting: 0` it returns after about 10ms,
+/// so work that lands some other way (a refetch, a detached Task) needs its
+/// own wait for the outcome: mismatchRefetches flaked on exactly that.
 private func settle(_ api: FakeBackend, expecting: Int) async {
     // Wait for a specific count rather than for quiet. Polling only for
     // stability cannot tell "finished" from "has not started yet", and the
