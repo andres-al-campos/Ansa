@@ -630,9 +630,10 @@ check() {
   local port pid cwd here
   here=$(git rev-parse --show-toplevel)
   for port in "$API_PORT" "$APP_PORT"; do
-    pid=$(lsof -nP -iTCP:"$port" -sTCP:LISTEN -t 2>/dev/null | head -1)
+    # lsof exits 1 when nothing listens; under pipefail that would end check.
+    pid=$(lsof -nP -iTCP:"$port" -sTCP:LISTEN -t 2>/dev/null | head -1 || true)
     [ -n "$pid" ] || continue
-    cwd=$(lsof -a -p "$pid" -d cwd -Fn 2>/dev/null | sed -n 's/^n//p')
+    cwd=$(lsof -a -p "$pid" -d cwd -Fn 2>/dev/null | sed -n 's/^n//p' || true)
     if [ "$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null)" != "$here" ]; then
       echo "Port ${port} is served from ${cwd:-another folder}, not this checkout, so the drives would test that code." >&2
       echo "Stop that ./build.sh web (kill ${pid}) and re-run; check starts one here." >&2
