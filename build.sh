@@ -615,6 +615,7 @@ check() {
   echo "Checking the laws …"
   tests/no-two-axis-scroll.sh
   tests/row-gestures.sh
+  tests/phone-id.sh
   tests/no-ios-warnings.sh
   node tests/feature-map.mjs
   node tests/doc-stamps.mjs

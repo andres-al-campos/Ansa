@@ -140,23 +140,14 @@ Re-run without the output filter to see the full log:
   printf '%s' "$app"
 }
 
-# The identifier of a paired iPhone, or instructions for pairing one.
-#
-# Any paired phone counts, including one the listing calls "disconnected".
-# That state is stale rather than true — `list devices` reports the last
-# session until something opens a tunnel, and `devicectl install` opens one
-# itself. Requiring a live tunnel here rejects phones that would install fine.
+# The identifier of a paired iPhone, or instructions for pairing one. The
+# reading of the listing is tools/phone-id.sh, held by tests/phone-id.sh.
 #
 # Only devicectl needs an id: the build targets generic/platform=iOS, so
-# xcodebuild is never told which phone this is. That also sidesteps its separate
-# naming scheme — it wants a hardware ECID and rejects devicectl's UUID with
-# "unable to find a device matching the destination specifier".
+# xcodebuild is never told which phone this is.
 device_udid() {
   local udid
-  udid=$(xcrun devicectl list devices 2>/dev/null \
-    | grep -iE 'available|connected' \
-    | grep -oiE '[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}' \
-    | head -1) || udid=""
+  udid=$(xcrun devicectl list devices 2>/dev/null | tools/phone-id.sh) || udid=""
 
   [ -n "$udid" ] && { printf '%s' "$udid"; return; }
 
