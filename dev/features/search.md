@@ -1,6 +1,6 @@
 # Search
 
-Updated 2026-10-27 20:14, at 0.1.0.
+Updated 2026-10-28 13:19, at 0.1.0.
 
 Find a task by its text. iOS only; the web has no search.
 
@@ -41,6 +41,13 @@ Last driven 2026-10-08: ✓, and ✗ against a build whose matching was broken.
   ground and draws black; either cut a black stripe across the frost. So the
   headings are plain rows, and the mark that finds the list's end sits inside
   the last row's background.
+
+- A scroll takes the keys down through Search's own focus binding, as a tap
+  does, not through `.scrollDismissesKeyboard`. Left to the List, the keys
+  slid down while the field snapped to Home's line in one frame, so the
+  keyboard seemed to vanish. To check a change here, record the simulator
+  (`xcrun simctl io booted recordVideo`) and look at the frames; a
+  screenshot after the fact shows the same end state either way.
 
 ## Calls
 

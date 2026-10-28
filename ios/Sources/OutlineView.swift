@@ -4987,6 +4987,27 @@ private struct PinnedTaskRow: View {
 /// Search. Before anything is typed, the places you were in last, newest
 /// first; after, what matches, on Home's cards either way. The field is the
 /// slab's bottom inset rather than part of this, so it can ride the keyboard.
+/// A scroll takes the keyboard down, through the same focus change a tap
+/// makes. Left to `.scrollDismissesKeyboard`, the List resigns the field
+/// itself: the keys slide down but the field snaps to Home's line in one
+/// frame, ahead of them. Recorded on the simulator, next to a tap that rode
+/// down with the keys.
+private struct DismissKeysOnScroll: ViewModifier {
+    let dismiss: () -> Void
+
+    func body(content: Content) -> some View {
+        if #available(iOS 18, *) {
+            content
+                .scrollDismissesKeyboard(.never)
+                .onScrollPhaseChange { _, phase in
+                    if phase == .interacting { dismiss() }
+                }
+        } else {
+            content.scrollDismissesKeyboard(.immediately)
+        }
+    }
+}
+
 private struct SearchPage: View {
     let tree: Tree
     let store: OutlineStore
@@ -5023,7 +5044,7 @@ private struct SearchPage: View {
         .listStyle(.plain)
         // Clear: the frost under it is the ground.
         .scrollContentBackground(.hidden)
-        .scrollDismissesKeyboard(.immediately)
+        .modifier(DismissKeysOnScroll(dismiss: onTapAway))
         .simultaneousGesture(
             // Global, as `end` is. Measured in a space named on the List, the
             // row's end came out about 106pt below the tap's frame, so taps
