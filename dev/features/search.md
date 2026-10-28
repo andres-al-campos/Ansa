@@ -69,4 +69,4 @@ Last driven 2026-10-08: ✓, and ✗ against a build whose matching was broken.
   means you're done typing. The field rises and falls on the grow's curve,
   0.25s both ways; a shorter ease on the way down read as abrupt. Alejandro:
   "dragging on the search result means you're not using the kb so it should
-  dismiss it." Applies *Stays under the thumb*.
+  dismiss it." Applies *A touch elsewhere ends what you were doing*.
