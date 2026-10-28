@@ -11,8 +11,8 @@ its own `AGENTS.md`.
 
 ## Principles
 
-How Ansa ought to be, so a session can decide a case nobody has met yet. Each
-earns its place by deciding Calls, the rulings in `dev/features/`, which end by
+The whys behind how Ansa ought to be, so a session can decide a case nobody
+has met yet, and see where a rule stops. Each earns its place by deciding Calls, the rulings in `dev/features/`, which end by
 naming the principle they apply. Listed in the order they were written; when
 two disagree on a case, the owner decides and the winner moves up. The hook in
 `dev/hooks/` starts each with the time and version it was made or reworded at.
@@ -21,13 +21,13 @@ A rule a machine can check becomes a law instead.
 The bar is look, feel and correct logic. It's a personal app, and small
 leftovers are fine.
 
-- 2026-10-22 19:10, 0.1.0. **Stays under the thumb.** What the user is touching moves with them
-  one-to-one, and what's the same from screen to screen doesn't move, so the
-  page always feels like it is in the same place under the thumb.
-- 2026-10-28 13:42, 0.1.0. **A touch elsewhere ends what you were doing.** Putting a finger on
-  something new says what you are doing now, so whatever you were in the
-  middle of gets out of the way without being asked: a drag on Search's
-  results takes the keyboard down, and a tap on bare frost closes Search.
+- 2026-10-28 14:05, 0.1.0. **Feels like a real object.** What you touch moves with you as a thing in
+  your hand would, and what you aren't touching stays put. Why: it should feel
+  like handling something real, and when the screen breaks that, it jars.
+- 2026-10-28 14:05, 0.1.0. **A touch elsewhere ends what you were doing.** A drag on Search's results
+  takes the keyboard down, and a tap on bare frost closes Search, without
+  being asked. Why: where you put your finger says what you are doing now,
+  and making you tidy up the last thing first is a chore the app can do.
 
 What matters a lot, a little, and not at all in Ansa isn't answered yet.
 
