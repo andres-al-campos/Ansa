@@ -5008,7 +5008,7 @@ private struct SearchPage: View {
     /// The trash, read once when Search opens. Deleted nodes are not in the
     /// tree, so this is the only way to know a match is in there.
     @State private var trash: [TrashEntry] = []
-    /// Where the list's last row ends, in the list's own space. Below it is
+    /// Where the list's last row ends, in the window's space. Below it is
     /// bare frost. Infinite while the end is scrolled out of sight, when
     /// there is none.
     @State private var end: CGFloat = .infinity
@@ -5025,15 +5025,15 @@ private struct SearchPage: View {
         // Clear: the frost under it is the ground.
         .scrollContentBackground(.hidden)
         .scrollDismissesKeyboard(.immediately)
-        .coordinateSpace(.named(Self.space))
         .simultaneousGesture(
-            SpatialTapGesture(coordinateSpace: .named(Self.space)).onEnded { tap in
+            // Global, as `end` is. Measured in a space named on the List, the
+            // row's end came out about 106pt below the tap's frame, so taps
+            // just under the last card read as taps on a row.
+            SpatialTapGesture(coordinateSpace: .global).onEnded { tap in
                 if tap.location.y > end { onTapBare() } else { onTapAway() }
             })
         .task { await loadTrash() }
     }
-
-    nonisolated private static let space = "searchPage"
 
     @ViewBuilder private var recent: some View {
         let places = TreeOps.recentlyVisited(tree, excluding: from)
@@ -5123,7 +5123,7 @@ private struct SearchPage: View {
             if on {
                 content
                     .onGeometryChange(for: CGFloat.self) {
-                        $0.frame(in: .named(SearchPage.space)).maxY
+                        $0.frame(in: .global).maxY
                     } action: { end = $0 }
                     .onDisappear { end = .infinity }
             } else {
