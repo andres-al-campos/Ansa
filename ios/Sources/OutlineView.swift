@@ -1402,8 +1402,7 @@ struct OutlineView: View {
     }
 
     /// Every move of the field: the grow, the shrink, and rising and falling
-    /// with the keys. One curve, so going down is as smooth as coming up;
-    /// a shorter ease on the way down read as abrupt.
+    /// with the keys. One curve, so going down matches coming up.
     private let searchMotion = Animation.timingCurve(0.25, 0.9, 0.3, 1, duration: Self.searchGrow)
     private static let searchGrow: TimeInterval = 0.25
 
