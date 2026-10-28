@@ -5007,6 +5007,31 @@ private struct DismissKeysOnScroll: ViewModifier {
     }
 }
 
+/// Where a scroll view's content starts, in the window's space: the list's
+/// top less how far it has scrolled. The list runs up under the header, so
+/// its frame alone can't say where the rows begin.
+private struct ContentStart: ViewModifier {
+    @Binding var start: CGFloat
+    @State private var top: CGFloat = 0
+    @State private var offset: CGFloat = 0
+
+    func body(content: Content) -> some View {
+        if #available(iOS 18, *) {
+            content
+                .onGeometryChange(for: CGFloat.self) { $0.frame(in: .global).minY } action: {
+                    top = $0
+                    start = top - offset
+                }
+                .onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.y } action: {
+                    offset = $1
+                    start = top - offset
+                }
+        } else {
+            content
+        }
+    }
+}
+
 private struct SearchPage: View {
     let tree: Tree
     let store: OutlineStore
@@ -5031,6 +5056,9 @@ private struct SearchPage: View {
     /// bare frost. Infinite while the end is scrolled out of sight, when
     /// there is none.
     @State private var end: CGFloat = .infinity
+    /// Where the list's first row starts, in the window's space. Above it,
+    /// over the header, is bare frost too while nothing has scrolled there.
+    @State private var start: CGFloat = -.infinity
 
     var body: some View {
         List {
@@ -5044,12 +5072,14 @@ private struct SearchPage: View {
         // Clear: the frost under it is the ground.
         .scrollContentBackground(.hidden)
         .modifier(DismissKeysOnScroll(dismiss: onTapAway))
+        .modifier(ContentStart(start: $start))
         .simultaneousGesture(
             // Global, as `end` is. Measured in a space named on the List, the
             // row's end came out about 106pt below the tap's frame, so taps
             // just under the last card read as taps on a row.
             SpatialTapGesture(coordinateSpace: .global).onEnded { tap in
-                if tap.location.y > end { onTapBare() } else { onTapAway() }
+                if tap.location.y > end || tap.location.y < start { onTapBare() }
+                else { onTapAway() }
             })
         .task { await loadTrash() }
     }

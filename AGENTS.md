@@ -24,12 +24,10 @@ leftovers are fine.
 - 2026-10-22 19:10, 0.1.0. **Stays under the thumb.** What the user is touching moves with them
   one-to-one, and what's the same from screen to screen doesn't move, so the
   page always feels like it is in the same place under the thumb.
-- 2026-10-28 13:36, 0.1.0. **A touch elsewhere ends what you were doing.** Putting a finger on
+- 2026-10-28 13:42, 0.1.0. **A touch elsewhere ends what you were doing.** Putting a finger on
   something new says what you are doing now, so whatever you were in the
   middle of gets out of the way without being asked: a drag on Search's
   results takes the keyboard down, and a tap on bare frost closes Search.
-  *Stays under the thumb* covers only what is under the finger; this one
-  covers everything else.
 
 What matters a lot, a little, and not at all in Ansa isn't answered yet.
 
