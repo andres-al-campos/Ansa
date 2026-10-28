@@ -54,3 +54,12 @@ Last driven 2026-10-08: ✓, and ✗ against a build whose matching was broken.
   it. A sharp header over heavy frost read as a new page under the old
   header. Alejandro: "the experience should be it's a tool on top of where
   I'm currently at." Applies none.
+- 2026-10-28 13:11, 0.1.0. Search's list starts under the header, so at rest you see where you are,
+  and scrolls up to the screen's edge over it. A blurred title band left
+  above scrolled results said nothing. A sharp title was the other way out,
+  and the Call above already turned it down. Applies none.
+- 2026-10-28 13:11, 0.1.0. Dragging the results takes the keyboard down at once: dragging the list
+  means you're done typing. The field rises and falls on the grow's curve,
+  0.25s both ways; a shorter ease on the way down read as abrupt. Alejandro:
+  "dragging on the search result means you're not using the kb so it should
+  dismiss it." Applies *Stays under the thumb*.

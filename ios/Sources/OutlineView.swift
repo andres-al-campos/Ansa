@@ -295,7 +295,7 @@ struct OutlineView: View {
             // the shrink, which move it themselves.
             .onChange(of: searchFocused) { _, focused in
                 guard inSearch, !searchLeaving, searchSpot != .tucked else { return }
-                withAnimation(.easeOut(duration: 0.25)) { searchSpot = focused ? .up : .low }
+                withAnimation(searchMotion) { searchSpot = focused ? .up : .low }
             }
             .onChange(of: scenePhase) { _, phase in
                 switch phase {
@@ -1401,10 +1401,11 @@ struct OutlineView: View {
             }
     }
 
-    /// The grow and the shrink. A guess at the keyboard's own curve, to be
-    /// judged on the phone.
+    /// Every move of the field: the grow, the shrink, and rising and falling
+    /// with the keys. One curve, so going down is as smooth as coming up;
+    /// a shorter ease on the way down read as abrupt.
     private let searchMotion = Animation.timingCurve(0.25, 0.9, 0.3, 1, duration: Self.searchGrow)
-    private static let searchGrow: TimeInterval = 0.3
+    private static let searchGrow: TimeInterval = 0.25
 
     /// How far Search blurs the screen under it, and how much of the
     /// background it lays over that. Guesses, to be judged on the phone.
@@ -1435,7 +1436,11 @@ struct OutlineView: View {
                 onOpenTrash: { if interactive { openTrashFromSearch() } },
                 onTapAway: { if interactive { searchFocused = false } },
                 onTapBare: { if interactive { zoomOut() } })
-            .padding(.top, top)
+            // A margin rather than padding: the first row starts under the
+            // header, so at rest you see where you are, but scrolled the
+            // results take the screen up to its edge. Padding left a band of
+            // blurred header over them that said nothing.
+            .contentMargins(.top, top, for: .scrollContent)
         }
         .opacity(shown ? 1 : 0)
         .allowsHitTesting(shown)
