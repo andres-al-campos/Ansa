@@ -1,6 +1,6 @@
 # Search
 
-Updated 2026-10-25 22:53, at 0.1.0.
+Updated 2026-10-27 20:14, at 0.1.0.
 
 Find a task by its text. iOS only; the web has no search.
 
@@ -15,6 +15,7 @@ Find a task by its text. iOS only; the web has no search.
 ## How to get to it
 
 - iOS: the Search circle, beside Home at the bottom left; the field grows out of it over the current screen.
+- Close it with the ✕ on an empty field, or a tap on bare frost (the header's area included).
 
 ## Driving it
 
@@ -47,3 +48,9 @@ Last driven 2026-10-08: ✓, and ✗ against a build whose matching was broken.
   header ground or row ground of its own cuts across it; the headings and
   cards sit on the frost. Alejandro, on the black stripes: "it should just be
   one seamless background." Applies none.
+- 2026-10-27 20:14, 0.1.0. Search is a tool over the screen you are on, not a page you go to, so it
+  has no place in Back's path. Its frost covers the header too, light enough
+  that the screen shows through as itself, and a tap on bare frost closes
+  it. A sharp header over heavy frost read as a new page under the old
+  header. Alejandro: "the experience should be it's a tool on top of where
+  I'm currently at." Applies none.

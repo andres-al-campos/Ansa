@@ -67,6 +67,9 @@ struct OutlineView: View {
     /// Where Search's field is. Separate from focus because the grow starts
     /// before the field can take it, and the shrink runs after it has let go.
     @State private var searchSpot: SearchSpot = .tucked
+    /// The page's top in the slab, where Search's list starts.
+    @State private var searchTop: CGFloat = 0
+    nonisolated private static let slabSpace = "slab"
     /// Search is closing onto a page that has just replaced the one under it:
     /// the new page's field shrinks when it appears.
     @State private var searchLeaving = false
@@ -511,11 +514,8 @@ struct OutlineView: View {
     /// Parameterised on scope and trash for the same reason `slab` is: the two
     /// copies on screen during a swipe are different screens and must not share
     /// a title.
-    ///
-    /// `veiled` is Search up over the page: the words go soft and pale, the
-    /// band stays, so the header still says where closing Search goes.
     @ViewBuilder private func header(
-        for scope: NodeId?, interactive: Bool, trash: Bool, veiled: Bool = false,
+        for scope: NodeId?, interactive: Bool, trash: Bool,
         fade: HeaderFade = HeaderFade()
     ) -> some View {
         // No band with no scope: that is Home, which draws its own top row.
@@ -558,7 +558,6 @@ struct OutlineView: View {
                     scopeMenu.disabled(!interactive).opacity(fade.menu)
                 }
             }
-            .veiled(veiled)
             // No fixed height. The buttons carry their own 44pt hit target, so
             // the band lands in the same place the system bar did without a
             // number that a larger Dynamic Type setting would then be squeezed
@@ -785,32 +784,21 @@ struct OutlineView: View {
         restoring: ScrollAnchor? = nil, homeBack: Bool = false
     ) -> some View {
             // Search is up and grown, not just tucked into its circle on its way
-            // in or out. What the header's veil and the frost follow.
-            let veiled = search != nil && (!interactive || searchSpot != .tucked)
+            // in or out. What the frost follows.
+            let frosted = search != nil && (!interactive || searchSpot != .tucked)
             let fade = headerFade(live: interactive)
             VStack(spacing: 0) {
-                // Under Search the header stays, veiled, and is one target
-                // that closes it: it is the page you go back to.
+                // Under Search the header is frosted over with the page: both
+                // are where closing Search goes back to.
                 Group {
                     if home(scope, trash: trash) {
                         homeTopRow(
                             interactive: interactive && search == nil, back: homeBack,
-                            veiled: veiled, fade: fade)
+                            fade: fade)
                     } else {
                         header(
                             for: scope, interactive: interactive && search == nil,
-                            trash: trash, veiled: veiled, fade: fade)
-                    }
-                }
-                .overlay {
-                    if search != nil {
-                        Color.clear
-                            .contentShape(Rectangle())
-                            .highPriorityGesture(
-                                TapGesture().onEnded { zoomOut() },
-                                including: interactive ? .all : .none)
-                            .accessibilityLabel("Close search")
-                            .accessibilityAddTraits(.isButton)
+                            trash: trash, fade: fade)
                     }
                 }
 
@@ -884,14 +872,26 @@ struct OutlineView: View {
                 // has proved it is horizontal — before that a drifting scroll must
                 // still be able to scroll.
                 .scrollDisabled(interactive && (backPull > 0 || drag.isActive || rowSwiping))
-                .overlay {
-                    if let search {
-                        slides(
-                            searchLayer(
-                                query: search, scope: scope, trash: trash,
-                                interactive: interactive, shown: veiled),
-                            live: interactive, shaded: true, ground: false)
-                    }
+                // Where Search's list starts: under the header, as the page does.
+                .onGeometryChange(for: CGFloat.self) {
+                    $0.frame(in: .named(Self.slabSpace)).minY
+                } action: { searchTop = $0 }
+            }
+            .coordinateSpace(.named(Self.slabSpace))
+            // The frost's blur, on the screen itself rather than a material:
+            // a material's radius is fixed and large, and turned this page's
+            // lines into an even grey with nothing of the page left in it.
+            .blur(radius: frosted ? Self.frostBlur : 0)
+            // Over the header as well as the page, so Search is one layer on
+            // the screen you are on rather than a page under that screen's
+            // header.
+            .overlay {
+                if let search {
+                    slides(
+                        searchLayer(
+                            query: search, scope: scope, trash: trash, top: searchTop,
+                            interactive: interactive, shown: frosted),
+                        live: interactive, shaded: true, ground: false)
                 }
             }
         // Over the list rather than below it, so it costs no height — and as a
@@ -1406,26 +1406,28 @@ struct OutlineView: View {
     private let searchMotion = Animation.timingCurve(0.25, 0.9, 0.3, 1, duration: Self.searchGrow)
     private static let searchGrow: TimeInterval = 0.3
 
-    /// Heavy frost over the page and Search's list on it, below the header.
+    /// How far Search blurs the screen under it, and how much of the
+    /// background it lays over that. Guesses, to be judged on the phone.
+    private static let frostBlur: CGFloat = 10
+    private static let frostTint: Double = 0.45
+
+    /// Frost over the whole screen, header included, and Search's list on it
+    /// from `top` down.
     ///
-    /// The frost is what makes the results read the same whatever is under
-    /// them. On Home its top edge fades, since the account row has no bar
-    /// for it to stop at.
+    /// Light enough that the screen you are on still shows through as itself:
+    /// Search is a tool over it, not a place you went. The results sit on
+    /// their own cards, so they read the same whatever is under them. A tap
+    /// on bare frost closes Search; the list takes its own taps.
     private func searchLayer(
-        query: String, scope: NodeId?, trash: Bool, interactive: Bool, shown: Bool
+        query: String, scope: NodeId?, trash: Bool, top: CGFloat, interactive: Bool,
+        shown: Bool
     ) -> some View {
-        let soft = home(scope, trash: trash)
-        return ZStack {
+        ZStack(alignment: .top) {
             Rectangle()
-                .fill(.thickMaterial)
-                .mask {
-                    VStack(spacing: 0) {
-                        LinearGradient(colors: [.clear, .black], startPoint: .top, endPoint: .bottom)
-                            .frame(height: soft ? 28 : 0)
-                        Color.black
-                    }
-                }
-                .ignoresSafeArea(edges: .bottom)
+                .fill(Color(.systemBackground).opacity(Self.frostTint))
+                .ignoresSafeArea()
+                .contentShape(Rectangle())
+                .onTapGesture { if interactive { zoomOut() } }
             SearchPage(
                 tree: tree, store: store, query: query, from: trash ? nil : scope,
                 onOpen: { if interactive { openFromSearch($0) } },
@@ -1433,6 +1435,7 @@ struct OutlineView: View {
                 onOpenTrash: { if interactive { openTrashFromSearch() } },
                 onTapAway: { if interactive { searchFocused = false } },
                 onTapBare: { if interactive { zoomOut() } })
+            .padding(.top, top)
         }
         .opacity(shown ? 1 : 0)
         .allowsHitTesting(shown)
@@ -1562,7 +1565,7 @@ struct OutlineView: View {
     /// somewhere. Apart from the lists so Search can draw below it, the same
     /// as a project's header.
     private func homeTopRow(
-        interactive: Bool, back: Bool, veiled: Bool, fade: HeaderFade = HeaderFade()
+        interactive: Bool, back: Bool, fade: HeaderFade = HeaderFade()
     ) -> some View {
         HStack(spacing: Space.row) {
             // Back to where you were, greyed when you came from nowhere —
@@ -1595,7 +1598,6 @@ struct OutlineView: View {
                 .accessibilityLabel("Settings")
                 .accessibilityAddTraits(.isButton)
         }
-        .veiled(veiled)
         .opacity(fade.words)
         .padding(.leading, Space.gutter)
         .padding(.trailing, Space.row)
@@ -1872,7 +1874,7 @@ struct OutlineView: View {
 
     /// Whether the edge swipe can take a touch. Not while Search is up: the
     /// swipe would pull the layer sideways while the field wants to shrink
-    /// down into its circle. The ✕, the header and bare frost close it.
+    /// down into its circle. The ✕ and bare frost, over the header too, close it.
     private var canSwipeBack: Bool { canGoBack && !inSearch }
 
     /// The rows the outline draws, flattened depth-first with a folded subtree
@@ -3484,14 +3486,6 @@ private struct FieldSurface: ViewModifier {
                 .background(Capsule().fill(.regularMaterial))
                 .shadow(color: .black.opacity(0.12), radius: 6, y: 2)
         }
-    }
-}
-
-extension View {
-    /// A header under Search: soft and pale enough to read as behind the
-    /// results, sharp enough to still say where closing Search goes.
-    func veiled(_ on: Bool) -> some View {
-        blur(radius: on ? 1.5 : 0).opacity(on ? 0.6 : 1)
     }
 }
 
