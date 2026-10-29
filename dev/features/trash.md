@@ -1,6 +1,6 @@
 # Trash
 
-Updated 2026-10-25 00:34, at 0.1.0.
+Updated 2026-10-28 23:39, at 0.1.0.
 
 Deleted tasks wait 30 days in the trash, where they can be put back.
 
@@ -16,7 +16,8 @@ Deleted tasks wait 30 days in the trash, where they can be put back.
 
 - Web: Trash in the sidebar. Delete with ⌘/Ctrl+Backspace on a row, or a
   project's two-step delete (trash icon, then ✓).
-- iOS: swipe a row left to delete; Trash row on Home. In Trash the rows swipe
+- iOS: swipe a row left to delete, a task in the outline or a project on
+  Home (a project asks first); Trash row on Home. In Trash the rows swipe
   like a project's: left deletes for good (it asks first), right restores.
 
 ## Driving it
@@ -28,11 +29,13 @@ Preconditions: `./build.sh web --no-auth` running.
 - `ios/build.sh drive trash` (~70s, simulator): by thumb, a full left
   swipe deletes the task; in Trash, a left swipe asks and Cancel leaves the row in
   place, a right swipe from the screen's edge goes Back without restoring, and a
-  right swipe restores. Each step is read on screen and on the Worker.
+  right swipe restores. A second test swipes a project left on Home: it asks,
+  Cancel leaves it in place, and Delete sends it to Trash. Each step is read
+  on screen and on the Worker.
 
 Every drive also ends with Trash's Delete, which removes its project for good.
 
-Last driven 2026-10-06, web; 2026-10-09, iOS: ✓, and ✗ against builds whose
+Last driven 2026-10-06, web; 2026-10-28, iOS: ✓, and ✗ against builds whose
 swipe didn't delete, whose Restore never reached the Worker, whose Trash rows
 ignored the back swipe, whose delete swipe rode out before asking, and whose
 delete asked in a dialog at the row rather than an alert. Not

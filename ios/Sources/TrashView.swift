@@ -115,11 +115,11 @@ struct TrashView: View {
                                 // Springs home: the alert asks first, and a
                                 // cancel has to find the row where it was.
                                 left: RowSwipeAction(
-                                    name: "Delete", glyph: "trash.fill", tint: .red,
+                                    name: "Delete", glyph: .symbol("trash.fill"), tint: .red,
                                     leaves: false,
                                     run: { confirming = entry }),
                                 right: RowSwipeAction(
-                                    name: "Restore", glyph: "arrow.up.bin",
+                                    name: "Restore", glyph: .symbol("arrow.up.bin"),
                                     tint: .accentColor, leaves: true,
                                     run: { Task { await restore(entry) } }),
                                 onSwipingChanged: onSwipingChanged

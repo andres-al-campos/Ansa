@@ -7,7 +7,7 @@ struct RowSwipeAction {
     /// also offered by name, as `swipeActions` did before this was hand-built.
     let name: String
     /// The glyph on the band the row uncovers.
-    let glyph: String
+    let glyph: Glyph
     /// The band's colour.
     let tint: Color
     /// Whether the row rides out past the edge on release. Only for an action
@@ -16,6 +16,13 @@ struct RowSwipeAction {
     /// would leave a live row parked off screen.
     let leaves: Bool
     let run: () -> Void
+
+    enum Glyph {
+        case symbol(String)
+        /// Ansa's own pin lying over, which the menus use for Unpin. There is
+        /// no SF Symbol of it; see `PinIcon`.
+        case unpin
+    }
 }
 
 /// The horizontal swipe on an outline row: the gesture, the offset it drives,
@@ -34,9 +41,13 @@ struct RowSwipeView<Content: View>: View {
     /// down rather than competing with a carry or a back swipe.
     let inert: Bool
     /// Finger travelling left, and right. An outline row deletes and zooms; a
-    /// Trash row deletes for good and restores.
+    /// Trash row deletes for good and restores. A Home row only goes left:
+    /// Home is the top, so there is nothing for a right swipe to go into.
     let left: RowSwipeAction
-    let right: RowSwipeAction
+    var right: RowSwipeAction? = nil
+    /// What covers the band behind the content while a swipe is open. A Home
+    /// row sits on a card, not on the page.
+    var groundColor: Color = Color(.systemBackground)
     let onSwipingChanged: (Bool) -> Void
     /// The content, told whether a tap arriving now is a swipe's tail. A Button
     /// in a List keeps its tap through a sibling DragGesture, so without this
@@ -80,8 +91,8 @@ struct RowSwipeView<Content: View>: View {
                 }
             }
             .simultaneousGesture(gesture)
-            .accessibilityAction(named: Text(left.name)) { left.run() }
-            .accessibilityAction(named: Text(right.name)) { right.run() }
+            .modifier(NamedAction(action: left))
+            .modifier(NamedAction(action: right))
             .onDisappear {
                 motion.stopReturn()
                 if direction != nil { onSwipingChanged(false) }
@@ -102,7 +113,7 @@ struct RowSwipeView<Content: View>: View {
     @ViewBuilder private var ground: some View {
         if settling != nil {
             Rectangle()
-                .fill(Color(.systemBackground))
+                .fill(groundColor)
                 .padding(.vertical, -vPadding)
         }
     }
@@ -114,20 +125,29 @@ struct RowSwipeView<Content: View>: View {
         if let settling {
             ZStack(alignment: settling == .left ? .trailing : .leading) {
                 HStack(spacing: 0) {
-                    right.tint
+                    (right?.tint ?? .clear)
                         .opacity(settling == .right && armed ? 1 : 0.5)
                     left.tint
                         .opacity(settling == .left && armed ? 1 : 0.5)
                 }
                 if let action {
-                    Image(systemName: action.glyph)
+                    glyph(action.glyph)
                         .foregroundStyle(.white.opacity(armed ? 1 : 0.85))
-                        .font(.system(size: armed ? 24 : 21, weight: .medium))
                         .frame(width: abs(offset))
                 }
             }
             .animation(.easeOut(duration: 0.12), value: armed)
             .padding(.vertical, -vPadding)
+        }
+    }
+
+    @ViewBuilder private func glyph(_ glyph: RowSwipeAction.Glyph) -> some View {
+        switch glyph {
+        case .symbol(let name):
+            Image(systemName: name)
+                .font(.system(size: armed ? 24 : 21, weight: .medium))
+        case .unpin:
+            PinIcon(over: true, size: armed ? 24 : 21)
         }
     }
 
@@ -240,6 +260,19 @@ struct RowSwipeView<Content: View>: View {
     /// switch back.
     private func springBack() {
         motion.returnHome { settling = nil }
+    }
+}
+
+/// A swipe's action offered to VoiceOver by name, when there is one.
+private struct NamedAction: ViewModifier {
+    let action: RowSwipeAction?
+
+    func body(content: Content) -> some View {
+        if let action {
+            content.accessibilityAction(named: Text(action.name)) { action.run() }
+        } else {
+            content
+        }
     }
 }
 

@@ -1624,6 +1624,9 @@ struct OutlineView: View {
             onSubmit: submitProjectName,
             onMoveProject: moveProject,
             onMovePin: movePin,
+            onDelete: { pendingDelete = TreeOps.byId(tree, $0) },
+            onUnpin: { apply(.setPinned(id: $0, pinned: false)) },
+            screenWidth: slabWidth,
             onOpenTrash: { if interactive { openTrash() } })
             .background(Color(.systemGroupedBackground).ignoresSafeArea())
     }
@@ -4251,9 +4254,9 @@ struct OutlineRow: View {
             // down rather than competing for it.
             inert: isDragging || backHolding,
             left: RowSwipeAction(
-                name: "Delete", glyph: "trash.fill", tint: .red, leaves: true, run: onDelete),
+                name: "Delete", glyph: .symbol("trash.fill"), tint: .red, leaves: true, run: onDelete),
             right: RowSwipeAction(
-                name: "Zoom in", glyph: "chevron.right", tint: .accentColor, leaves: false, run: onZoom),
+                name: "Zoom in", glyph: .symbol("chevron.right"), tint: .accentColor, leaves: false, run: onZoom),
             onSwipingChanged: onSwipingChanged
         ) { justSwiped in
             rowContent(justSwiped: justSwiped)
@@ -4424,10 +4427,9 @@ private struct Bullet: View {
 ///
 /// Cards two-to-a-row came first and read well, but left delete with nowhere to
 /// go — it is hover-driven on the web, and a grid cell has no standard gesture
-/// for it. Full-width rows get `.swipeActions`, which is the platform's answer
-/// and the same gesture the outline rows already use. Density is the trade: five
-/// projects to a screen rather than ten, bought back a little by names no longer
-/// wrapping.
+/// for it. Full-width rows take the outline's own left swipe: a project deletes,
+/// a pin unpins. Density is the trade: five projects to a screen rather than
+/// ten, bought back a little by names no longer wrapping.
 private struct ProjectGrid: View {
     let tree: Tree
     /// Whether the server has answered yet. Without it an empty list is
@@ -4452,6 +4454,13 @@ private struct ProjectGrid: View {
     /// A pin dragged to a new place on the shelf. Indices are into
     /// `pinnedItems`, which is the order the shelf is drawn in.
     let onMovePin: (IndexSet, Int) -> Void
+    /// A left swipe on a project row. Asks first, in the outline's alert.
+    let onDelete: (NodeId) -> Void
+    /// A left swipe on a pin, which takes it off the shelf. A pinned project
+    /// unpins rather than deletes: the shelf is where you put things to reach,
+    /// and the swipe takes back that, not the project.
+    let onUnpin: (NodeId) -> Void
+    let screenWidth: CGFloat
 
     /// Whether the trash row was tapped. The trash view does not exist yet, so
     /// this only drives the "nothing to show you" note.
@@ -4486,6 +4495,9 @@ private struct ProjectGrid: View {
     /// `HomeCard`. A single flag squared every row at once, which reads as the
     /// corners simply never being rounded.
     @State private var lifted: IndexPath?
+
+    /// A row is mid-swipe, so the list holds still under it.
+    @State private var swiping = false
 
     /// Whether the lifted row is this one. The pinned section is 0 and projects
     /// is 1, matching the order they are declared in; the item index is the
@@ -4546,29 +4558,29 @@ private struct ProjectGrid: View {
                                 // shelf is arranged by hand, and a drag can only move
                                 // a row within the list it is drawn in.
                                 ForEach(Array(shownPins.enumerated()), id: \.element.node.id) { i, pin in
-                                    Group {
+                                    let slot = CardSlot.at(i, of: pinRowCount)
+                                    swipeable(
+                                        pin.node.id, slot: slot,
+                                        RowSwipeAction(
+                                            name: "Unpin", glyph: .unpin, tint: .accentColor,
+                                            leaves: true, run: { onUnpin(pin.node.id) })
+                                    ) { justSwiped in
                                         if pin.trail.isEmpty {
-                                            projectRow(pin.node)
+                                            projectRow(pin.node, justSwiped: justSwiped)
                                         } else {
                                             PinnedTaskRow(
                                                 node: pin.node,
                                                 trail: pin.trail,
                                                 progress: TreeOps.progressOf(tree, pin.node.id),
-                                                onOpen: { onOpen(pin.node.id) })
+                                                onOpen: { if !justSwiped { onOpen(pin.node.id) } })
                                         }
                                     }
-                                    // Declared here for every row in the section, so
-                                    // the two kinds start at the same x. The card
-                                    // below is inset by the same gutter.
-                                    .listRowInsets(
-                                        EdgeInsets(
-                                            top: Space.inner, leading: Space.gutter,
-                                            bottom: Space.inner, trailing: Space.gutter))
                                     .modifier(
                                         HomeCard(
-                                            slot: CardSlot.at(i, of: pinRowCount),
+                                            slot: slot,
                                             lifted: isLifted(section: 0, row: i),
-                                            separator: i < pinRowCount - 1))
+                                            separator: i < pinRowCount - 1,
+                                            padded: false))
                                 }
                                 // Only while the whole shelf is showing. A drag inside
                                 // a capped list would renumber against positions the
@@ -4615,12 +4627,23 @@ private struct ProjectGrid: View {
                     Section {
                         if projectsOpen {
                             ForEach(Array(projects.enumerated()), id: \.element.id) { i, project in
-                                projectRow(project)
-                                    .modifier(
-                                        HomeCard(
-                                            slot: CardSlot.at(i, of: projects.count),
-                                            lifted: isLifted(section: 1, row: i),
-                                            separator: i < projects.count - 1))
+                                let slot = CardSlot.at(i, of: projects.count)
+                                // Springs home: the alert asks first, and a
+                                // cancel has to find the row where it was.
+                                swipeable(
+                                    project.id, slot: slot,
+                                    RowSwipeAction(
+                                        name: "Delete", glyph: .symbol("trash.fill"), tint: .red,
+                                        leaves: false, run: { onDelete(project.id) })
+                                ) { justSwiped in
+                                    projectRow(project, justSwiped: justSwiped)
+                                }
+                                .modifier(
+                                    HomeCard(
+                                        slot: slot,
+                                        lifted: isLifted(section: 1, row: i),
+                                        separator: i < projects.count - 1,
+                                        padded: false))
                             }
                             .onMove(perform: onMoveProject)
                         }
@@ -4689,6 +4712,7 @@ private struct ProjectGrid: View {
                     }
                 }
                 .listStyle(.plain)
+                .scrollDisabled(swiping)
                 // The grouped grey the cards sit on. `.sidebar` painted this; under
                 // `.plain` the list's own background is the page's, so it has to be
                 // said.
@@ -4708,7 +4732,7 @@ private struct ProjectGrid: View {
 
     /// One project row, with the handles that were on every card before the
     /// sections split them in two. Shared so a pinned project keeps them.
-    private func projectRow(_ project: Node) -> some View {
+    private func projectRow(_ project: Node, justSwiped: Bool) -> some View {
         ProjectRow(
             project: project,
             // 0/0 for an empty project, not the 0/1 `progressOf` returns.
@@ -4723,22 +4747,42 @@ private struct ProjectGrid: View {
             editing: editing == project.id,
             editText: $editText,
             focused: focused,
-            onOpen: { onOpen(project.id) },
+            onOpen: { if !justSwiped { onOpen(project.id) } },
             onSubmit: onSubmit)
             // No context menu. Long-press is the reorder drag here, and a
             // menu on the same press wins it outright — the drag never starts.
-            // Rename and delete live in the project's own `...`.
-            // The same insets as a pinned row. Without this the card took
-            // the sidebar's defaults while the pinned row declared 16, so the
-            // two sections started at different x — the most visible unearned
-            // difference on the screen. Both are two-line rows; what should
-            // separate them is the type, not the margin.
-            .listRowInsets(
-                EdgeInsets(
-                    top: Space.inner, leading: Space.gutter,
-                    bottom: Space.inner, trailing: Space.gutter))
-            // No swipe to delete: it would put a project a short thumb away
-            // from the trash. Delete is in the project's own `...`.
+            // Rename lives in the project's own `...`, and delete there too
+            // as well as on the swipe.
+    }
+
+    /// A row that swipes left, filling its card so the band the swipe
+    /// uncovers reaches the card's edges and rounds with its corners.
+    ///
+    /// The insets are declared here for every swiping row, so pinned tasks
+    /// and projects start at the same x. Their vertical half moves inside the
+    /// swipe as padding: left as a row inset, the band stopped short of the
+    /// card's top and bottom.
+    private func swipeable<Row: View>(
+        _ id: NodeId, slot: CardSlot, _ action: RowSwipeAction,
+        @ViewBuilder row: @escaping (_ justSwiped: Bool) -> Row
+    ) -> some View {
+        RowSwipeView(
+            rowId: id,
+            vPadding: 0,
+            screenWidth: screenWidth,
+            // A rename's field and the reorder lift own the touch.
+            inert: lifted != nil || editing == id,
+            left: action,
+            groundColor: Color(.secondarySystemGroupedBackground),
+            onSwipingChanged: { swiping = $0 }
+        ) { justSwiped in
+            row(justSwiped)
+                .padding(.vertical, Space.inner)
+                .padding(.horizontal, Space.gutter)
+        }
+        .clipShape(RoundedCorners(radius: HomeCard.radius, corners: slot.corners))
+        .listRowInsets(
+            EdgeInsets(top: 0, leading: Space.gutter, bottom: 0, trailing: Space.gutter))
     }
 }
 
@@ -4837,8 +4881,12 @@ private struct HomeCard: ViewModifier {
     /// A hairline across the middle of `gapAbove`, for a row that belongs to a
     /// different kind of thing than the list above it.
     var divider = false
+    /// False for a row that pads itself inside the card, as a swiping row
+    /// does so its band can fill the card. See `ProjectGrid.swipeable`.
+    var padded = true
 
-    private var radius: CGFloat { 10 }
+    static let radius: CGFloat = 10
+    private var radius: CGFloat { Self.radius }
 
     func body(content: Content) -> some View {
         content
@@ -4846,7 +4894,7 @@ private struct HomeCard: ViewModifier {
             // The rows declare `Space.gutter` insets, which is the card's own
             // inset from the screen — so without this the text lands exactly on
             // the card's edge. This is the gutter *inside* the card.
-            .padding(.horizontal, Space.gutter)
+            .padding(.horizontal, padded ? Space.gutter : 0)
             .listRowSeparator(.hidden)
             .listRowBackground(
                 ZStack(alignment: .bottom) {

@@ -54,7 +54,22 @@ final class PinTests: XCTestCase {
         try need(card.waitForExistence(timeout: 5) && shelfRow.waitForNonExistence(timeout: 5),
             "Unpinned \"\(text)\" is still on Home's shelf. Check shownPins in OutlineView.swift.")
 
-        print("✓ pinned \"\(text)\" from its ⋯ menu, opened it from Home's shelf, and unpinned it")
+        // Pinned again, a left swipe on the shelf takes it off.
+        card.tap()
+        try need(row.waitForExistence(timeout: 5), "\"\(name)\" reopened without \"\(text)\".")
+        row.fullSwipe(left: false, in: app)
+        try setPin(app, "Pin")
+        try need(try await settles(task, pinned: true), "Pinning \"\(text)\" a second time never reached the Worker.")
+        app.buttons["Home"].tap()
+        try need(shelfRow.waitForExistence(timeout: 5), "Pinned again, \"\(text)\" isn't on Home's shelf.")
+        shelfRow.fullSwipe(left: true, in: app)
+        try need(shelfRow.waitForNonExistence(timeout: 5),
+            "A full left swipe on \"\(text)\" left it on Home's shelf. Check the Unpin RowSwipeAction in ProjectGrid, OutlineView.swift.")
+        try need(try await settles(task, pinned: false),
+            "A left swipe took \"\(text)\" off the shelf but the Worker still has it pinned. Check onUnpin in OutlineView.swift.")
+        try need(card.exists, "Unpinning \"\(text)\" by swipe took \"\(name)\" off Home too.")
+
+        print("✓ pinned \"\(text)\" from its ⋯ menu, opened it from Home's shelf, unpinned it, and a left swipe on the shelf unpinned it again")
     }
 
     /// Whether the screen is zoomed into the task: its text is the title, the
