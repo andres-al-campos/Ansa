@@ -66,10 +66,10 @@ targets:
         # ClerkConfig.swift for why this is baked in rather than read at
         # runtime. Publishable, not secret: it ships in every client build.
         ANSAClerkPublishableKey: $(ANSA_CLERK_PUBLISHABLE_KEY)
+        # Portrait only: the owner never turns the phone, and every screen
+        # then has one shape to get right.
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
-          - UIInterfaceOrientationLandscapeLeft
-          - UIInterfaceOrientationLandscapeRight
         # The app talks to a local wrangler dev over plain http during
         # development. Scoped to localhost rather than a blanket
         # NSAllowsArbitraryLoads so the production https host is still enforced.

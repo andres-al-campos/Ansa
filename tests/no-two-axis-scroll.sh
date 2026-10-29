@@ -4,8 +4,9 @@
 # web half is no-two-axis-scroll.mjs.
 #
 # Catches SwiftUI's ScrollView([.horizontal, .vertical]) as written. A screen
-# that pans sideways by accident, from content wider than it, is caught on the
-# running app by ios/UITests/NoTwoAxisScrollTests.swift.
+# that pans sideways by accident, from content wider than it, isn't checked on
+# iOS: the drive that measured it broke whenever a screen it passed through
+# changed, and cost more than the bug it guarded against.
 #
 #   tests/no-two-axis-scroll.sh [dir]     (default: ios/Sources)
 dir=${1:-"$(dirname "$0")/../ios/Sources"}

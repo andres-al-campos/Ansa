@@ -1627,6 +1627,7 @@ struct OutlineView: View {
             onDelete: { pendingDelete = TreeOps.byId(tree, $0) },
             onUnpin: { apply(.setPinned(id: $0, pinned: false)) },
             screenWidth: slabWidth,
+            onSwipingChanged: { if interactive { rowSwiping = $0 } },
             onOpenTrash: { if interactive { openTrash() } })
             .background(Color(.systemGroupedBackground).ignoresSafeArea())
     }
@@ -4461,6 +4462,9 @@ private struct ProjectGrid: View {
     /// and the swipe takes back that, not the project.
     let onUnpin: (NodeId) -> Void
     let screenWidth: CGFloat
+    /// A row's swipe has proved horizontal, or let go. The page holds the
+    /// list still on it, as it does for an outline's rows.
+    let onSwipingChanged: (Bool) -> Void
 
     /// Whether the trash row was tapped. The trash view does not exist yet, so
     /// this only drives the "nothing to show you" note.
@@ -4495,9 +4499,6 @@ private struct ProjectGrid: View {
     /// `HomeCard`. A single flag squared every row at once, which reads as the
     /// corners simply never being rounded.
     @State private var lifted: IndexPath?
-
-    /// A row is mid-swipe, so the list holds still under it.
-    @State private var swiping = false
 
     /// Whether the lifted row is this one. The pinned section is 0 and projects
     /// is 1, matching the order they are declared in; the item index is the
@@ -4712,7 +4713,6 @@ private struct ProjectGrid: View {
                     }
                 }
                 .listStyle(.plain)
-                .scrollDisabled(swiping)
                 // The grouped grey the cards sit on. `.sidebar` painted this; under
                 // `.plain` the list's own background is the page's, so it has to be
                 // said.
@@ -4774,7 +4774,7 @@ private struct ProjectGrid: View {
             inert: lifted != nil || editing == id,
             left: action,
             groundColor: Color(.secondarySystemGroupedBackground),
-            onSwipingChanged: { swiping = $0 }
+            onSwipingChanged: onSwipingChanged
         ) { justSwiped in
             row(justSwiped)
                 .padding(.vertical, Space.inner)

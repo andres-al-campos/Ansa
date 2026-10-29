@@ -22,25 +22,6 @@ enum LocalAPI {
         return id
     }
 
-    /// A task to seed, with the tasks under it.
-    struct Seed: Sendable {
-        var text: String
-        var children: [Seed] = []
-        var json: [String: Any] { ["text": text, "children": children.map(\.json)] }
-    }
-
-    /// A new project holding `children`, for a seed deeper than one level.
-    /// Returns the project's id.
-    static func makeProject(_ name: String, children: [Seed]) async throws -> String {
-        let body: [String: Any] = ["parentId": NSNull(), "nodes": [Seed(text: name, children: children).json]]
-        let data = try await call("POST", "/api/nodes/subtree", body: body)
-        guard let id = ((try JSONSerialization.jsonObject(with: data) as? [String: Any])?["ids"] as? [String])?.first
-        else {
-            throw Failure("The Worker made the project but sent back no ids. Check the /api/nodes/subtree route in worker/src/index.ts.")
-        }
-        return id
-    }
-
     /// Adds `texts` as children of `parent`, in order.
     static func add(_ texts: [String], under parent: String) async throws {
         _ = try await call("POST", "/api/nodes/subtree",
