@@ -7,7 +7,7 @@ struct RowSwipeAction {
     /// also offered by name, as `swipeActions` did before this was hand-built.
     let name: String
     /// The glyph on the band the row uncovers.
-    let glyph: Glyph
+    let glyph: String
     /// The band's colour.
     let tint: Color
     /// Whether the row rides out past the edge on release. Only for an action
@@ -16,13 +16,6 @@ struct RowSwipeAction {
     /// would leave a live row parked off screen.
     let leaves: Bool
     let run: () -> Void
-
-    enum Glyph {
-        case symbol(String)
-        /// Ansa's own pin lying over, which the menus use for Unpin. There is
-        /// no SF Symbol of it; see `PinIcon`.
-        case unpin
-    }
 }
 
 /// The horizontal swipe on an outline row: the gesture, the offset it drives,
@@ -131,23 +124,14 @@ struct RowSwipeView<Content: View>: View {
                         .opacity(settling == .left && armed ? 1 : 0.5)
                 }
                 if let action {
-                    glyph(action.glyph)
+                    Image(systemName: action.glyph)
                         .foregroundStyle(.white.opacity(armed ? 1 : 0.85))
+                        .font(.system(size: armed ? 24 : 21, weight: .medium))
                         .frame(width: abs(offset))
                 }
             }
             .animation(.easeOut(duration: 0.12), value: armed)
             .padding(.vertical, -vPadding)
-        }
-    }
-
-    @ViewBuilder private func glyph(_ glyph: RowSwipeAction.Glyph) -> some View {
-        switch glyph {
-        case .symbol(let name):
-            Image(systemName: name)
-                .font(.system(size: armed ? 24 : 21, weight: .medium))
-        case .unpin:
-            PinIcon(over: true, size: armed ? 24 : 21)
         }
     }
 

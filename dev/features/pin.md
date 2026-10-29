@@ -37,6 +37,9 @@ ordering, pinning a project on iOS.
 - 2026-10-28 23:39, 0.1.0. Home's rows swipe left like the outline's: a pin unpins, and a project
   deletes, asking first. A pinned project unpins rather than deletes. Nothing
   goes right, since Home is the top. Applies none.
+- 2026-10-29 00:44, 0.1.0. The unpin swipe shows `pin.slash`, the pin with a line through it. The
+  owner read the lying-over pin, which the ⋯ menu uses, as a plain pin.
+  Applies none.
 
 ## Gotchas
 

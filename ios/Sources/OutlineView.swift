@@ -4255,9 +4255,9 @@ struct OutlineRow: View {
             // down rather than competing for it.
             inert: isDragging || backHolding,
             left: RowSwipeAction(
-                name: "Delete", glyph: .symbol("trash.fill"), tint: .red, leaves: true, run: onDelete),
+                name: "Delete", glyph: "trash.fill", tint: .red, leaves: true, run: onDelete),
             right: RowSwipeAction(
-                name: "Zoom in", glyph: .symbol("chevron.right"), tint: .accentColor, leaves: false, run: onZoom),
+                name: "Zoom in", glyph: "chevron.right", tint: .accentColor, leaves: false, run: onZoom),
             onSwipingChanged: onSwipingChanged
         ) { justSwiped in
             rowContent(justSwiped: justSwiped)
@@ -4563,7 +4563,7 @@ private struct ProjectGrid: View {
                                     swipeable(
                                         pin.node.id, slot: slot,
                                         RowSwipeAction(
-                                            name: "Unpin", glyph: .unpin, tint: .accentColor,
+                                            name: "Unpin", glyph: "pin.slash.fill", tint: .accentColor,
                                             leaves: true, run: { onUnpin(pin.node.id) })
                                     ) { justSwiped in
                                         if pin.trail.isEmpty {
@@ -4634,7 +4634,7 @@ private struct ProjectGrid: View {
                                 swipeable(
                                     project.id, slot: slot,
                                     RowSwipeAction(
-                                        name: "Delete", glyph: .symbol("trash.fill"), tint: .red,
+                                        name: "Delete", glyph: "trash.fill", tint: .red,
                                         leaves: false, run: { onDelete(project.id) })
                                 ) { justSwiped in
                                     projectRow(project, justSwiped: justSwiped)
