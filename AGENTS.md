@@ -39,9 +39,12 @@ What matters, and how much:
 - 2026-10-28 23:01, 0.1.0. Not at all: everything outside the zoom. Seeing the whole problem at once
   is what Ansa spares you; the breadcrumbs say the rest is there.
 
-Done rows inside a branch you're still working on get out of the way without
-being deleted, since deleting them would take their share of the progress with
-them. A whole finished branch is the time to delete.
+Done rows stay where they were ticked: hiding or moving them would pull rows
+out from under the thumb, and they read as progress. A long flat list of done
+rows is usually small items, cheap to scan and cheap to move or nest by hand,
+so reorganizing stays easy instead of the app doing it. Deleting waits until a
+whole branch is done, since deleting done rows takes their share of the
+progress with them.
 
 ## Where things are written
 
