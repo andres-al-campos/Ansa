@@ -46,6 +46,12 @@ so reorganizing stays easy instead of the app doing it. Deleting waits until a
 whole branch is done, since deleting done rows takes their share of the
 progress with them.
 
+Open: a task too big to get a handle on shows up as a short list whose children
+are as foggy as the parent, and a short list then reads as dread. Children that
+are questions or small probes ("what do I have to file?") give it a handle.
+Whether Ansa should do anything about that (nothing, make probes feel normal,
+or have a Claude suggest them) isn't decided.
+
 ## Where things are written
 
 - `dev/features/README.md`: what a user can do and the check for each feature.
