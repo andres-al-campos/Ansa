@@ -28,6 +28,11 @@ leftovers are fine.
   takes the keyboard down, and a tap on bare frost closes Search, without
   being asked. Why: where you put your finger says what you are doing now,
   and making you tidy up the last thing first is a chore the app can do.
+- 2026-10-29 15:31, 0.1.0. **Friction matches the action.** What you do many times in a row, like
+  deleting tasks while clearing a list, happens at once, and Trash catches the
+  slip. What is rare and takes a lot with it, like deleting a whole project,
+  asks once. Why: a question costs as much as how often you meet it, and a
+  slip costs as much as it takes.
 
 What matters, and how much:
 

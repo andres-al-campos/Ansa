@@ -108,7 +108,7 @@ final class TrashTests: XCTestCase {
         print("✓ a left swipe sent \"\(text)\" to Trash; there, left asked first, the edge went Back, and right put it back under \(name)")
     }
 
-    func testASwipedProjectGoesToTrash() async throws {
+    func testASwipedProjectAsksThenGoesToTrash() async throws {
         let word = String(UUID().uuidString.prefix(6)).lowercased()
         let name = "drive home delete \(word)"
         let project = try await LocalAPI.makeProject(name, tasks: ["Inside \(word)"])
@@ -121,22 +121,35 @@ final class TrashTests: XCTestCase {
         try need(card.waitForExistence(timeout: 10),
             "Home doesn't show \"\(name)\". Check that the app reached the local Worker (ios/build/drive.log), then HomeCard in OutlineView.swift.")
 
-        // Straight to Trash, like a task's swipe: Trash is the undo.
+        // Left asks first; Cancel leaves the project where it was.
         card.fullSwipe(left: true, in: app)
-        try need(card.waitForNonExistence(timeout: 5),
-            "A full left swipe left \"\(name)\" on Home. Check the Delete RowSwipeAction in ProjectGrid (leaves: true) and onDelete in OutlineView.swift.")
+        let ask = app.alerts.firstMatch
+        try need(ask.waitForExistence(timeout: 5) && ask.buttons["Delete"].exists,
+            "A full left swipe on \"\(name)\" on Home didn't ask before deleting. Check the Delete RowSwipeAction in ProjectGrid and pendingDelete in OutlineView.swift.")
+        ask.buttons["Cancel"].tap()
+        try need(ask.waitForNonExistence(timeout: 5), "Cancel didn't close the delete alert. Check the alert in OutlineView.swift.")
+        sleep(1)
+        let label = card.frame
+        try need(label.minX >= 0 && label.maxX <= app.frame.maxX,
+            "After Cancel, \"\(name)\" sits off screen at x=\(Int(label.minX)) rather than back in place. The Delete RowSwipeAction in ProjectGrid must not ride out (leaves: false).")
+        try need(try await LocalAPI.node(project) != nil, "Cancelling still deleted \"\(name)\". Check the alert in OutlineView.swift.")
+
+        card.fullSwipe(left: true, in: app)
+        try need(ask.waitForExistence(timeout: 5), "A second left swipe on \"\(name)\" didn't ask again. Check RowSwipeView's rest after a spring home.")
+        ask.buttons["Delete"].tap()
+        try need(card.waitForNonExistence(timeout: 5), "Delete left \"\(name)\" on Home. Check the alert's Delete in OutlineView.swift.")
         var gone = false
         for _ in 0..<20 where !gone {
             gone = try await LocalAPI.node(project) == nil
             if !gone { try await Task.sleep(for: .milliseconds(250)) }
         }
-        try need(gone, "\"\(name)\" left Home but the Worker still has it. Check onDelete in homePage and the op queue in OutlineStore.swift.")
+        try need(gone, "\"\(name)\" left Home but the Worker still has it. Check removeNode in the alert and the op queue in OutlineStore.swift.")
         // Now it's Trash's to clean up, not the project's.
         self.project = nil
         self.task = project
         try need(try await LocalAPI.trashEntry(holding: project) != nil,
             "The Worker deleted \"\(name)\" without a Trash entry. Check the remove op in worker/src/treeStore.ts.")
 
-        print("✓ a left swipe on \"\(name)\" on Home sent it straight to Trash")
+        print("✓ a left swipe on \"\(name)\" on Home asked, Cancel kept it in place, and Delete sent it to Trash")
     }
 }
