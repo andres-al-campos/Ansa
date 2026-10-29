@@ -1619,7 +1619,7 @@ struct OutlineView: View {
             onSubmit: submitProjectName,
             onMoveProject: moveProject,
             onMovePin: movePin,
-            onDelete: { pendingDelete = TreeOps.byId(tree, $0) },
+            onDelete: { apply(.removeNode(id: $0, trash: true)) },
             onUnpin: { apply(.setPinned(id: $0, pinned: false)) },
             screenWidth: slabWidth,
             onSwipingChanged: { if interactive { rowSwiping = $0 } },
@@ -4624,13 +4624,12 @@ private struct ProjectGrid: View {
                         if projectsOpen {
                             ForEach(Array(projects.enumerated()), id: \.element.id) { i, project in
                                 let slot = CardSlot.at(i, of: projects.count)
-                                // Springs home: the alert asks first, and a
-                                // cancel has to find the row where it was.
+                                // No question, as on a task: Trash is the undo.
                                 swipeable(
                                     project.id, slot: slot,
                                     RowSwipeAction(
                                         name: "Delete", glyph: "trash.fill", tint: .red,
-                                        leaves: false, run: { onDelete(project.id) })
+                                        leaves: true, run: { onDelete(project.id) })
                                 ) { justSwiped in
                                     projectRow(project, justSwiped: justSwiped)
                                 }
