@@ -1,6 +1,6 @@
 # Trash
 
-Updated 2026-10-29 02:36, at 0.1.0.
+Updated 2026-10-29 11:39, at 0.1.0.
 
 Deleted tasks wait 30 days in the trash, where they can be put back.
 
@@ -57,6 +57,7 @@ younger, and stops waking once the trash is empty.
   by name (Delete and Zoom in on a task, Delete and Restore in Trash). No
   check covers this: XCUITest can't run a named action.
 
-- Only deliberate deletes go to the trash. Emptying a row or merging rows with
-  Backspace removes without trashing, on purpose.
+- Only deliberate deletes go to the trash, Backspace on an empty row among
+  them. A blank row left mid-edit, or a new project left unnamed, removes
+  without trashing, on purpose.
 - A restored project lands after the last project, not at its old position.

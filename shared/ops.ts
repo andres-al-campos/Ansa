@@ -64,10 +64,10 @@ export type Op =
        * Whether the subtree is kept in the trash, so it can be restored.
        *
        * Optional and off by default, because most `removeNode`s are not a user
-       * deleting anything: backspace at the start of a line merges two rows by
-       * removing one, and an empty row abandoned mid-edit removes itself. Those
-       * would fill the trash with blank strings and merge artifacts, which is
-       * how it stops being useful for the deletes that matter.
+       * deleting anything: an empty row abandoned mid-edit removes itself, and so
+       * does a new project left without a name. Those would fill the trash with
+       * blank strings, which is how it stops being useful for the deletes that
+       * matter.
        *
        * A flag rather than a second op kind, because clients queue ops while
        * offline: an old build's queued `removeNode` reaching a new server must

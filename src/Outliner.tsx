@@ -919,9 +919,9 @@ export default function Outliner({ initial }: { initial: Tree }) {
   // you re-enter to continue puts a deliberate keypress between each deletion.
   function deleteRow(id: NodeId) {
     // `trash: true` only here and in deleteProject. The other removeNode calls
-    // in this file are editing mechanics — backspace merging two rows, an empty
-    // row abandoned mid-edit — and a trash full of blank strings and merge
-    // artifacts is no use for the deletes that matter.
+    // in this file are editing mechanics — an empty row abandoned mid-edit, a
+    // new project left unnamed — and a trash full of blank strings is no use
+    // for the deletes that matter.
     setTree(removeNode(tree, id), { op: 'removeNode', id, trash: true })
     setEditing(null)
   }
