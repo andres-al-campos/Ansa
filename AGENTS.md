@@ -29,7 +29,19 @@ leftovers are fine.
   being asked. Why: where you put your finger says what you are doing now,
   and making you tidy up the last thing first is a chore the app can do.
 
-What matters a lot, a little, and not at all in Ansa isn't answered yet.
+What matters, and how much:
+
+- 2026-10-28 23:01, 0.1.0. A lot: the part you're zoomed into, and seeing it shrink. Progress counts
+  leaves, so splitting a task doesn't set you back and every tick moves it.
+- 2026-10-28 23:01, 0.1.0. A little: breaking things down and getting around (add, split, move, zoom
+  in and out). They happen constantly, so they cost as close to nothing as
+  they can.
+- 2026-10-28 23:01, 0.1.0. Not at all: everything outside the zoom. Seeing the whole problem at once
+  is what Ansa spares you; the breadcrumbs say the rest is there.
+
+Done rows inside a branch you're still working on get out of the way without
+being deleted, since deleting them would take their share of the progress with
+them. A whole finished branch is the time to delete.
 
 ## Where things are written
 
