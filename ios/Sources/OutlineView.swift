@@ -293,9 +293,14 @@ struct OutlineView: View {
             // The keyboard going down drops the field to Home's line, and
             // coming back up lifts it. Not while tucked: that is the grow and
             // the shrink, which move it themselves.
+            //
+            // Not `withAnimation`: a scroll is what takes the keys down, and an
+            // animated transaction reaching Search's list cancelled that
+            // scroll mid-drag. The field and the buttons on its line animate
+            // themselves (`searchMotion`, by value).
             .onChange(of: searchFocused) { _, focused in
                 guard inSearch, !searchLeaving, searchSpot != .tucked else { return }
-                withAnimation(searchMotion) { searchSpot = focused ? .up : .low }
+                searchSpot = focused ? .up : .low
             }
             .onChange(of: scenePhase) { _, phase in
                 switch phase {
@@ -975,6 +980,7 @@ struct OutlineView: View {
                             }
                         }
                     }
+                    .animation(searchMotion, value: searchSpot)
                     .ignoresSafeArea(.keyboard)
             }
         }
@@ -1381,6 +1387,7 @@ struct OutlineView: View {
             .padding(.leading, leading)
             .padding(.trailing, spot == .up ? Space.gutter : Space.corner)
             .padding(.bottom, bottom)
+            .animation(searchMotion, value: spot)
             .onAppear {
                 guard interactive else { return }
                 // Going Home from Search: drawn grown over the new page first,

@@ -1,6 +1,6 @@
 # Search
 
-Updated 2026-10-28 13:19, at 0.1.0.
+Updated 2026-10-30 18:25, at 0.1.0.
 
 Find a task by its text. iOS only; the web has no search.
 
@@ -30,6 +30,11 @@ Last driven 2026-10-08: ✓, and ✗ against a build whose matching was broken.
 
 ## Gotchas
 
+- The field's move between the keys and Home's line animates by value on
+  the field, never through `withAnimation`. A scroll is what takes the keys
+  down, and an animated transaction reaching the list cancelled that scroll
+  mid-drag: the list snapped back and the scroll bar flashed. Found by
+  recording a drag on the simulator with and without the animation.
 - The matching rule lives only in the Swift code. Search on the web would need
   it ported to the shared TypeScript model first, or the two will disagree.
 - The simulator tool's screenshot can keep returning the frame from the
