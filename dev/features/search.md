@@ -74,3 +74,5 @@ Last driven 2026-10-08: ✓, and ✗ against a build whose matching was broken.
   means you're done typing, and the field rides down with the keys. Alejandro:
   "dragging on the search result means you're not using the kb so it should
   dismiss it." Applies *A touch elsewhere ends what you were doing*.
+- 2026-10-30 23:23, 0.1.0. The field moves in 0.35s (`searchGrow`), every move on one curve. At 0.25s
+  the owner found it smooth but a little quick. Applies none.
