@@ -4,8 +4,8 @@ import SwiftUI
 /// Renaming a row, adding a run of them, and which row the next one lands below.
 ///
 /// One concern wearing three names: a new task is a row that starts empty and
-/// focused, so adding *is* renaming with the mode flag set, and the last row
-/// touched is the anchor for where the next one lands.
+/// focused, so adding *is* renaming with the mode flag set, and the open row is
+/// the anchor for where the next one lands.
 ///
 /// Focus is not here — `@FocusState` only works declared on a View, so the
 /// binding stays there and `beginEdit` bridges the two.
@@ -20,10 +20,11 @@ final class EditController {
 
     /// The row a new task lands below, or nil for the bottom of the project.
     ///
-    /// Set by touching any row, so the plus button files next to whatever was
-    /// last worked on. Cleared when the context it was captured in stops being
-    /// true — leaving the project, or the row going away — because filing
-    /// somewhere other than where the user last was is worse than the bottom.
+    /// Set by touching any row, so Return opens the next one beside it. Cleared
+    /// when the edit ends: with no field open nothing marks a row, and a plus
+    /// that filed under an unmarked row put tasks somewhere you couldn't see
+    /// coming, so it goes to the bottom, as Enter with nothing focused does on
+    /// the web.
     var captureParent: NodeId?
 
     /// Whether a rename is open. What the busy flag actually asks.
@@ -58,11 +59,8 @@ final class EditController {
 
     /// Take the rename down. The caller applies the op and decides whether the
     /// row survived — this only clears state.
-    /// - Parameter rememberAnchor: the row to keep as the capture anchor, or
-    ///   nil to clear it. `begin` already set it, so this exists for the case
-    ///   that invalidates it: committing an emptied row deletes it, and an
-    ///   anchor pointing at a node that just went away sends the next capture
-    ///   to the bottom while the chip still claims otherwise.
+    /// - Parameter rememberAnchor: the row a new row is about to open beside, or
+    ///   nil when the edit simply ends.
     func endEdit(rememberAnchor: NodeId?) {
         captureParent = rememberAnchor
         editing = nil

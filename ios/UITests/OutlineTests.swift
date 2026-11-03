@@ -57,6 +57,75 @@ final class OutlineTests: XCTestCase {
         print("✓ after 14 rows, the typed row (y \(Int(row.maxY))) stays above the strip (\(Int(strip.minY))…\(Int(strip.maxY))), which rides the keyboard (\(Int(top)))")
     }
 
+    /// With no field open nothing marks a row, so the plus can't aim at one.
+    /// Return on a tapped row still opens beside it, which is the way to add
+    /// there.
+    func testThePlusAddsToTheEndOnceNoRowIsOpen() async throws {
+        let name = "drive plus " + String(UUID().uuidString.prefix(6)).lowercased()
+        projectName = name
+        let project = try await LocalAPI.makeProject(name, tasks: ["Parent", "Last"])
+        let parent = try await LocalAPI.child(of: project, text: "Parent")
+        try await LocalAPI.add(["Kid"], under: parent)
+
+        let app = XCUIApplication()
+        app.launch()
+        app.buttons["Home"].tap()
+        let card = app.buttons.containing(NSPredicate(format: "label CONTAINS %@", name)).firstMatch
+        try need(card.waitForExistence(timeout: 10),
+            "Home doesn't show \"\(name)\". Check that the app reached the local Worker (ios/build/drive.log), then HomeCard in OutlineView.swift.")
+        card.tap()
+
+        func tapRow(_ text: String) throws {
+            let row = app.buttons[text].firstMatch
+            try need(row.waitForExistence(timeout: 5),
+                "No row reading \"\(text)\" in \"\(name)\". Check the row's text in OutlineView.swift.")
+            row.tap()
+            try need(app.keyboards.firstMatch.waitForExistence(timeout: 5),
+                "Tapping \"\(text)\" brought up no keyboard. Check beginEdit in OutlineView.swift, or, if the row is focused, untick Device → Keyboard → Simulate Hardware Keyboard in Device Hub.")
+        }
+        func done() throws {
+            let done = app.buttons["Done"].firstMatch
+            try need(done.waitForExistence(timeout: 5),
+                "No Done on the keyboard strip. Check doneButton in OutlineView.swift.")
+            done.tap()
+        }
+        func expect(_ want: [String], under id: String, _ fix: String) async throws {
+            var got: [String] = []
+            for _ in 0..<20 where got != want {
+                got = try await LocalAPI.children(of: id)
+                if got != want { try await Task.sleep(for: .milliseconds(250)) }
+            }
+            try need(got == want, "The Worker has \(got), not \(want). \(fix)")
+        }
+
+        // Rename a parent, end the edit, then the plus.
+        try tapRow("Parent")
+        try done()
+        let plus = app.descendants(matching: .any)["Add a task"].firstMatch
+        try need(plus.waitForExistence(timeout: 5),
+            "No plus after Done. Check captureButton in OutlineView.swift.")
+        plus.tap()
+        try need(app.keyboards.firstMatch.waitForExistence(timeout: 5),
+            "The plus brought up no keyboard. Check addRow in OutlineView.swift.")
+        app.typeText("End")
+        try done()
+        let fix = "Check that commitEdit in OutlineView.swift clears captureParent when an edit ends."
+        try await expect(["Parent", "Last", "End"], under: project, fix)
+        try await expect(["Kid"], under: parent, fix)
+
+        // Return on a tapped row still lands beside it.
+        try tapRow("Last")
+        app.typeText("\n")
+        try need(app.keyboards.firstMatch.waitForExistence(timeout: 5),
+            "Return on a tapped row left no keyboard. Check submitAdding in OutlineView.swift.")
+        app.typeText("Beside")
+        try done()
+        try await expect(["Parent", "Last", "Beside", "End"], under: project,
+            "Check that submitAdding's commit keeps the anchor for addRow in OutlineView.swift.")
+
+        print("✓ the plus after a finished edit added to the end of the project, and Return on a tapped row added beside it")
+    }
+
     func testANewProjectTakesNestedTasksByKeyboard() async throws {
         let name = "drive outline " + String(UUID().uuidString.prefix(6)).lowercased()
         projectName = name

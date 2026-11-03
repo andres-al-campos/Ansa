@@ -2251,7 +2251,7 @@ struct OutlineView: View {
         // open only if `capture`'s adding check is bypassed, and this keeps that
         // from quietly ending the run.
         let leavingEmpty = edit.text.isEmpty
-        if let id = edit.editing, !isSentinel(id) { commitEdit(releasingFocus: false) }
+        if let id = edit.editing, !isSentinel(id) { commitEdit(releasingFocus: false, openingNext: true) }
         let anchor = edit.captureParent.flatMap { TreeOps.byId(tree, $0) }
         // The visual predecessor the first sentinel follows, and the depth to
         // draw it at. A parent takes its new row as a first child one level in;
@@ -2438,7 +2438,7 @@ struct OutlineView: View {
         guard let created = commitSentinel(), sentinels.count > 1 else {
             // No waiting sentinel (the run was not opened through `startAdding`).
             // Fall back to committing and opening a fresh row.
-            commitEdit(releasingFocus: false)
+            commitEdit(releasingFocus: false, openingNext: true)
             clearSentinels()
             addRow()
             return
@@ -3108,7 +3108,13 @@ struct OutlineView: View {
     ///   focused, and the next field cannot claim it until it has been built —
     ///   so clearing focus here slid the keyboard away and back between every
     ///   two rows.
-    private func commitEdit(from: NodeId? = nil, releasingFocus: Bool = true) {
+    /// - Parameter openingNext: true when a new row opens below this one straight
+    ///   after, which is the only thing that still wants the row as an anchor.
+    ///   Once an edit simply ends nothing on screen marks the row, so a plus
+    ///   aimed at it files somewhere the user can't see coming.
+    private func commitEdit(
+        from: NodeId? = nil, releasingFocus: Bool = true, openingNext: Bool = false
+    ) {
         guard edit.shouldCommit(from: from), let id = edit.editing else { return }
         // A sentinel is not in the tree, so `TreeOps.commitEdit` can only ever
         // no-op on it — it knows `setText`/`removeNode`, not the `addChild` a
@@ -3122,11 +3128,7 @@ struct OutlineView: View {
         let op = TreeOps.commitEdit(tree, id, edit.text)
         if let op { apply(op) }
 
-        // Remember it only if it still exists: an emptied row is deleted by
-        // `commitEdit`, and anchoring to a node that just went away would send
-        // the new task back to the bottom with the chip still claiming
-        // otherwise.
-        edit.endEdit(rememberAnchor: TreeOps.byId(tree, id) == nil ? nil : id)
+        edit.endEdit(rememberAnchor: openingNext && TreeOps.byId(tree, id) != nil ? id : nil)
         if releasingFocus { focusedRow = nil }
     }
 

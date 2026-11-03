@@ -1,6 +1,6 @@
 # Outline a project
 
-Updated 2026-10-25 21:26, at 0.1.0.
+Updated 2026-11-02 22:12, at 0.1.0.
 
 Write a project's tasks and break them down until the leaves are small enough
 to do. Projects are the top-level rows; everything else nests under them.
@@ -21,6 +21,8 @@ to do. Projects are the top-level rows; everything else nests under them.
 - Web: Enter with nothing focused adds a task to the current scope
 - Web undo/redo: ⌘/Ctrl+Z, ⇧⌘Z or Ctrl+Y, when no field is focused
 - iOS: the row is the input; an adding mode where Return asks for another row
+- iOS: + with no row open adds to the end of the screen you're on; to add beside
+  a row, tap it and press Return
 - Limits: 200 characters per task, 5000 nodes per account
 
 ## How to get to it
@@ -39,7 +41,10 @@ Preconditions: `./build.sh web --no-auth` running.
   shape on the Worker. A second case types 14 rows and checks, against the
   on-screen keyboard's frame, that the strip rides just above the keyboard and
   the typed row stays above the strip. ✗ against a build with the strip as an
-  overlay rather than the list's inset: the row slid under it.
+  overlay rather than the list's inset: the row slid under it. A third renames a
+  parent, presses Done, then +, and checks the new task lands at the end of the
+  project and not under the parent, then that Return on a tapped row still adds
+  beside it. ✗ against a build that kept the edited row as the plus's anchor.
 
 Last driven 2026-10-06 by the script; by hand 2026-10-04, which also showed the
 first gotcha below. iOS 2026-10-09: ✓, and ✗ against a build whose Indent did
@@ -54,6 +59,11 @@ nothing.
 - 2026-10-25 22:08, 0.1.0. Pasting several lines into a row joins them into one row. Kept: there's no
   telling where a paste should break into rows, and one row is easy to split
   by hand. Applies none.
+- 2026-11-02 22:12, 0.1.0. The iOS + stopped filing beside the last edited row once the edit has ended.
+  There was no way to reach the top of the list from there, and since the chip
+  that named the row went away, nothing showed where the task would land. Return
+  on a tapped row still adds beside it. Applies *A touch elsewhere ends what you
+  were doing*.
 
 ## Gotchas
 
