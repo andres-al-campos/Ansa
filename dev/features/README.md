@@ -1,6 +1,6 @@
 # Ansa features
 
-Updated 2026-10-26 20:30, at 0.1.0.
+Updated 2026-11-03 16:15, at 0.1.0.
 
 What a user can do with Ansa, how to reach it, and how to drive it. Read this
 before adding anything: if it's already here, extend it instead of building it
@@ -36,9 +36,8 @@ separate rather than merging them.
 - **Driving it**: preconditions, then one bullet per check, each led by its
   command: `npm run drive -- <scenario>` or `ios/build.sh drive <name>`. A
   feature with no check writes "No check yet" and why.
-- **Calls**: what the owner found in one case on this feature, with their why,
-  ending with the Principle in `AGENTS.md` it applies (`Applies *Name*.`) or
-  none. The hook starts each with the time and version it was made or
+- **Calls**: what the owner found in one case on this feature, ending with the
+  Principle in `AGENTS.md` it applies (`Applies *Name*.`), where the why lives, or none. The hook starts each with the time and version it was made or
   reworded at.
 - **Gotchas**: what has bitten us, or will.
 
