@@ -5,6 +5,22 @@ enough to actually do.
 
 ![Ansa breaking a task down, with the same tree updating live on the iPhone](docs/demo.webp)
 
+## Download
+
+The Mac app is on the [Releases](https://github.com/andres-al-campos/Ansa/releases)
+page, for Apple Silicon. It isn't notarised, so macOS blocks it the first
+time: open it once, then go to System Settings → Privacy & Security and choose
+Open Anyway. Or clear the quarantine flag from a terminal:
+
+```bash
+xattr -dr com.apple.quarantine /Applications/Ansa.app
+```
+
+The iPhone app has no download, since a build is signed to one Apple account.
+To put it on your own phone with Xcode and `xcodegen` installed, copy `ios/Config.example.xcconfig` to
+`ios/Config.xcconfig`, set your Team ID in it, and run `ios/build.sh` with the
+phone connected.
+
 ## Architecture
 
 Several clients, one source of truth:
