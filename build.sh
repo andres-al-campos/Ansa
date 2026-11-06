@@ -7,6 +7,7 @@
 #
 #   ./build.sh              package the desktop .app and install it, the default
 #   ./build.sh desktop      dev run of the desktop app (hot-reload window)
+#   ./build.sh package      package and ad-hoc sign Ansa.app without installing it
 #   ./build.sh web          run the local web stack: API + Vite app together
 #   ./build.sh web --no-auth  the same without sign-in, even with a Keychain secret
 #   ./build.sh check        typecheck, tests and laws, no stack or simulator
@@ -544,8 +545,13 @@ desktop() {
 # (which compiles the Liquid Glass Ansa.icon through actool), ad-hoc sign it,
 # and replace the installed copy in /Applications/_vibe_coded so a rebuild is
 # the copy that opens — not last build's.
-desktop_dist() {
-  trap - INT TERM EXIT
+DESKTOP_BUILT="desktop/dist/mac-arm64/Ansa.app"
+
+# Build, package and ad-hoc sign Ansa.app in desktop/dist without installing it.
+# release.sh zips this copy; desktop_dist installs it. Apple Silicon refuses to
+# run an unsigned arm64 binary at all, so the ad-hoc sign is what lets a
+# downloaded copy open once its quarantine is cleared.
+package_desktop() {
   build_desktop_bundle
 
   echo "Packaging Ansa.app (electron-builder → actool) …"
@@ -553,7 +559,7 @@ desktop_dist() {
   # ad-hoc sign below is what lets the local copy launch.
   (cd desktop && CSC_IDENTITY_AUTO_DISCOVERY=false npm run dist)
 
-  local built="desktop/dist/mac-arm64/Ansa.app"
+  local built="$DESKTOP_BUILT"
   if [ ! -d "$built" ]; then
     echo "electron-builder finished but ${built} isn't there." >&2
     echo "Check the packaging output above; the mac target is 'dir' in desktop/package.json." >&2
@@ -568,6 +574,13 @@ desktop_dist() {
     echo "actool needs Xcode 26+ (Icon Composer). Check: xcodebuild -version." >&2
     exit 1
   fi
+  codesign --force --deep --sign - "$built" >/dev/null 2>&1
+}
+
+desktop_dist() {
+  trap - INT TERM EXIT
+  package_desktop
+  local built="$DESKTOP_BUILT"
 
   local dest
   dest="$(dirname "$DESKTOP_APP")"
@@ -716,6 +729,7 @@ case "${1:-}" in
       exit 1
     fi
     desktop; exit 0 ;;
+  package) trap - INT TERM EXIT; package_desktop; echo "Packaged ${DESKTOP_BUILT}"; exit 0 ;;
   deploy) deploy "${2:-both}"; exit 0 ;;
   check)
     if [ -n "${2:-}" ] && [ "$2" != "--drives" ]; then
@@ -733,7 +747,7 @@ case "${1:-}" in
     ;;
   *)
     echo "Unknown argument: $1" >&2
-    echo "Usage: ./build.sh [desktop | web | check [--drives] | deploy [app|api]]" >&2
+    echo "Usage: ./build.sh [desktop | package | web | check [--drives] | deploy [app|api]]" >&2
     exit 1
     ;;
 esac

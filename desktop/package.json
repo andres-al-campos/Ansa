@@ -1,7 +1,7 @@
 {
   "name": "ansa-desktop",
   "private": true,
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "The macOS desktop shell for Ansa: an Electron window around the same web build.",
   "main": "main.js",
   "scripts": {
