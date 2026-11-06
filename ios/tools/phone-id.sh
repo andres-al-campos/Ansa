@@ -4,7 +4,7 @@
 #
 # Only rows marked physical: the listing also carries simulators, and a booted
 # one is "connected" too. Read from the column before "(UDID)" rather than by
-# shape, since a phone's identifier is a hardware id (00008120-0002493E21BBA01E)
+# shape, since a phone's identifier is a hardware id (00008120-000A1B2C3D4E5F60)
 # and a simulator's is a UUID; matching the UUID shape picked the simulator.
 #
 # Any paired phone counts, including one the listing calls "disconnected".
