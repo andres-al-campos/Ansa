@@ -183,16 +183,15 @@ printf %s "$ANSA_TOKEN" | shasum -a 256 | cut -d' ' -f1 | npx wrangler secret pu
 Then tell the worker which account it acts as. This is your Clerk user id — the
 `user_xxx` string on your account in the Clerk dashboard under Users — and it is
 the same id a browser session resolves to, which is what makes the MCP server
-reach the tree you already have rather than an empty one of its own. It goes in
-the `vars` block of `wrangler.jsonc`, not the secret store: a user id
-authenticates nothing on its own, and having it visible is what makes a
-misconfigured deployment obvious rather than mysterious.
+reach the tree you already have rather than an empty one of its own. A user id
+authenticates nothing on its own, but it is one person's account, so it goes in
+the secret store rather than the public `wrangler.jsonc`:
 
-```jsonc
-"vars": {
-  "ANSA_MCP_USER": "user_xxxxxxxxxxxxxxxxxxxxxxxxx"
-}
+```bash
+npx wrangler secret put ANSA_MCP_USER
 ```
+
+`./build.sh deploy` warns when either half is missing from the store.
 
 Then keep the token where the MCP server can find it. It reads `ANSA_TOKEN`
 from the environment first, and falls back to the macOS Keychain — which is

@@ -38,16 +38,12 @@
     // and can be named here; without it the renderer's fetches to this API are
     // CORS-blocked. Loopback means the browser it runs in is Electron's own, on
     // the user's machine — not a page that a stranger's site could open.
-    "ANSA_ALLOWED_ORIGIN": "https://ansaflow.pages.dev,http://127.0.0.1:41407",
+    "ANSA_ALLOWED_ORIGIN": "https://ansaflow.pages.dev,http://127.0.0.1:41407"
 
-    // The Clerk user id the MCP server's token acts as — see "Giving it access
-    // to your real tree" in the README.
-    //
-    // Not a secret: on its own it authenticates nobody, since the token's hash
-    // in ANSA_MCP_TOKEN_SHA256 is the half that grants anything. Visible here so
-    // a worker that answers as the wrong account can be diagnosed by reading the
-    // config rather than by guessing.
-    "ANSA_MCP_USER": "user_3HVMApO5MO2IEmLtIE5CeniXKqn"
+    // ANSA_MCP_USER, the Clerk user id the MCP token acts as, is in the secret
+    // store beside ANSA_MCP_TOKEN_SHA256. It authenticates nobody on its own;
+    // it stays out of this file because the repo is public and the id is one
+    // person's account. See "Giving it access to your real tree" in the README.
   }
 
   // CLERK_SECRET_KEY is a secret, not a var: `wrangler secret put

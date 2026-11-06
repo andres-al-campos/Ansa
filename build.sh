@@ -204,6 +204,22 @@ fi
 deploy_api() {
   echo "Deploying the API worker …"
   npx wrangler deploy
+  check_mcp_secrets
+}
+
+# The MCP credential is two secrets, and a worker with only one of them still
+# deploys and serves the app; only the MCP server stops reaching your tree.
+# A warning rather than a failure, since the app works without the MCP.
+check_mcp_secrets() {
+  local names name
+  names=$(npx wrangler secret list 2>/dev/null) || return 0
+  for name in ANSA_MCP_TOKEN_SHA256 ANSA_MCP_USER; do
+    if ! grep -q "\"$name\"" <<<"$names"; then
+      echo "Warning: the worker has no $name secret, so the MCP server can't reach your tree." >&2
+      echo "  Add it with: npx wrangler secret put $name" >&2
+      echo "  (README, \"Giving it access to your real tree\", says what goes in it.)" >&2
+    fi
+  done
 }
 
 # What the smoke checks are for: everything above this point verifies what was
