@@ -1,7 +1,7 @@
 # Ansa
 
 A Workflowy-style outliner for breaking tasks down until the leaves are small
-enough to actually do. *Ansa* is Latin for the handle of a thing.
+enough to actually do.
 
 ![Ansa breaking a task down, with the same tree updating live on the iPhone](docs/demo.webp)
 
