@@ -591,10 +591,12 @@ desktop_dist() {
   # cache stale. Down first, then swap, then relaunch.
   kill_running_ansa
   rm -rf "$DESKTOP_APP"
-  cp -R "$built" "$DESKTOP_APP"
+  # Moved, not copied: a second copy shows up in Spotlight, and Launch Services can
+  # bind the app to it.
+  mv "$built" "$DESKTOP_APP"
 
   # Ad-hoc sign so Gatekeeper lets an unsigned local build launch, and drop the
-  # quarantine flag the copy may inherit. Local use only — this is not a
+  # quarantine flag the bundle may carry. Local use only — this is not a
   # distributable signature.
   codesign --force --deep --sign - "$DESKTOP_APP" >/dev/null 2>&1
   xattr -dr com.apple.quarantine "$DESKTOP_APP" 2>/dev/null || true
