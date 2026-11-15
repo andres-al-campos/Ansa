@@ -5,8 +5,9 @@ medium ones and those into small ones, zoom in on just the part that matters
 right now, do it, and zoom back out, so the list never feels like it only keeps
 growing.
 
-A Workflowy-style outliner: a React web app, a Cloudflare Worker, an iOS app
-and an MCP server over one tree. `./build.sh` is the entry point; `ios/` has
+A Workflowy-style outliner: a Mac app (a React app in Electron), an iOS app,
+a Cloudflare Worker and an MCP server over one tree. The Mac and iOS apps are
+what gets released; the web build is how the drives test the React app. `./build.sh` is the entry point; `ios/` has
 its own `AGENTS.md`.
 
 ## Principles

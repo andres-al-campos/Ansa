@@ -113,6 +113,11 @@ type-checks and builds the app into `dist/`.
 Runs `./build.sh check --drives`, then ships the Worker and the app, checking each live URL before
 moving on. `./build.sh deploy api` or `deploy app` when only one changed.
 
+To release, set the version in `package.json` and `desktop/package.json`,
+commit, push, and run `./release.sh`. It packages the Mac app with
+`./build.sh package`, tags the version, and publishes the zip as a GitHub
+release.
+
 The API goes first on purpose. If it fails, the old app is still talking to the
 old API — whereas shipping the app first can leave a new client calling an API
 that never updated.
