@@ -8,8 +8,8 @@ enough to actually do.
 ## Download
 
 The Mac app is on the [Releases](https://github.com/andres-al-campos/Ansa/releases)
-page, for Apple Silicon. It isn't notarised, so macOS blocks it the first
-time: open it once, then go to System Settings → Privacy & Security and choose
+page, for Apple Silicon. Open the DMG and drag Ansa into Applications. It
+isn't notarised, so macOS blocks it the first time: open it once, then go to System Settings → Privacy & Security and choose
 Open Anyway. Or clear the quarantine flag from a terminal:
 
 ```bash
@@ -115,7 +115,7 @@ moving on. `./build.sh deploy api` or `deploy app` when only one changed.
 
 To release, set the version in `package.json` and `desktop/package.json`,
 commit, push, and run `./release.sh`. It packages the Mac app with
-`./build.sh package`, tags the version, and publishes the zip as a GitHub
+`./build.sh package`, tags the version, and publishes a DMG as a GitHub
 release.
 
 The API goes first on purpose. If it fails, the old app is still talking to the

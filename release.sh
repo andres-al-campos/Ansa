@@ -4,7 +4,7 @@
 #
 #   ./release.sh
 #
-# Builds the desktop app fresh, zips it, tags v<version> and publishes the zip
+# Builds the desktop app fresh, puts it in a DMG, tags v<version> and publishes it
 # with notes generated from the commits since the last release. The iOS app
 # ships as source only: a built .app is signed to one Apple team and its
 # devices, so it would install for nobody else.
@@ -43,12 +43,18 @@ fi
 
 ./build.sh package
 
-zip="desktop/dist/Ansa-${version}-mac-arm64.zip"
-rm -f "$zip"
-# ditto rather than zip: it keeps the bundle's symlinks and code signature intact.
-ditto -c -k --keepParent desktop/dist/mac-arm64/Ansa.app "$zip"
+# A DMG rather than a zip: opening it shows the app beside an Applications
+# shortcut, so the download gets installed instead of run from Downloads.
+dmg="desktop/dist/Ansa-${version}-mac-arm64.dmg"
+stage=$(mktemp -d)
+trap 'rm -rf "$stage"' EXIT
+# ditto rather than cp: it keeps the bundle's symlinks and code signature intact.
+ditto desktop/dist/mac-arm64/Ansa.app "$stage/Ansa.app"
+ln -s /Applications "$stage/Applications"
+rm -f "$dmg"
+hdiutil create -quiet -volname "Ansa" -srcfolder "$stage" -format UDZO "$dmg"
 
 git tag -a "$tag" -m "Ansa ${version}"
 git push origin "refs/tags/${tag}"
-gh release create "$tag" "$zip" --title "Ansa ${version}" --generate-notes --verify-tag
+gh release create "$tag" "$dmg" --title "Ansa ${version}" --generate-notes --verify-tag
 echo "Released ${tag}: $(gh release view "$tag" --json url -q .url)"
