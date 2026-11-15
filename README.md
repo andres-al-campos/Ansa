@@ -159,6 +159,12 @@ addresses the data: a different instance mints different user ids, which address
 different Durable Objects. Switching to production keys is a data migration, not
 a config change.
 
+Test also suits how Ansa is used. Sessions last 30 days, where Clerk's free
+production plan fixes them at 7, and production needs a domain of our own,
+since `pages.dev` can't carry Clerk's DNS records. The cost is a "Development
+mode" badge and a cap of 100 users, so switch before a release that strangers
+are expected to sign in to.
+
 ## The MCP server
 
 Point an MCP client at it with a stdio command:
