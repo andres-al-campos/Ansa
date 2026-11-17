@@ -127,6 +127,21 @@ prepare() {
   fi
 }
 
+# Builds with only errors, warnings and the verdict shown, and stops the script
+# when the build fails. Arguments go to xcodebuild before `build`.
+xcode_build() {
+  # Judged by xcodebuild's status, not the pipeline's: grep exits 1 when no line
+  # matches, so it can't say whether the build worked. Without this check a
+  # compile error is printed and then installed over, and the device keeps the
+  # previous binary, which looks just like a fix that didn't work. The pipeline is
+  # an `if` condition because a bare failing pipeline ends the script under
+  # `set -e` before the check below runs. PIPESTATUS is read on the very next
+  # line, since any command in between resets it.
+  if xcodebuild "$@" build | grep -E "error:|warning:|BUILD"; then :; fi
+  local status=${PIPESTATUS[0]}
+  [ "$status" -eq 0 ] || die "Build failed. The errors are above."
+}
+
 # The .app xcodebuild just produced, or a failure that says how to see why.
 # An optional second argument adds a hint about the likeliest cause.
 built_app() {
@@ -226,24 +241,13 @@ case "${1:-run}" in
     # depend on which device it lands on, and naming one means xcodebuild has to
     # resolve it — which fails while the phone is merely asleep, long after the
     # tunnel is up. Signing still happens; only the destination is generic.
-    xcodebuild \
+    xcode_build \
       -project Ansa.xcodeproj \
       -scheme "$SCHEME" \
       -configuration Release \
       -destination 'generic/platform=iOS' \
       -derivedDataPath build \
-      -allowProvisioningUpdates \
-      build | grep -E "error:|warning:|BUILD"
-    # `grep`'s status is not xcodebuild's, and it is the one the shell keeps —
-    # so the build's own result has to be read out of PIPESTATUS before
-    # anything else runs. Without this a compile error is printed and then
-    # installed straight over, and the script reports success while the device
-    # keeps the previous binary: indistinguishable from a fix that did not
-    # work. No `|| true`, which would make the pipeline's status its own and
-    # put xcodebuild's out of reach. `set -o pipefail` is not used here because
-    # grep legitimately exits 1 on a build with no matching lines at all.
-    build_status=${PIPESTATUS[0]}
-    [ "$build_status" -eq 0 ] || die "Build failed. The errors are above."
+      -allowProvisioningUpdates
 
     # Unlocking is a separate requirement from connecting, and the phone can
     # satisfy the first without the second: the tunnel comes up while it is
@@ -380,23 +384,12 @@ The ones there: $(ls UITests | sed -n 's/Tests\.swift$//p' | sed -E 's/([a-z0-9]
     fi
     open_simulator
 
-    xcodebuild \
+    xcode_build \
       -project Ansa.xcodeproj \
       -scheme "$SCHEME" \
       -configuration Debug \
       -destination "id=$udid" \
-      -derivedDataPath build \
-      build | grep -E "error:|warning:|BUILD"
-    # `grep`'s status is not xcodebuild's, and it is the one the shell keeps —
-    # so the build's own result has to be read out of PIPESTATUS before
-    # anything else runs. Without this a compile error is printed and then
-    # installed straight over, and the script reports success while the device
-    # keeps the previous binary: indistinguishable from a fix that did not
-    # work. No `|| true`, which would make the pipeline's status its own and
-    # put xcodebuild's out of reach. `set -o pipefail` is not used here because
-    # grep legitimately exits 1 on a build with no matching lines at all.
-    build_status=${PIPESTATUS[0]}
-    [ "$build_status" -eq 0 ] || die "Build failed. The errors are above."
+      -derivedDataPath build
 
     app=$(built_app Debug-iphonesimulator)
 

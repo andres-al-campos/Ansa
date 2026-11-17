@@ -16,4 +16,5 @@ rather than this checkout.
 | `feature-map.mjs` | every row in `dev/features/README.md` has a file and every file a row; every file's Driving it leads each check with a command, and each named drive (`scripts/drive.mjs`) and iOS UI test (`ios/UITests/`) exists |
 | `doc-stamps.mjs` | feature files and their index carry an `Updated` stamp, every Principle and Call starts with a time and a version Ansa has had, and every Principle a Call cites exists |
 | `row-gestures.sh` | the iOS row arms its drag with `.simultaneousGesture(armGesture)` and the bullet's fold tap stays `.highPriorityGesture(bulletGesture)`, which no UI test can check |
+| `build-failed.sh` | a failed build in `ios/build.sh` stops on its "Build failed" message rather than ending on xcodebuild's last line, and a successful build whose output `grep` doesn't match carries on |
 | `release-dmg.sh` | `release.sh` builds the Mac app into a DMG and attaches that, never a zip |
