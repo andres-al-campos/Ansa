@@ -2,7 +2,8 @@
 #
 # Cut a GitHub release of the version in package.json:
 #
-#   ./release.sh
+#   ./release.sh            build, tag and publish
+#   ./release.sh --dry-run  build and package the DMG, publish nothing
 #
 # Builds the desktop app fresh, puts it in a DMG, tags v<version> and publishes it
 # with notes generated from the commits since the last release. The iOS app
@@ -10,6 +11,13 @@
 # devices, so it would install for nobody else.
 set -euo pipefail
 cd "$(dirname "$0")"
+
+dry_run=
+case "${1:-}" in
+  --dry-run) dry_run=1 ;;
+  "") ;;
+  *) echo "Unknown option '$1'. Run ./release.sh, or ./release.sh --dry-run to only build the DMG." >&2; exit 1 ;;
+esac
 
 version=$(node -p "require('./package.json').version")
 desktop_version=$(node -p "require('./desktop/package.json').version")
@@ -23,6 +31,9 @@ if [ "$version" != "$desktop_version" ]; then
   exit 1
 fi
 
+# A dry run builds the DMG from whatever is checked out, so it skips the checks
+# that keep a published tag honest.
+if [ -z "$dry_run" ]; then
 if [ -n "$(git status --porcelain)" ]; then
   echo "The working tree has uncommitted changes, so the release wouldn't match GitHub." >&2
   echo "Commit or stash them, push, and re-run." >&2
@@ -40,6 +51,7 @@ if git rev-parse -q --verify "refs/tags/${tag}" >/dev/null || gh release view "$
   echo "${tag} already exists. Bump the version in package.json and desktop/package.json first." >&2
   exit 1
 fi
+fi
 
 ./build.sh package
 
@@ -53,6 +65,11 @@ ditto desktop/dist/mac-arm64/Ansa.app "$stage/Ansa.app"
 ln -s /Applications "$stage/Applications"
 rm -f "$dmg"
 hdiutil create -quiet -volname "Ansa" -srcfolder "$stage" -format UDZO "$dmg"
+
+if [ -n "$dry_run" ]; then
+  echo "Dry run: built ${dmg}. Nothing was tagged or published."
+  exit 0
+fi
 
 git tag -a "$tag" -m "Ansa ${version}"
 git push origin "refs/tags/${tag}"

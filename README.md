@@ -117,6 +117,8 @@ To release, set the version in `package.json` and `desktop/package.json`,
 commit, push, and run `./release.sh`. It packages the Mac app with
 `./build.sh package`, tags the version, and publishes a DMG as a GitHub
 release.
+`./release.sh --dry-run` builds the DMG into `desktop/dist/` and stops
+there, to check it before a release.
 
 The API goes first on purpose. If it fails, the old app is still talking to the
 old API — whereas shipping the app first can leave a new client calling an API
