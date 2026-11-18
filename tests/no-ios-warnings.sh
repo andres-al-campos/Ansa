@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Law: the iOS app builds without warnings. A warning is an error that has not
+# Test: the iOS app builds without warnings. A warning is an error that has not
 # bitten yet, and one nobody reads hides the next.
 #
 # Every one of Ansa's files is recompiled each time, into its own directory: an

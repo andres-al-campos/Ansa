@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Law: ios/build.sh installs on the phone, never on a booted simulator.
+# Test: ios/build.sh installs on the phone, never on a booted simulator.
 #
 # devicectl lists simulators beside the phone, and a booted one reads
 # "connected". The phone's id was once picked by UUID shape, which matched the

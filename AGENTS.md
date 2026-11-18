@@ -17,7 +17,7 @@ has met yet, and see where a rule stops. Each earns its place by deciding Calls,
 naming the principle they apply. Listed in the order they were written; when
 two disagree on a case, the owner decides and the winner moves up. The hook in
 `dev/hooks/` starts each with the time and version it was made or reworded at.
-A rule a machine can check becomes a law instead.
+A rule a machine can check becomes a check in `tests/` instead.
 
 The bar is look, feel and correct logic. It's a personal app, and small
 leftovers are fine.

@@ -94,7 +94,7 @@ gets set too and you'll be asked to sign in; `./build.sh web --no-auth` skips
 both.
 
 `./build.sh check` runs the typecheck, the TypeScript and Swift suites, the
-Swift-to-server wire and agreement checks and the laws, in about a minute and a
+Swift-to-server wire and agreement checks and the lints and tests in `tests/`, in about a minute and a
 half with no server or simulator. `./build.sh check --drives` adds everything
 else that doesn't need a person: `npm run drive`, which works the web app and
 the MCP in a headless browser, and the iOS drives on a simulator. It uses a

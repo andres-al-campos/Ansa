@@ -1,6 +1,6 @@
 // @vitest-environment node
 /**
- * Law: every tool the repo runs with `npx` is a dependency in package.json.
+ * Lint: every tool the repo runs with `npx` is a dependency in package.json.
  *
  * Without that, npx downloads whatever version is latest into a shared cache
  * outside the repo and runs it from there. wrangler ran that way, deploys

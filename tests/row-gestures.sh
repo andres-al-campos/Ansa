@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Law: the outline row's two gestures keep the priorities OutlineView.swift's
+# Lint: the outline row's two gestures keep the priorities OutlineView.swift's
 # comments give them.
 #
 #   - The row arms a drag with .simultaneousGesture(armGesture). Not
@@ -35,7 +35,7 @@ fi
 if ! grep -qE '\.highPriorityGesture\( *bulletGesture *\)' "$file"; then
   problems+=("The bullet's fold tap is no longer .highPriorityGesture(bulletGesture).
         The code comment says a plain gesture loses the touch to the List's scroll; that is unverified on a device for the tap alone.
-        Attach it as .highPriorityGesture(bulletGesture), or check the change by hand on a phone and update this law.")
+        Attach it as .highPriorityGesture(bulletGesture), or check the change by hand on a phone and update this lint.")
 fi
 
 holds=$(grep -rn '\.scrollDisabled(' ios/Sources | grep -v '^[^:]*:[0-9]*: *//')

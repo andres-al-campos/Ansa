@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Law: no iOS view scrolls on both axes at once. On a phone it always looks
+# Lint: no iOS view scrolls on both axes at once. On a phone it always looks
 # broken; a view that seems to need it gets a different layout instead. The
 # web half is no-two-axis-scroll.mjs.
 #

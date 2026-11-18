@@ -1,4 +1,4 @@
-// Law: nothing scrolls on both axes at once, and the page never scrolls
+// Rendering test: nothing scrolls on both axes at once, and the page never scrolls
 // sideways. On a phone either one always looks broken.
 //
 // Measured on the rendered app at a phone and a desktop width, on Home and on
@@ -35,7 +35,7 @@ if (health?.auth !== 'dev') {
 // A long word and a deep outline, the content most likely to push something
 // wide, under enough rows to scroll down: a list that fits on one screen
 // scrolls on neither axis, so it can't show a second one.
-const project = `law two-axis ${Date.now()}`
+const project = `check two-axis ${Date.now()}`
 const long = 'Supercalifragilisticexpialidocious'.repeat(4)
 const filler = Array.from({ length: 30 }, (_, i) => ({ text: `Task ${i + 1}` }))
 const { ids } = await api('/api/nodes/subtree', {

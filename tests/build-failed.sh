@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Law: a failed build in ios/build.sh ends on "Build failed", not on xcodebuild's last line.
+# Test: a failed build in ios/build.sh ends on "Build failed", not on xcodebuild's last line.
 #
 # Runs xcode_build against an xcodebuild that always fails, and one whose output grep
 # matches nothing, under the same shell options as build.sh.

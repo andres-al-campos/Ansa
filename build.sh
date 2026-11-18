@@ -10,7 +10,7 @@
 #   ./build.sh package      package and ad-hoc sign Ansa.app without installing it
 #   ./build.sh web          run the local web stack: API + Vite app together
 #   ./build.sh web --no-auth  the same without sign-in, even with a Keychain secret
-#   ./build.sh check        typecheck, tests and laws, no stack or simulator
+#   ./build.sh check        typecheck, tests, lints and laws, no stack or simulator
 #   ./build.sh check --drives  all of that, then the web and iOS drives on a no-sign-in stack
 #   ./build.sh deploy       test, then publish the API and the app
 #   ./build.sh deploy api   the Worker only
@@ -622,11 +622,12 @@ desktop_dist() {
 }
 
 # Everything that can be checked without a person. Plain check is types, the
-# test suites and the laws: about a minute and a half, with no stack, ports or
-# simulator, so any number of sessions can run it at once. --drives adds the
-# drives, for a feature in active development and before a release: a stack
-# already running in dev auth is reused, so it works alongside
-# `./build.sh web --no-auth`; otherwise it starts one and stops it when done.
+# test suites (the applyOp laws among them) and the lints: about a minute and a
+# half, with no stack, ports or simulator, so any number of sessions can run it
+# at once. --drives adds the drives, for a feature in active development and
+# before a release: a stack already running in dev auth is reused, so it works
+# alongside `./build.sh web --no-auth`; otherwise it starts one and stops it
+# when done.
 check() {
   trap - INT TERM EXIT
   local drives=${1:-}
@@ -643,7 +644,7 @@ check() {
   else
     echo "Skipping the AnsaCore, wire and agreement checks: swift isn't installed (needs Xcode on macOS)."
   fi
-  echo "Checking the laws …"
+  echo "Checking the lints and tests in tests/ …"
   tests/no-two-axis-scroll.sh
   tests/row-gestures.sh
   tests/phone-id.sh

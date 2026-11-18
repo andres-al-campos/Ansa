@@ -1,4 +1,4 @@
-// Law: the feature map matches its files, its drives and its UI tests.
+// Lint: the feature map matches its files, its drives and its UI tests.
 //
 // The map is what "done" is checked against, so it can't drift from the code:
 // every row in dev/features/README.md has a file, every file has a row, and every
