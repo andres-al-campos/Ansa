@@ -334,8 +334,9 @@ The ones there: $(ls UITests | sed -n 's/Tests\.swift$//p' | sed -E 's/([a-z0-9]
     # The tests sign in as the dev stub's user, so the app must skip sign-in.
     NO_AUTH=1
     prepare
+    # No simulator window: the tests run on the booted simulator without one, and
+    # the window would come up over whatever the owner is doing.
     udid=$(booted_sim) || exit 1
-    open_simulator
 
     mkdir -p build
     log=build/drive.log
